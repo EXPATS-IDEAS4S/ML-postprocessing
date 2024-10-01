@@ -145,14 +145,14 @@ if not os.path.exists(path_out):
 # Initialize the list to store datasets
 datasets = []
 
-labels = ['min-max', '1th-99th', '5th-95th']
-colors = ['red','blue','green']
+labels = ['10th-90th','10th-90th_CMA'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
+colors = ['red','blue','green', 'black', 'orange']
 
 #for each case open data 
 
 for label in labels:
     # Load the data from the JSON file
-    file_path = f'/home/Daniele/codes/vissl/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{label}/checkpoints/'
+    file_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{label}/checkpoints/'
     data = []
 
     #collect data from jason output file

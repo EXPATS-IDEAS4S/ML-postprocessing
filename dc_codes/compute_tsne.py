@@ -6,40 +6,45 @@ import os, glob
 
 import openTSNE
 
-common_path = '/home/Daniele/codes/vissl/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_5th-95th/features/'  ##
-
-output_path = '/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+scales = ['10th-90th_CMA']
+random_states = [0,3,16,23,57] #old was 3, already computed
 
 n_crops = 33792
 
-filename1 = 'rank0_chunk0_train_heads_inds.npy' 
-filename2 = 'rank0_chunk0_train_heads_targets.npy'
+#filename1 = 'rank0_chunk0_train_heads_inds.npy' 
+#filename2 = 'rank0_chunk0_train_heads_targets.npy'
 filename3 = 'rank0_chunk0_train_heads_features.npy'
 
-data1 = np.load(common_path+filename1)
-#data2 = np.load(common_path+filename2)
-data3 = np.load(common_path+filename3)
+for scale in scales:
+    for random_state in random_states:
 
-data = data3
+        common_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/features/'  #
 
-data = np.reshape(data3,(n_crops,128))  #DC value 664332, it should be the train num samples
+        output_path = f'/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_{scale}/'
 
-#tsne parameters here:
-#https://opentsne.readthedocs.io/en/stable/api/sklearn.html#openTSNE.sklearn.TSNE
-#%time
-embedding_pca_cosine = openTSNE.TSNE(
-    perplexity=30,
-    initialization="pca",
-    metric="cosine",
-    n_jobs=-1,
-    random_state=3,
-).fit(data)
+        #data1 = np.load(common_path+filename1)
+        #data2 = np.load(common_path+filename2)
+        data3 = np.load(common_path+filename3)
+        #data = data3
+        data = np.reshape(data3,(n_crops,128))  #DC value 664332, it should be the train num samples
 
-#tsne = TSNE(n_components=2, random_state=5).fit_transform(data)
 
-np.save(output_path+'tsnegermany_pca_cosine_500ep.npy', embedding_pca_cosine)  ##
+        #tsne parameters here:
+        #https://opentsne.readthedocs.io/en/stable/api/sklearn.html#openTSNE.sklearn.TSNE
+        #%time
+        embedding_pca_cosine = openTSNE.TSNE(
+            perplexity=30,
+            initialization="pca",
+            metric="cosine",
+            n_jobs=-1,
+            random_state=random_state,
+        ).fit(data)
 
-print('tsne calculated and saved')
+        #tsne = TSNE(n_components=2, random_state=5).fit_transform(data)
+
+        np.save(f'{output_path}tsne_pca_cosine_{scale}_{random_state}.npy', embedding_pca_cosine)  ##
+
+        print(f'{output_path}tsne_pca_cosine_{scale}_{random_state}.npy calculated and saved')
 
 """
 embedding_annealing = openTSNE.TSNE(

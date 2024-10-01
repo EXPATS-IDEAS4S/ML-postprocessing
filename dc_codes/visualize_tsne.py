@@ -7,19 +7,21 @@ import torch
 from matplotlib.colors import CSS4_COLORS
 from matplotlib import colors as mcolors  # Correct import for colors
 
+scale = '10th-90th_CMA'
+random_state = '3' #all visualization were made with random state 3
 #dcv_cot_128x128_k7_germany_60kcrops
 #dcv2_ir_128x128_k7_germany_70kcrops
-output_path = '/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+output_path = f'/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_{scale}/'
 
-tsne_path = '/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+tsne_path = f'/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_{scale}/'
 
-tsne_filename = 'tsnegermany_pca_cosine_500ep.npy'
+tsne_filename = f'tsne_pca_cosine_{scale}_{random_state}.npy' 
 filename = tsne_filename
 #filename = 'isomap_2d_cosine_800ep_20000samples.csv'
 #tsne_filename = 'tsnegermany_pca_cosine_500annealing50_800ep.npy'
 #tsne_filename = 'tsnegermany_pca_cosine_500multiscale50_800ep.npy'
 
-image_path = '/home/Daniele/data/ir108_2013-2014_RGB_5th-95th/1/' #cot_2013_128_germany, ir108_2013_128_germany
+image_path = f'/data1/crops/ir108_2013-2014_GS_{scale}/1/' #cot_2013_128_germany, ir108_2013_128_germany
 crop_path_list = sorted(glob(image_path+'*.tif'))
 #print(len(crop_path_list))
 
@@ -27,9 +29,9 @@ filename1 = 'rank0_chunk0_train_heads_inds.npy'
 filename2 = 'rank0_chunk0_train_heads_targets.npy'
 filename3 = 'rank0_chunk0_train_heads_features.npy'
 
-path_feature = '/home/Daniele/codes/vissl/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_5th-95th/features/'
+path_feature = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/features/'
 
-checkpoints_path = '/home/Daniele/codes/vissl/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_5th-95th/checkpoints/'  
+checkpoints_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/checkpoints/'  
 
 assignments = torch.load(checkpoints_path+'assignments_800ep.pt',map_location='cpu')
 sample_list = np.load(checkpoints_path+'samples_k7_800ep.npy')
@@ -156,9 +158,8 @@ df = pd.DataFrame({'Component_1': tx, 'Component_2': ty})
 df_labels = pd.DataFrame({'y': '', 'index': data1})
 df_labels.set_index('index', inplace=True)
 
-
 for index in range(len(data1)):
-    df_labels.loc[index] = assignments[0].cpu()[index]
+    df_labels.loc[index] = assignments[0, :].cpu()[index]
 
 df_labels['location'] = crop_path_list
 
