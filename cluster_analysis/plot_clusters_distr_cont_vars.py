@@ -14,16 +14,16 @@ run_names = ['10th-90th_CMA', '10th-90th']
 sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
 
 # Pick the statistics to compute for each crop, the percentile values
-stats = [1,50,99,'25-75']   #'1%', '5%', '25%', '50%', '75%', '95%', '99%' ,None if all points are needed
+stats = [None] #[1,50,99,'25-75']   #'1%', '5%', '25%', '50%', '75%', '95%', '99%' ,None if all points are needed
 #use e.g '25-75' if interquartile range want to be calculated
 
 # Read data
-n_subsample = 1000  # Number of samples per cluster
+n_subsample = 100  # Number of samples per cluster
 
 # Path to topography data (DEM and land-sea mask)
 era5_path = f'/home/daniele/Documenti/Data/ERA5-Land_t2m_snowc_u10_v10_sp_tp/'
 
-data_type = 'topography'  #'continuous' 'topography' 'era5-land'
+data_type = 'continuous'  #'continuous' 'topography' 'era5-land'
 
 #if data_type == 'topography':
 # Path to topography data (DEM and land-sea mask)
@@ -96,9 +96,10 @@ for run_name in run_names:
                         print(f"Not enough values to calculate {stat} for {var} in {row['path']}")
                         continue  # Skip if there are not enough values for the given percentile
                 else:
-                    #apply random samples whent the values contained in the variables are not the same size (like in topography)
-                    random_samples = np.amin(500, len(values))
-                    values = np.random.choice(values, random_samples, replace=False)
+                    if data_type=='topography':
+                        #apply random samples whent the values contained in the variables are not the same size (like in topography)
+                        random_samples = np.amin(500, len(values))
+                        values = np.random.choice(values, random_samples, replace=False)
 
                 # Ensure values is a list or array before extending
                 continuous_data = concatenate_values(values, var, continuous_data)
@@ -113,9 +114,9 @@ for run_name in run_names:
         print(df_continuous)
 
         # Save in case of crop stats are calculated
-        if stat: 
-            df_continuous.to_csv(f'{output_path}continuous_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
-            print('Continous Stats for each crop are saved to CSV files.')
+        #if stat: 
+        df_continuous.to_csv(f'{output_path}continuous_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+        print('Continous Stats for each crop are saved to CSV files.')
 
         # Compute stats for continuous variables
         continuous_stats = df_continuous.groupby('label').agg(['mean', 'std'])
