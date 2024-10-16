@@ -54,7 +54,13 @@ def pick_variable(data_type):
         vars_long_name = ['hour', 'month','latitude middle point','longitude middle point']
         vars_units = ['UTC', None,'°N','°E']
         vars_logscale = [False, False,False,False]
-        vars_dir = ['incr','incr','incr','incr']    
+        vars_dir = ['incr','incr','incr','incr']  
+    elif data_type =='categorical':
+        vars = ['cma', 'cph']
+        vars_long_name = ['cloud mask', 'cloud phase']
+        vars_units = [None, None]
+        vars_logscale = [False, False]
+        vars_dir = ['incr','incr']  
     else:
         print('wrong data type name!')
         exit()

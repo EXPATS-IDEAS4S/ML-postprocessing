@@ -5,30 +5,37 @@
 import pandas as pd
 import xarray as xr
 import numpy as np
+from glob import glob
 
 from aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds
 
 run_names = ['10th-90th_CMA', '10th-90th']
 
 # Define sampling type
-sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 
 # Pick the statistics to compute for each crop, the percentile values
-stats = [None] #[1,50,99,'25-75']   #'1%', '5%', '25%', '50%', '75%', '95%', '99%' ,None if all points are needed
+stats = [1,50,99,'25-75']   #'1%', '5%', '25%', '50%', '75%', '95%', '99%' ,None if all points are needed
 #use e.g '25-75' if interquartile range want to be calculated
 
+# Paths to CMSAF cloud properties crops
+cloud_properties_path = '/data1/crops/cmsaf_2013-2014_expats/nc_clouds/'
+cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
+n_samples = len(cloud_properties_crop_list)
+
 # Read data
-n_subsample = 100  # Number of samples per cluster
+n_subsample = n_samples  # Number of samples per cluster
+
 
 # Path to topography data (DEM and land-sea mask)
-era5_path = f'/home/daniele/Documenti/Data/ERA5-Land_t2m_snowc_u10_v10_sp_tp/'
+era5_path = f'/data1/other_data/ERA5-Land_t2m_snowc_u10_v10_sp_tp/'
 
-data_type = 'continuous'  #'continuous' 'topography' 'era5-land'
+data_type = 'era5-land'   #'continuous' 'topography' 'era5-land'
 
 #if data_type == 'topography':
 # Path to topography data (DEM and land-sea mask)
-DEM_path = f'/home/daniele/Documenti/Data/topography/DEM_EXPATS_0.01x0.01.nc'
-landseamask_path = f'/home/daniele/Documenti/Data/topography/IMERG_landseamask_EXPATS_0.1x0.1.nc'
+DEM_path = f'/data1/other_data/DEM_EXPATS_0.01x0.01.nc'
+landseamask_path = f'/data1/other_data/IMERG_landseamask_EXPATS_0.1x0.1.nc'
 #snowcover_path = f'/home/daniele/Documenti/Data/ERA5-Land_t2m_snowc_u10_v10_sp_tp/'
 #open files
 ds_dem = xr.open_dataset(DEM_path)
@@ -42,7 +49,7 @@ vars, vars_long_name, vars_units, vars_logscale, vars_dir = pick_variable(data_t
 for run_name in run_names:
 
     # Path to fig folder for outputs
-    output_path = f'/home/daniele/Documenti/Data/Fig/{run_name}/{sampling_type}/'
+    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
 
     # Load CSV file with the crops path and labels into a pandas DataFrame
     df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv')
@@ -86,7 +93,10 @@ for run_name in run_names:
                 ds = select_ds(var, [ds_crops, ds_era5_time, ds_dem, ds_lsm])
 
                 # Select values within the lat/lon range of ds
-                values = ds[var].sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max)).values.flatten()
+                if data_type=='era5-land':
+                    values = ds[var].sel(latitude=slice(lat_min, lat_max), longitude=slice(lon_min, lon_max)).values.flatten()
+                else:
+                    values = ds[var].sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max)).values.flatten()
 
                 # Apply percentile if 'stat' is provided (stat can be a percentile or another function)
                 if stat:
@@ -115,7 +125,7 @@ for run_name in run_names:
 
         # Save in case of crop stats are calculated
         #if stat: 
-        df_continuous.to_csv(f'{output_path}continuous_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+        df_continuous.to_csv(f'{output_path}{data_type}_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
         print('Continous Stats for each crop are saved to CSV files.')
 
         # Compute stats for continuous variables
@@ -124,12 +134,12 @@ for run_name in run_names:
         continuous_stats.reset_index(inplace=True)
 
         # Save continuous stats to a CSV file
-        continuous_stats.to_csv(f'{output_path}continuous_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+        continuous_stats.to_csv(f'{output_path}{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
         print('Overall Continous Stats for each cluster are saved to CSV files.')
 
         # Plotting continuous variables box plots
-        for var, long_name, unit, direction, scale in zip(vars, vars_long_name, vars_units, vars_dir, vars_logscale):
-            plot_single_vars(df_continuous, n_subsample, var, long_name, unit, direction, scale, output_path, run_name, sampling_type, stat)
+        #for var, long_name, unit, direction, scale in zip(vars, vars_long_name, vars_units, vars_dir, vars_logscale):
+        #    plot_single_vars(df_continuous, n_subsample, var, long_name, unit, direction, scale, output_path, run_name, sampling_type, stat)
     
 
             

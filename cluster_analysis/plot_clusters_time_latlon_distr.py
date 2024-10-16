@@ -25,7 +25,7 @@ vars, vars_long_name, vars_units, vars_logscale, vars_dir = pick_variable(data_t
 for run_name in run_names:
 
     # Path to fig folder for outputs
-    output_path = f'/home/daniele/Documenti/Data/Fig/{run_name}/{sampling_type}/'
+    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
 
     # Load CSV file with the crops path and labels into a pandas DataFrame
     df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv')
@@ -63,7 +63,7 @@ for run_name in run_names:
     print(df_continuous)
 
     # Save in case of crop stats are calculated 
-    df_continuous.to_csv(f'{output_path}continuous_{data_type}_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+    df_continuous.to_csv(f'{output_path}{data_type}_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
     print('Continous Stats for each crop are saved to CSV files.')
 
     # Compute stats for continuous variables
@@ -72,7 +72,7 @@ for run_name in run_names:
     continuous_stats.reset_index(inplace=True)
 
     # Save continuous stats to a CSV file
-    continuous_stats.to_csv(f'{output_path}continuous_{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+    continuous_stats.to_csv(f'{output_path}{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
     print('Overall Continous Stats for each cluster are saved to CSV files.')
 
     # Plotting continuous variables box plots

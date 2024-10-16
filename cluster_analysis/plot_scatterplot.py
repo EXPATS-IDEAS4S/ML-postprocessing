@@ -3,7 +3,7 @@
 ##########################################################
 
 import pandas as pd
-import xarray as xr
+#import xarray as xr
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -44,7 +44,7 @@ print(variable_info)
 for run_name in run_names:
 
     # Path to fig folder for outputs
-    output_path = f'/home/daniele/Documenti/Data/Fig/{run_name}/{sampling_type}/'
+    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
 
     # Load CSV file with the crops path and labels into a pandas DataFrame
     df_crops = pd.read_csv(f'{output_path}{data_type}_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv')

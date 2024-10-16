@@ -4,32 +4,36 @@ from glob import glob
 import numpy as np
 import os
 
-run_name = '10th-90th_CMA'
+run_name = '10th-90th'
 
 # Define sampling type
-sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 
-n_subsample = 100  # Number of samples per cluster
+n_subsample = 1000  # Number of samples per cluster
 
 # Paths to CMSAF cloud properties crops
-cloud_properties_path = '/home/daniele/Documenti/Data/cmsaf/nc_clouds/'
+cloud_properties_path = '/data1/crops/cmsaf_2013-2014_expats/nc_clouds/'
 cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
 
 # Path to cluster assignments of crops
-labels_path = f'/home/daniele/Documenti/Data/runs/{run_name}/assignments_800ep.pt'
+labels_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/assignments_800ep.pt'
 
 # Path to cluster distances (from centroids)
-distances_path = f'/home/daniele/Documenti/Data/runs/{run_name}/distance_800ep.pt'
+distances_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/distance_800ep.pt'
 
 # Path to fig folder for outputs
-output_path = f'/home/daniele/Documenti/Data/Fig/{run_name}/{sampling_type}/'
+output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
 
 # Create the directory if it doesn't exist
 os.makedirs(output_path, exist_ok=True)
 
 # Read data
 n_samples = len(cloud_properties_crop_list)
-n_subsample = min(n_subsample, n_samples)  # Ensure it doesn't exceed available samples
+
+if sampling_type=='all':
+    n_subsample = n_samples
+else:
+    n_subsample = min(n_subsample, n_samples)  # Ensure it doesn't exceed available samples
 
 assignments = torch.load(labels_path, map_location='cpu')  # Cluster labels for each sample
 distances = torch.load(distances_path, map_location='cpu')  # Distances to cluster centroids
@@ -94,4 +98,5 @@ df_labels = df_labels[df_labels['label'] != -100]
 print(df_labels)
 
 df_labels.to_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv', index=False)
+
 
