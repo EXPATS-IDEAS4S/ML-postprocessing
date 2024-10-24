@@ -1,13 +1,13 @@
 import pandas as pd
 from aux_functions import pick_variable
 
-run_name = '10th-90th' #['10th-90th', '10th-90th_CMA']
-sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
+run_name = '10th-90th_CMA' #['10th-90th', '10th-90th_CMA']
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 stat = '50' #None  # '50'
-n_subsample = 1000  # Number of samples per cluster
+n_subsample = 33792  # Number of samples per cluster
 
 # Define the data types to retrieve variables from
-data_types = ['space-time', 'continuous', 'topography', 'era5-land', 'categorical']
+data_types = ['space-time', 'continuous', 'categorical', 'topography', 'era5-land']
 
 # Initialize an empty list to hold all variables
 correlation_vars = []

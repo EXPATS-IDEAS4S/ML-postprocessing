@@ -10,12 +10,15 @@ from aux_functions import concatenate_values, extend_labels, plot_single_vars, p
 run_names = ['10th-90th_CMA', '10th-90th']
 
 # Define sampling type
-sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'farthest'  # Options: 'random', 'closest', 'farthest', 'all'
 
 stat = None
 
 # Read data
-n_subsample = 1000  # Number of samples per cluster
+if sampling_type == 'all':
+    n_subsample = 33792  # Number of samples per cluster
+else:
+    n_subsample = 100  # Number of samples per cluster
 
 data_type = 'space-time'  #'continuous' 'topography' 'era5-land'
 

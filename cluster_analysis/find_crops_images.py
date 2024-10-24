@@ -3,19 +3,24 @@ import torch
 from glob import glob
 import numpy as np
 import os
+import shutil  # For copying files
+from PIL import Image
 
 run_names = ['10th-90th', '10th-90th_CMA']
 
 # Define sampling type
-sampling_type = 'farthest'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
 
-n_subsample = 100  # Number of samples per cluster
-
-# Paths to CMSAF cloud properties crops
-cloud_properties_path = '/data1/crops/cmsaf_2013-2014_expats/nc_clouds/'
-cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
+n_subsample = 10  # Number of samples per cluster
 
 for run_name in run_names:
+
+    # Paths to CMSAF cloud properties crops
+    crops_path = f'/data1/crops/ir108_2013-2014_GS_{run_name}/1/'
+    crops_list = sorted(glob(crops_path + '*.tif'))
+
+    # Read data
+    n_samples = len(crops_list)
 
     # Path to cluster assignments of crops
     labels_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/assignments_800ep.pt'
@@ -24,15 +29,12 @@ for run_name in run_names:
     distances_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/distance_800ep.pt'
 
     # Path to fig folder for outputs
-    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
+    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/{n_subsample}/'
 
     # Create the directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
 
-    # Read data
-    n_samples = len(cloud_properties_crop_list)
-
-    if sampling_type=='all':
+    if sampling_type == 'all':
         n_subsample = n_samples
     else:
         n_subsample = min(n_subsample, n_samples)  # Ensure it doesn't exceed available samples
@@ -89,7 +91,7 @@ for run_name in run_names:
 
     # Now, create the DataFrame with the selected subsamples
     df_labels = pd.DataFrame({
-        'path': [cloud_properties_crop_list[i] for i in subsample_indices],
+        'path': [crops_list[i] for i in subsample_indices],
         'label': [assignments[i] for i in subsample_indices]  # The labels of the subsamples
     })
 
@@ -99,6 +101,29 @@ for run_name in run_names:
     # Optionally print and save the dataframe for inspection
     print(df_labels)
 
+    # Save the DataFrame to CSV for later inspection
     df_labels.to_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv', index=False)
 
+    # Loop through each unique cluster
+    for cluster in unique_clusters:
+        # Filter the DataFrame for the current cluster
+        cluster_df = df_labels[df_labels['label'] == cluster]
+        
+        # Loop through each file path and assign a new name based on index
+        for idx, file_path in enumerate(cluster_df['path']):
+            # Extract the original filename without the extension
+            old_filename = os.path.basename(file_path).split('.')[0]
+            
+            # Define the new filename in png format
+            new_filename = f"class-{cluster}_crop-{idx + 1}_{sampling_type}_{old_filename}.png"
+            
+            # Define the destination path (with the new filename)
+            dest_path = os.path.join(output_path, new_filename)
+            
+            # Open the .tif image file
+            with Image.open(file_path) as img:
+                # Convert and save it as a .png file
+                img.save(dest_path, 'PNG')
 
+    print(f'Copied and renamed {len(df_labels)} files to {output_path}')
+    #exit()

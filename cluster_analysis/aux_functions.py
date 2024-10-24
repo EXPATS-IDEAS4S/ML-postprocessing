@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
+from matplotlib.colors import Normalize
 
 
 def pick_variable(data_type):
@@ -66,6 +67,43 @@ def pick_variable(data_type):
         exit()
 
     return vars, vars_long_name, vars_units, vars_logscale, vars_dir
+
+
+
+def get_variable_info(data_type, var_name):
+    """
+    Retrieves information for a specific variable based on the provided data type.
+
+    Parameters:
+    -----------
+    data_type : str
+        The type of data to retrieve variables for.
+    var_name : str
+        The specific variable to retrieve information for (e.g., 'ctp').
+
+    Returns:
+    --------
+    var_info : dict
+        Dictionary containing the variable's long name, unit, logscale, and direction.
+    """
+    # Call the pick_variable function to retrieve lists for the given data_type
+    vars, vars_long_name, vars_units, vars_logscale, vars_dir = pick_variable(data_type)
+
+    # Check if the requested variable exists in the vars list
+    if var_name in vars:
+        index = vars.index(var_name)  # Get the index of the variable
+        
+        # Create a dictionary with all the relevant information
+        var_info = {
+            'variable': var_name,
+            'long_name': vars_long_name[index],
+            'unit': vars_units[index],
+            'logscale': vars_logscale[index],
+            'direction': vars_dir[index]
+        }
+        return var_info
+    else:
+        return f"Variable '{var_name}' not found in the selected data type '{data_type}'."
 
 
 def select_ds(var, datasets):
