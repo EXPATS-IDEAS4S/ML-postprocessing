@@ -3,8 +3,9 @@ import torch
 from glob import glob
 import numpy as np
 import os
-import shutil  # For copying files
 from PIL import Image
+import matplotlib.pyplot as plt
+from matplotlib.image import imread
 
 run_names = ['10th-90th', '10th-90th_CMA']
 
@@ -101,6 +102,12 @@ for run_name in run_names:
     # Optionally print and save the dataframe for inspection
     print(df_labels)
 
+    # Get the list of unique labels (clusters)
+    unique_clusters = df_labels['label'].unique()
+
+    # Optionally print the unique labels for inspection
+    print("Unique labels:", unique_clusters)
+
     # Save the DataFrame to CSV for later inspection
     df_labels.to_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv', index=False)
 
@@ -127,3 +134,27 @@ for run_name in run_names:
 
     print(f'Copied and renamed {len(df_labels)} files to {output_path}')
     #exit()
+
+    # PLOT GENERATION: Display the 10 closest images for each class
+    fig, axes = plt.subplots(n_subsample, len(unique_clusters), figsize=(n_subsample * 3, len(unique_clusters) * 3))
+
+    # Loop over each class and plot images
+    for idx_class, cluster in enumerate(unique_clusters):
+        # Get the images for the current cluster
+        cluster_df = df_labels[df_labels['label'] == cluster]
+
+        # Add column headers for the "cluster numbers"
+        axes[0, idx_class].set_title(f'Cluster {cluster}', fontsize=16)  
+
+        for idx, file_path in enumerate(cluster_df['path'][:n_subsample]):
+            # Read and display the image
+            img = imread(file_path)
+            axes[idx, idx_class].imshow(img, cmap='gray')
+            axes[idx, idx_class].axis('off')  # Hide axis
+
+            if idx_class == 0:
+                # Add label (class) on the leftmost plot of each row
+                axes[idx, 0].set_ylabel(f'{sampling_type} {idx+1}', fontsize=16)
+
+    plt.tight_layout()
+    fig.savefig(f"{output_path}table_crop_images_{sampling_type}_{n_subsample}_{run_name}.png")

@@ -7,7 +7,7 @@ import xarray as xr
 import numpy as np
 from glob import glob
 
-from aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds
+from aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds, plot_joyplot
 
 run_names = ['10th-90th_CMA', '10th-90th']
 
@@ -33,7 +33,7 @@ else:
 # Path to topography data (DEM and land-sea mask)
 era5_path = f'/data1/other_data/ERA5-Land_t2m_snowc_u10_v10_sp_tp/'
 
-data_types = ['era5-land'] #['era5-land','continuous','topography'] # 'era5-land'
+data_types = ['continuous'] #['era5-land','continuous','topography'] # 'era5-land'
 
 #if data_type == 'topography':
 # Path to topography data (DEM and land-sea mask)
@@ -59,13 +59,15 @@ for data_type in data_types:
 
         # Load CSV file with the crops path and labels into a pandas DataFrame
         df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv')
-        #print(df_labels)
+        print(df_labels)
 
         for stat in stats:
 
             # Initialize lists to hold data for continuous and categorical variables
             continuous_data = {var: [] for var in vars}
             labels = []
+            crop_names = []
+            crop_distances = []
 
             # Read the .nc files and extract data
             for i, row in df_labels.iterrows():
@@ -122,11 +124,15 @@ for data_type in data_types:
                     continuous_data = concatenate_values(values, var, continuous_data)
 
                 # Extend labels based on the number of valid entries for this dataset
-                labels = extend_labels(values, labels, row)
+                labels = extend_labels(values, labels, row, 'label')
+                crop_names = extend_labels(values, crop_names, row, 'path')
+                crop_distances = extend_labels(values, crop_distances, row, 'distance') 
 
             # Create DataFrames for continuous and categorical variables
             df_continuous = pd.DataFrame(continuous_data)
             df_continuous['label'] = labels
+            df_continuous['path'] = crop_names
+            df_continuous['distance'] = crop_distances  
 
             print(df_continuous)
 
@@ -135,19 +141,24 @@ for data_type in data_types:
             df_continuous.to_csv(f'{output_path}{data_type}_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
             print('Continous Stats for each crop are saved to CSV files.')
 
-            # Compute stats for continuous variables
-            continuous_stats = df_continuous.groupby('label').agg(['mean', 'std'])
-            continuous_stats.columns = ['_'.join(col).strip() for col in continuous_stats.columns.values]
-            continuous_stats.reset_index(inplace=True)
+            # # Compute stats for continuous variables
+            # continuous_stats = df_continuous.groupby('label').agg(['mean', 'std'])
+            # continuous_stats.columns = ['_'.join(col).strip() for col in continuous_stats.columns.values]
+            # continuous_stats.reset_index(inplace=True)
 
             # Save continuous stats to a CSV file
-            continuous_stats.to_csv(f'{output_path}{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
-            print('Overall Continous Stats for each cluster are saved to CSV files.')
+            #continuous_stats.to_csv(f'{output_path}{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+            #print('Overall Continous Stats for each cluster are saved to CSV files.')
 
-            # Plotting continuous variables box plots
-            #for var, long_name, unit, direction, scale in zip(vars, vars_long_name, vars_units, vars_dir, vars_logscale):
-            #    plot_single_vars(df_continuous, n_subsample, var, long_name, unit, direction, scale, output_path, run_name, sampling_type, stat)
-        
+            # #extract class label
+            # label_names = np.unique(df_continuous['label'].values)
+            # label_names = label_names[label_names != -100]
+            
+            # # Plotting continuous variables box plots
+            # for var, long_name, unit, direction, scale in zip(vars, vars_long_name, vars_units, vars_dir, vars_logscale):
+            #     #plot_single_vars(df_continuous, n_subsample, var, long_name, unit, direction, scale, output_path, run_name, sampling_type, stat)
+            #     for class_label in label_names:
+            #         plot_joyplot(df_continuous, class_label, var, long_name, unit, n_subsample, output_path, run_name, sampling_type)
 
                 
 

@@ -3,6 +3,7 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 from matplotlib.colors import Normalize
+import os
 
 
 def pick_variable(data_type):
@@ -247,7 +248,7 @@ def concatenate_values(values, var, data_dict):
 
 
 
-def extend_labels(values, labels, row):
+def extend_labels(values, labels, row, column):
     """
     Extends the labels list based on the number of valid entries in the dataset.
 
@@ -267,9 +268,9 @@ def extend_labels(values, labels, row):
     """
     # Extend labels based on the number of valid entries for this dataset
     if isinstance(values, np.ndarray):
-        labels.extend([row['label']] * len(values))  # Use len(values) for multiple valid entries
+        labels.extend([row[column]] * len(values))  # Use len(values) for multiple valid entries
     else: # In case of a single value 
-        labels.extend([row['label']])  # If only one valid entry
+        labels.extend([row[column]])  # If only one valid entry
 
     return labels
 
@@ -362,3 +363,70 @@ def plot_single_vars(df, n_subsample, var, long_name, unit, direction, scale, ou
 
 
 
+def plot_joyplot(df, class_label, variable_name, long_name, unit, n_subsample, output_path, run_name, sampling_type, legend=False):
+    """
+    Plots a joy plot (ridge plot) showing the distribution of a variable for the specified number of closest crops in a class,
+    ordered by distance to the centroid, and saves the figure.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        The dataframe containing the data to plot. Expected columns: ['crop_name', 'distance', 'label', variable_name].
+    class_label : str or int
+        The class name or ID to filter data by.
+    variable_name : str
+        The column name for the variable to be plotted.
+    long_name : str
+        The descriptive name of the variable for labeling the plot.
+    unit : str
+        The unit of the variable, included in the x-axis label (optional).
+    n_subsample : int
+        The number of closest crops to plot.
+    output_path : str
+        The path where the plot will be saved.
+    run_name : str
+        A name or identifier for the current run, used in the file name.
+    sampling_type : str
+        The type of sampling used, included in the file name.
+    legend : bool, optional (default=False)
+        If True, a legend is added to the plot.
+    """
+    # Filter data for the specified class label
+    class_df = df[df['label'] == class_label]
+
+    # Sort by distance to order crops from closest to farthest
+    class_df = class_df.sort_values(by='distance')
+
+    # Limit to the specified number of closest crops
+    class_df = class_df.head(n_subsample)
+
+    # Get list of names
+    crop_paths = class_df['path'].to_list()  # Convert to list if needed
+    crop_names = [os.path.basename(path).split('.')[0] for path in crop_paths]
+    class_df['crop_name'] = crop_names  # Add to DataFrame
+
+    # Create the figure with corrected unique crop count
+    plt.figure(figsize=(10, len(class_df['crop_name'].unique()) * 1.5))  # Adjust height based on unique crop names
+
+    # Plot using seaborn's ridge plot (FacetGrid with kdeplot)
+    g = sns.FacetGrid(class_df, row='crop_name', hue='crop_name', aspect=10, height=0.8, palette='viridis')
+    g.map(sns.kdeplot, variable_name, bw_adjust=0.5, fill=True)
+
+    # Set titles and labels
+    g.set_titles("")  # Hide individual subplot titles
+    g.set(yticks=[], ylabel="")
+    g.set_xlabels(f"{long_name} ({unit})" if unit else long_name)
+    g.despine(bottom=True, left=True)
+
+    # Add a legend if specified
+    if legend:
+        g.add_legend(title="Crop")
+
+    # Set a main title for the plot
+    plt.subplots_adjust(top=0.9)
+    #g.fig.suptitle(f"{long_name} Distributions by Crop (Class: {class_label}, ordered by distance)")
+
+    # Save the plot
+    plt.tight_layout()
+    output_file = f"{output_path}joyplot_{variable_name}_{sampling_type}_{n_subsample}_{class_label}_{run_name}.png"
+    plt.savefig(output_file)

@@ -7,7 +7,7 @@ import os
 run_names = ['10th-90th', '10th-90th_CMA']
 
 # Define sampling type
-sampling_type = 'farthest'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 
 n_subsample = 100  # Number of samples per cluster
 
@@ -50,6 +50,7 @@ for run_name in run_names:
 
     # Prepare a list for subsample indices
     subsample_indices = []
+    subsample_distances = []
 
     # Loop over each cluster and sample data
     for cluster in unique_clusters:
@@ -84,13 +85,18 @@ for run_name in run_names:
         else:
             raise ValueError("Invalid sampling type. Choose from 'random', 'closest', 'farthest', or 'all'.")
         
-        # Add selected indices to the subsample list
+        # Collect distances for the selected samples
+        selected_distances = distances[selected_indices]
+
+        # Add selected indices and distances to the lists
         subsample_indices.extend(selected_indices)
+        subsample_distances.extend(selected_distances)
 
     # Now, create the DataFrame with the selected subsamples
     df_labels = pd.DataFrame({
         'path': [cloud_properties_crop_list[i] for i in subsample_indices],
-        'label': [assignments[i] for i in subsample_indices]  # The labels of the subsamples
+        'label': [assignments[i] for i in subsample_indices],  # The labels of the subsamples
+        'distance': subsample_distances  # Corresponding distances
     })
 
     # Filter out invalid labels (-100)
