@@ -395,38 +395,56 @@ def plot_joyplot(df, class_label, variable_name, long_name, unit, n_subsample, o
     class_df = df[df['label'] == class_label]
 
     # Sort by distance to order crops from closest to farthest
-    class_df = class_df.sort_values(by='distance')
-
-    # Limit to the specified number of closest crops
-    class_df = class_df.head(n_subsample)
+    class_df = class_df.sort_values(by='distance', ascending=False) #cosine distance, higher values (~1) means closer to centroid
 
     # Get list of names
     crop_paths = class_df['path'].to_list()  # Convert to list if needed
     crop_names = [os.path.basename(path).split('.')[0] for path in crop_paths]
     class_df['crop_name'] = crop_names  # Add to DataFrame
 
-    # Create the figure with corrected unique crop count
-    plt.figure(figsize=(10, len(class_df['crop_name'].unique()) * 1.5))  # Adjust height based on unique crop names
+    # Get the first n unique crop names
+    unique_crop_names = class_df['crop_name'].unique()[:n_subsample]
+    # Filter the dataframe to keep rows with the first n unique crop names
+    class_df = class_df[class_df['crop_name'].isin(unique_crop_names)]
+
+    # Keep only the relevant columns
+    class_df = class_df[['crop_name', 'distance', variable_name]]
 
     # Plot using seaborn's ridge plot (FacetGrid with kdeplot)
-    g = sns.FacetGrid(class_df, row='crop_name', hue='crop_name', aspect=10, height=0.8, palette='viridis')
-    g.map(sns.kdeplot, variable_name, bw_adjust=0.5, fill=True)
+    g = sns.FacetGrid(class_df, row='crop_name', hue='distance', aspect=20, height=0.1, palette='viridis')
+    g.map(sns.kdeplot, variable_name, bw_adjust=0.5, fill=True, alpha=0.6)
+    g.map(sns.kdeplot, variable_name, clip_on=False, color="w", lw=1, bw_adjust=.5)
 
-    # Set titles and labels
-    g.set_titles("")  # Hide individual subplot titles
-    g.set(yticks=[], ylabel="")
-    g.set_xlabels(f"{long_name} ({unit})" if unit else long_name)
+    # Remove axes details that don't play well with overlap
+    g.set_titles('')  
+    g.set(yticks=[], xticks=[], ylabel="")
     g.despine(bottom=True, left=True)
 
+    # Set x-axis labels only for the first plot
+    #g.set_xlabels('')  # Remove x-axis labels from all plots
+    #g.axes.flat[0].set_xlabel(f"{variable_name} ({unit})" if unit else long_name)  # Set x-axis label for the first plot
+
+    # passing color=None to refline() uses the hue mapping
+    #g.refline(y=0, linewidth=1, linestyle="-", color=None, clip_on=False)
+     
+    #Define and use a simple function to label the plot in axes coordinates
+    def label(x, color, label):
+        ax = plt.gca()
+        ax.text(0, .2, label, fontweight="bold", color=color,
+                ha="left", va="center", transform=ax.transAxes)
+    #g.map(label, variable_name)
+
+    # Set the subplots to overlap
+    g.figure.subplots_adjust(hspace=-.25)
+    
     # Add a legend if specified
     if legend:
         g.add_legend(title="Crop")
 
     # Set a main title for the plot
-    plt.subplots_adjust(top=0.9)
-    #g.fig.suptitle(f"{long_name} Distributions by Crop (Class: {class_label}, ordered by distance)")
+    g.figure.subplots_adjust(top=0.95)
+    g.figure.suptitle(f"{long_name} crop distribution ordered by distance (Class: {class_label})")
 
     # Save the plot
-    plt.tight_layout()
     output_file = f"{output_path}joyplot_{variable_name}_{sampling_type}_{n_subsample}_{class_label}_{run_name}.png"
-    plt.savefig(output_file)
+    g.savefig(output_file, bbox_inches='tight')
