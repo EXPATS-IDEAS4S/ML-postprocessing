@@ -6,29 +6,29 @@ import random
 import torch
 import openTSNE
 
-run_names = ['10th-90th_CMA', '10th-90th_CMA']
+run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 
-reduction_method = 'tsne' # Options: 'tsne', 'isomap', 
+reduction_method = 'isomap' # Options: 'tsne', 'isomap', 
 #if using tsne select the random state
 random_state = 3 # [0,3,16,23,57]
 
 #Set to the number of n subsample if you want to use a random sample of the data
 random_samples = True
-n_random_samples = 1000
+n_random_samples = 10000
 
 #Set True if you want to iclude centroids in the analysis
-centroids = True
+centroids = False
 
 #Set other parameters
 n_features = 128 #Dimension of the feature space
-n_epochs = 500 #Number of epochs for the training
+n_epochs = 800 #Number of epochs for the training
 n_components = 2 #Number of components to visualize for the embedding
 
 for run_name in run_names:
     #Path to the features 
-    common_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/features/'  ##
+    common_path = f'/data1/runs/{run_name}/features/'  ##
     #Path to save the output
-    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/'
+    output_path = f'/home/Daniele/fig/{run_name}/'
     
     #filenames
     filename1 = 'rank0_chunk0_train_heads_inds.npy' 
@@ -53,16 +53,17 @@ for run_name in run_names:
         data3 = data3[random_indices, :]
     #print(data3)
     # Reshape data if necessary
-    data3 = np.reshape(data3,(n_crops,n_features))  #DC value 664332, it should be the train num samples
+    data = np.reshape(data3,(n_crops,n_features))  #DC value 664332, it should be the train num samples
     print(f'Feature shape: {np.shape(data3)}')
     print(f'Index shape: {data1.shape}')
 
     if centroids:
         #Open centroids (TODO understand why centroids0) 
-        path_centroids = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/centroids0.pt'
+        path_centroids = f'/data1/runs/{run_name}/checkpoints/centroids0.pt'
         centroids = torch.load(path_centroids,map_location='cpu')
         centroids_np = centroids.numpy()  # Convert to numpy array if necessary
         print(f'Centroids shape: {np.shape(centroids_np)}')
+        del centroids
 
         n_classes = centroids_np.shape[0]  #9
         centroids_np = np.reshape(centroids_np,(n_classes,n_features))  #DC value 664332, it should be the train num samples
@@ -86,7 +87,57 @@ for run_name in run_names:
         indices = data1
         output_filename = f'{reduction_method}_{run_name}_{n_components}d_cosine_{n_epochs}ep_{n_crops}samples.csv'
 
+    #check how the data look without reduction (plot projection of the data)
+
+    # # Step 1: Calculate variance along each dimension and select the top 3 dimensions
+    # variances = np.var(crops_features, axis=0)
+    # top_three_dims = np.argsort(variances)[:3]  # Indices of top 3 dimensions with highest variance
+
+    # # Step 2: Generate all pairs of these 3 dimensions
+    # from itertools import combinations
+    # dimension_pairs = list(combinations(top_three_dims, 2))
+
+    # # Step 3: Loop over each pair, create and save the plot
+    # for dim_x, dim_y in dimension_pairs:
+    #     # Extract the two selected dimensions for plotting
+    #     data_x = crops_features[:, dim_x]
+    #     data_y = crops_features[:, dim_y]
+
+    #     # Separate data based on `type_labels`
+    #     crop_points_x = data_x[type_labels == 'crop']
+    #     crop_points_y = data_y[type_labels == 'crop']
+    #     centroid_points_x = data_x[type_labels == 'centroid']
+    #     centroid_points_y = data_y[type_labels == 'centroid']
+
+    #     # Create plot
+    #     import matplotlib.pyplot as plt
+    #     plt.figure(figsize=(8, 6))
+
+    #     # Plot 'crop' points as small blue dots
+    #     plt.scatter(crop_points_x, crop_points_y, s=10, color='blue', alpha=0.5, label='Crop', marker='o')
+
+    #     # Plot 'centroid' points as larger orange stars
+    #     plt.scatter(centroid_points_x, centroid_points_y, s=100, color='orange', alpha=0.7, label='Centroid', marker='*')
+
+    #     # Customize plot appearance
+    #     plt.xlabel(f'Dimension {dim_x + 1} (High Variance)')
+    #     plt.ylabel(f'Dimension {dim_y + 1} (High Variance)')
+    #     plt.title(f"2D Projection Along Dimensions {dim_x + 1} and {dim_y + 1}")
+    #     plt.legend()
+
+    #     # Save the plot with a filename including the dimension numbers
+    #     plot_filename = f"{output_path}embedding_2d_projection_dim_{dim_x + 1}_vs_dim_{dim_y + 1}.png"
+    #     plt.savefig(plot_filename, bbox_inches='tight')
+    #     print(f"Saved plot as {plot_filename}")
+
+    #     # Close the plot to save memory
+    #     plt.close()
+    
     #apply the reduction method
+
+    import gc    
+    gc.collect()
+
 
     if reduction_method == 'isomap':
         print('Processing isomap...')
@@ -110,20 +161,18 @@ for run_name in run_names:
         print('Processing tsne...')
         #tsne parameters here:
         #https://opentsne.readthedocs.io/en/stable/api/sklearn.html#openTSNE.sklearn.TSNE
-        #%time
-        X_transformed = openTSNE.TSNE(
-            perplexity=30,
-            initialization="pca",
-            metric="cosine",
-            n_jobs=-1,
-            random_state=random_state,
-        ).fit(crops_features)
+        
+        X_transformed = openTSNE.TSNE(perplexity=30,initialization="pca",metric="cosine",n_jobs=-1,random_state=random_state).fit(data)
+        # from sklearn.manifold import TSNE
+        # X_transformed = TSNE(n_components=2, random_state=random_state, perplexity=30, metric='cosine', init='pca').fit_transform(crops_features)
     else:
         print('reduction method not recognized')
 
     print(f'{reduction_method} calculated')
     print(X_transformed.shape)
     print(X_transformed)
+    np.save(f'{output_path}{reduction_method}_pca_cosine_{run_name}_{random_state}.npy', X_transformed)
+
     # Create a DataFrame with the Isomap-transformed data and the random indices
     df = pd.DataFrame(X_transformed, columns=[f'Component_{i+1}' for i in range(n_components)])
     df['Type'] = type_labels

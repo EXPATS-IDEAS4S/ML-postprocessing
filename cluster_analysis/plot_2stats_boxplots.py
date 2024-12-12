@@ -1,7 +1,7 @@
 import pandas as pd
 from aux_functions import pick_variable, plot_single_vars
 
-run_names = ['10th-90th_CMA','10th-90th']  #['10th-90th', '10th-90th_CMA']
+run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']  #['10th-90th', '10th-90th_CMA']
 
 # Define sampling type
 sampling_types = ['closest','farthest']  # Options: 'random', 'closest', 'farthest', 'all'
@@ -9,9 +9,9 @@ sampling_types = ['closest','farthest']  # Options: 'random', 'closest', 'farthe
 # Pick the statistics to compute for each crop, the percentile values
 #'1%', '5%', '25%', '50%', '75%', '95%', '99%' ,None if all points are needed
 #use e.g '25-75' if interquartile range want to be calculated
-stat = None  #['1','50','99','25-75'] 
+stat = 50  #['1','50','99','25-75'] 
 
-data_type = 'era5-land' #'continuous' 'topography' 'era5-land' 'cateogrical' 'space-time'
+data_type = 'continuous' #'continuous' 'topography' 'era5-land' 'cateogrical' 'space-time'
 
 # Read data
 n_subsample = 100  # Number of samples per cluster
@@ -19,7 +19,7 @@ n_subsample = 100  # Number of samples per cluster
 for run_name in run_names:
 
     # Path to fig folder for outputs
-    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/'
+    output_path = f'/home/Daniele/fig/{run_name}/'
 
     # Read the data for each sampling type and concatenate them for comparison
     combined_data = []

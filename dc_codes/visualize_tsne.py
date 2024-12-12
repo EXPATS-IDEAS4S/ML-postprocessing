@@ -1,3 +1,53 @@
+"""
+This script visualizes high-dimensional feature embeddings reduced to 2D space using Isomap or t-SNE and
+overlays image crops corresponding to each feature in the embedding plot. It employs random sampling, color-coded
+labels, and image adjustments to improve visualization clarity.
+
+Modules:
+    - numpy: For numerical operations and data manipulation.
+    - pandas: To create and manage data frames of feature embeddings and labels.
+    - matplotlib: For plotting 2D scatter plots and annotated images.
+    - OpenCV (cv2): For image manipulation and resizing.
+    - torch: For handling PyTorch tensor data such as checkpoint assignments.
+    - glob: For gathering file paths in directories.
+    - CSS4_COLORS, colors: For mapping color names to RGB values.
+
+Parameters:
+    - scale: Identifier string for the dataset, used for setting file paths.
+    - random_state: Integer seed for consistency across random samples.
+    - reduction_method: Dimensionality reduction method ('tsne' or 'isomap').
+    - n_random_samples: Number of samples for dimensionality reduction if random sampling is enabled.
+    - image_path: Path to the directory containing image crops.
+    - colors_per_class1 and colors_per_class1_names: Dictionaries defining color codes for each label class.
+
+Workflow:
+    1. **Data Preparation**: Loads feature indices, targets, and embeddings, along with checkpoint assignments.
+    2. **Color Mapping**: Converts label colors to normalized RGB values for plotting.
+    3. **Dimensionality Reduction**: Uses precomputed t-SNE or Isomap results for 2D scatter plots.
+    4. **Scaling and Transformation**: Scales t-SNE or Isomap coordinates to fit within [0, 1] range.
+    5. **Image Selection and Processing**:
+        - Extracts paths for specific image crops based on class samples.
+        - Resizes images to a specified size and draws color-coded borders based on label class.
+    6. **Plot Creation**: Generates scatter plots and composite images with embedded image crops at their respective
+       2D coordinates.
+
+Functions:
+    - `scale_to_01_range`: Scales input array to fit within [0, 1] range.
+    - `compute_plot_coordinates`: Determines plot coordinates for image placement based on t-SNE values.
+    - `scale_image`: Rescales images to a maximum size while maintaining aspect ratio.
+    - `draw_rectangle_by_class`: Adds color-coded borders to images based on their class label.
+
+Usage:
+    - Set `scale`, `random_state`, `reduction_method`, `image_path`, and `output_path` to desired values.
+    - To use other dimensionality reduction methods, adjust the `reduction_method` and filenames accordingly.
+
+Notes:
+    - The script checks for coordinates out of bounds when overlaying images and skips if necessary.
+    - Adjust `n_random_samples` for quicker processing, especially on large datasets.
+    - The saved figure shows the 2D embedding with randomly sampled image crops, color-coded by class label.
+"""
+
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -6,38 +56,62 @@ from glob import glob
 import torch
 from matplotlib.colors import CSS4_COLORS
 from matplotlib import colors as mcolors  # Correct import for colors
+import re
+from matplotlib.collections import LineCollection
+from matplotlib.colors import Normalize
 
-scale = '10th-90th_CMA'
+scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_case_study'
 random_state = '3' #all visualization were made with random state 3
 #dcv_cot_128x128_k7_germany_60kcrops
 #dcv2_ir_128x128_k7_germany_70kcrops
-output_path = f'/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_{scale}/'
+output_path = f'/home/Daniele/fig/{scale}/'
 
-tsne_path = f'/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_{scale}/'
+tsne_path = f'/home/Daniele/fig/{scale}/'
 
-tsne_filename = f'tsne_pca_cosine_{scale}_{random_state}.npy' 
+reduction_method = 'tsne' # Options: 'tsne', 'isomap',
+n_random_samples = None #30000
+
+case_study = True
+
+if reduction_method == 'tsne':
+    tsne_filename = f'{reduction_method}_pca_cosine_{scale}_{random_state}.npy'  
+elif reduction_method == 'isomap':
+    tsne_filename = f'{reduction_method}_cosine_{scale}_{n_random_samples}.npy'
+    indeces_filename = f'{reduction_method}_cosine_{scale}_{n_random_samples}_indeces.npy' 
 filename = tsne_filename
 #filename = 'isomap_2d_cosine_800ep_20000samples.csv'
 #tsne_filename = 'tsnegermany_pca_cosine_500annealing50_800ep.npy'
 #tsne_filename = 'tsnegermany_pca_cosine_500multiscale50_800ep.npy'
 
-image_path = f'/data1/crops/ir108_2013-2014_GS_{scale}/1/' #cot_2013_128_germany, ir108_2013_128_germany
+image_path = f'/data1/crops/ir108_2013-2014-2015-2016_200K-300K_CMA_case_study/1/' #cot_2013_128_germany, ir108_2013_128_germany
 crop_path_list = sorted(glob(image_path+'*.tif'))
 #print(len(crop_path_list))
+
+if case_study:
+    #get only the case study crops
+    case_study_crops = sorted(glob(image_path+'*20220915*'))
+    #print(len(case_study_crops))
+    #print(case_study_crops) 
+
 
 filename1 = 'rank0_chunk0_train_heads_inds.npy' 
 filename2 = 'rank0_chunk0_train_heads_targets.npy'
 filename3 = 'rank0_chunk0_train_heads_features.npy'
 
-path_feature = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/features/'
+path_feature = f'/data1/runs/{scale}/features/'
 
-checkpoints_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/checkpoints/'  
+checkpoints_path = f'/data1/runs/{scale}/checkpoints/'  
 
 assignments = torch.load(checkpoints_path+'assignments_800ep.pt',map_location='cpu')
 sample_list = np.load(checkpoints_path+'samples_k7_800ep.npy')
 
 data1 = np.load(path_feature+filename1)
 print(data1)
+if n_random_samples:
+    data1 = np.load(tsne_path+indeces_filename)
+
+print(data1.shape, data1)
+
 
 print(assignments) #TODO it has 3 rows, DC used the first (why?)
 
@@ -55,7 +129,7 @@ colors_per_class1 = {
     '5' : [71, 48, 2],
     '6' : [151, 31, 52],
     '7' : [0, 133, 251],
-    #'8' : [248,240,202 ],
+    '8' : [248,240,202 ],
     #'9' : [100, 100, 255],
 }
 
@@ -66,10 +140,10 @@ colors_per_class1_norm = {k: np.array(v) / 255.0 for k, v in colors_per_class1.i
 # Define the color names for each class
 colors_per_class1_names = {
     '0': 'darkgray', 
-    '1': 'black',
+    '1': 'darkslategrey',
     '2': 'peru',
-    '3': 'beige',
-    '4': 'olivedrab',
+    '3': 'orangered',
+    '4': 'lightcoral',
     '5': 'deepskyblue',
     '6': 'purple',
     '7': 'lightblue',
@@ -141,12 +215,24 @@ def draw_rectangle_by_class(image, label):
 
     return image
 
+def extract_hour(location):
+    match = re.search(r'_(\d{2}):\d{2}_', location)
+    if match:
+        return int(match.group(1))  # Extract and convert the hour to an integer
+    return None
+
+
+
 
 tsne = np.load(tsne_path+tsne_filename)
+print(tsne.shape, tsne)
+#exit()
 
 # extract x and y coordinates representing the positions of the images on T-SNE plot
 tx = tsne[:, 0]
 ty = tsne[:, 1]
+print(np.sum(ty))
+
 
 tx = scale_to_01_range(tx)
 ty = scale_to_01_range(ty)
@@ -157,25 +243,53 @@ df = pd.DataFrame({'Component_1': tx, 'Component_2': ty})
 # Create a DataFrame for labels
 df_labels = pd.DataFrame({'y': '', 'index': data1})
 df_labels.set_index('index', inplace=True)
+print(df_labels)
 
-for index in range(len(data1)):
-    df_labels.loc[index] = assignments[0, :].cpu()[index]
+labels = assignments[0, :].cpu().numpy()
+selected_labels = labels[data1]
 
-df_labels['location'] = crop_path_list
+#for index in range(len(data1)):
+#    df_labels.loc[index] = assignments[0, :].cpu()[index]
+
+df_labels['y'] = selected_labels
+print(df_labels)
+
+print(type(data1))
+print(data1)
+# Using a list comprehension to get elements at indices in data1
+selected_elements = [crop_path_list[i] for i in data1]
+
+df_labels['location'] = selected_elements
+
+df_labels['Component_1'] = tx
+df_labels['Component_2'] = ty
+
+if case_study:
+    # Add the 'case_study' column based on whether 'location' is in 'case_study_crops'
+    df_labels['case_study'] = df_labels['location'].isin(case_study_crops)
+
 
 print(df_labels)
 
 
 # Reset the index of df2 to turn it into a column
-df = df.reset_index()
+#df = df.reset_index()
 
-print(df)
+#print(df)
 
 # Merge df1 with df2_reset on Selected_Index and index
-df_subset = pd.merge(df, df_labels, on='index')# left_on='Selected_Index', right_on='index', how='left')
+#df_subset = pd.merge(df, df_labels, on='index')# left_on='Selected_Index', right_on='index', how='left')
+
+#print(df_subset)
+
 
 # Drop the 'index' column if it is no longer needed
-df_subset = df_subset.drop(columns=['index'])
+df_subset = df_labels#.drop(columns=['index'])
+
+
+
+# Apply the extraction function to get the hours
+df_subset['hour'] = df_subset['location'].apply(extract_hour)
 
 print(df_subset)
 
@@ -206,10 +320,52 @@ fig, ax = plt.subplots(figsize=(16, 10))
 scatter = ax.scatter(df_subset2['Component_1'], df_subset2['Component_2'],
                      c=df_subset2['color'].tolist(), alpha=0.5, s=20)
 
+if case_study:
+    # Filter case study points
+    #case_study_points = df_subset[df_subset['case_study'] == True]
+    #print(case_study_points['location'].tolist())    
+    #exit()
+
+    # Plot a continuous red line through the case study points
+    #ax.plot(case_study_points['Component_1'], case_study_points['Component_2'],
+    #    color='red', linewidth=2, linestyle='-', label='Case Study')
+
+    # Step 2: Create a colormap for the hours
+    cmap = plt.cm.viridis  # You can choose any colormap you like
+    norm = Normalize(vmin=0, vmax=23)  # Normalize the hour values between 0 and 23
+
+    # Map the hour to colors
+    df_subset['color_by_hour'] = df_subset['hour'].apply(lambda x: cmap(norm(x)) if x is not None else (0, 0, 0, 0))
+
+    # Step 3: Create segments for the LineCollection
+    points = np.array([df_subset['Component_1'], df_subset['Component_2']]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    # Step 4: Filter segments for case study points
+    case_study_points = df_subset[df_subset['case_study'] == True]
+    case_study_segments = np.array([case_study_points['Component_1'], case_study_points['Component_2']]).T.reshape(-1, 1, 2)
+    case_study_segments = np.concatenate([case_study_segments[:-1], case_study_segments[1:]], axis=1)
+
+    # Colors for the case study segments based on the hour
+    case_study_colors = case_study_points['color_by_hour'].iloc[:-1].tolist()
+
+    # Add the colored line for the case study
+    lc = LineCollection(case_study_segments, colors=case_study_colors, linewidths=10)
+    ax.add_collection(lc)
+
+    # Add a colorbar for the hour
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])  # Required for the colorbar
+    cbar = fig.colorbar(sm, ax=ax)
+    cbar.set_label('Hour of the Day', fontsize=16)
+    cbar.ax.tick_params(labelsize=14)
+
+
+
 # Add legend
 handles = [plt.Line2D([0], [0], marker='o', color='w', markerfacecolor=colors_per_class1_norm[label], markersize=10)
            for label in colors_per_class1_norm.keys()]
-ax.legend(handles, colors_per_class1_norm.keys(), title="Labels")
+#ax.legend(handles, colors_per_class1_norm.keys(), title="Labels")
 
 # Set tick parameters
 ax.tick_params(axis='both', which='major', labelsize=20)
@@ -254,7 +410,7 @@ print(tsne_plot.shape)
 #df_subset2 = df_subset1.sample(n = 20000)
 
 #number of crops to plot in the feature space
-n1=30
+n1=50
 
 a1=df_subset1.query("y == 0").sample(n=n1)
 a2=df_subset1.query("y == 1").sample(n=n1)
@@ -311,7 +467,7 @@ for i,index in enumerate(indices):
     # x=df_conc.loc[df_conc['index'] == index,'Component_2'].item()
     image = cv2.imread(image_path)
     image = scale_image(image, max_image_size)
-    image = draw_rectangle_by_class(image, str(label))
+    #image = draw_rectangle_by_class(image, str(label))
     #print(image.shape)
 
     tl_x, tl_y, br_x, br_y = compute_plot_coordinates(image, x, y, image_centers_area_size, offset, [min_2,max_2,min_1,max_1])
@@ -324,7 +480,7 @@ for i,index in enumerate(indices):
     else:
         print(f"Skipping out-of-bounds slice: tl_x={tl_x}, br_x={br_x}, tl_y={tl_y}, br_y={br_y}")
 
-plt.imshow(tsne_plot[:, :, ::-1])
+plt.imshow(tsne_plot[:, :, ::-1])#, cmap='viridis')
 plt.tick_params(left = False, right = False , labelleft = False ,
                 labelbottom = False, bottom = False)
 

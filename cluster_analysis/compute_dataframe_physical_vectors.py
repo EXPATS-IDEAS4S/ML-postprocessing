@@ -1,13 +1,19 @@
 import pandas as pd
 from aux_functions import pick_variable
+from glob import glob
 
-run_name = '10th-90th_CMA' #['10th-90th', '10th-90th_CMA']
+run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA' #['10th-90th', '10th-90th_CMA']
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 stat = '50' #None  # '50'
-n_subsample = 33792  # Number of samples per cluster
+
+# Paths to CMSAF cloud properties crops
+cloud_properties_path = '/data1/crops/cmsaf_2013-2014-2015-2016_expats/nc_clouds/'
+cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
+n_samples = len(cloud_properties_crop_list)
+n_subsample = n_samples  # Number of samples per cluster
 
 # Define the data types to retrieve variables from
-data_types = ['space-time', 'continuous', 'categorical', 'topography', 'era5-land']
+data_types = ['space-time', 'continuous', 'categorical']#, 'topography', 'era5-land']
 
 # Initialize an empty list to hold all variables
 correlation_vars = []
@@ -24,7 +30,7 @@ merged_df = None
 #for run_name in run_names:
     
 # Path to fig folder for outputs
-output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
+output_path = f'/home/Daniele/fig/{run_name}/{sampling_type}/'
 
 # Loop over each data type to retrieve variables and append to the list
 for data_type in data_types:
@@ -42,7 +48,7 @@ for data_type in data_types:
         merged_df = df_crops#.drop(columns=['label'])
     else:
         # Merge DataFrames by 'label', avoiding duplicates
-        merged_df = pd.concat([merged_df, df_crops.drop(columns=['label'])], axis=1)
+        merged_df = pd.concat([merged_df, df_crops.drop(columns=['label','path','distance'])],  axis=1)
 
 print(merged_df)
 

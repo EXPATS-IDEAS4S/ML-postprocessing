@@ -1,30 +1,58 @@
+"""
+Sample Cloud Properties Based on Cluster Proximity and Save Subsamples
+
+This script processes cloud property crop images by sampling cluster-based subsamples based on specified criteria. 
+For each specified run, it loads cluster assignments and distances from centroids, then selects a subset of images 
+from each cluster based on the chosen sampling method. The results are saved to CSV files with the selected sample 
+paths, cluster labels, and distances.
+
+Parameters:
+    run_names (list): Names of training runs to process (defines folder paths for clusters).
+    sampling_type (str): Sampling criterion for selecting samples from clusters; options are:
+                         - 'random': Random selection from each cluster.
+                         - 'closest': Samples closest to the cluster centroid.
+                         - 'farthest': Samples farthest from the cluster centroid.
+                         - 'all': All samples in the cluster (up to `n_subsample`).
+    n_subsample (int): Maximum samples per cluster (if applicable to the sampling type).
+
+Paths:
+    cloud_properties_path (str): Path to cloud property images in .nc format.
+    labels_path (str): Path to cluster assignments (.pt format).
+    distances_path (str): Path to cluster centroid distances (.pt format).
+    output_path (str): Output directory for CSV files containing sampled data.
+
+Output:
+    CSV files containing paths, labels, and distances of selected samples, saved to `output_path`..
+"""
+
 import pandas as pd
 import torch
 from glob import glob
 import numpy as np
 import os
 
-run_names = ['10th-90th', '10th-90th_CMA']
+run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 
 # Define sampling type
-sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'farthest'  # Options: 'random', 'closest', 'farthest', 'all'
 
 n_subsample = 100  # Number of samples per cluster
 
 # Paths to CMSAF cloud properties crops
-cloud_properties_path = '/data1/crops/cmsaf_2013-2014_expats/nc_clouds/'
+cloud_properties_path = '/data1/crops/cmsaf_2013-2014-2015-2016_expats/nc_clouds/'
 cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
+print(len(cloud_properties_crop_list))
 
 for run_name in run_names:
 
     # Path to cluster assignments of crops
-    labels_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/assignments_800ep.pt'
+    labels_path = f'/data1/runs/{run_name}/checkpoints/assignments_800ep.pt'
 
     # Path to cluster distances (from centroids)
-    distances_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{run_name}/checkpoints/distance_800ep.pt'
+    distances_path = f'/data1/runs/{run_name}/checkpoints/distance_800ep.pt'
 
     # Path to fig folder for outputs
-    output_path = f'/home/Daniele/fig/cma_analysis/{run_name}/{sampling_type}/'
+    output_path = f'/home/Daniele/fig/{run_name}/{sampling_type}/'
 
     # Create the directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)

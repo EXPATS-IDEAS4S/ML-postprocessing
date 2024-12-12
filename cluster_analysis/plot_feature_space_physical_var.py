@@ -6,55 +6,59 @@ import torch
 import seaborn as sns
 from scipy.interpolate import griddata
 from scipy.stats import gaussian_kde
+import cmcrameri.cm as cmc
 
 from feature_space_plot_functions import name_to_rgb, scale_to_01_range
 from feature_space_plot_functions import colors_per_class1_names
 from aux_functions import get_variable_info
 
-reduction_method = 'isomap' #'tsne
+reduction_method = 'tsne' #'tsne
 variable = 'cot'
-data_type = 'continouos'
-scale = '10th-90th_CMA'
+data_type = 'continuous' #'continuous' 
+scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 random_state = '3' #all visualization were made with random state 3
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 stat = '50' #None  # '50'
-n_subsample = 33792 #1000  # Number of samples per cluster
-cmap = 'RdYlBu_r'
+cmap = cmc.imola #RdYlBu_r'
+
+# Paths to CMSAF cloud properties crops
+cloud_properties_path = '/data1/crops/cmsaf_2013-2014-2015-2016_expats/nc_clouds/'
+cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
+n_samples = len(cloud_properties_crop_list)
+n_subsample = n_samples #1000  # Number of samples per cluster
 
 #Pick uynits
 info_var = get_variable_info(data_type, variable)
 print(info_var)
 
 # Path to fig folder for outputs
-output_path = f'/home/Daniele/fig/cma_analysis/{scale}/{sampling_type}/'
-
-if reduction_method=='tsne':
-    tsne_path = f'/home/Daniele/fig/dcv_ir108_128x128_k9_30k_grey_{scale}/'
-    filename = f'tsne_pca_cosine_{scale}_{random_state}.npy' 
-    tsne = np.load(tsne_path+filename)
-
-    # extract x and y coordinates representing the positions of the images on T-SNE plot
-    tx = tsne[:, 0]
-    ty = tsne[:, 1]
-
-    tx = scale_to_01_range(tx)
-    ty = scale_to_01_range(ty)
-
-    # Create a DataFrame for T-SNE coordinates
-    df_tsne = pd.DataFrame({'Component_1': tx, 'Component_2': ty})
-
-elif reduction_method=='isomap':
-    tsne_path = f'/home/Daniele/fig/cma_analysis/{scale}/'
-    filename = f'isomap_{scale}_2d_cosine_500ep_Nonesamples.csv'
-    df_tsne = pd.read_csv(tsne_path+filename)
-    #df_tsne = df_tsne.drop('Selected_Index')
-    print(df_tsne)
-    #exit()
-else:
-    print('reduction method not supported!')
+output_path = f'/home/Daniele/fig/{scale}/{sampling_type}/'
 
 
-image_path = f'/data1/crops/ir108_2013-2014_GS_{scale}/1/' #cot_2013_128_germany, ir108_2013_128_germany
+tsne_path = f'/home/Daniele/fig/{scale}/'
+filename = f'{reduction_method}_pca_cosine_{scale}_{random_state}.npy' 
+#filename = f'{reduction_method}_cosine_{scale}_{n_subsample}.npy' 
+tsne = np.load(tsne_path+filename)
+
+# extract x and y coordinates representing the positions of the images on T-SNE plot
+tx = tsne[:, 0]
+ty = tsne[:, 1]
+
+tx = scale_to_01_range(tx)
+ty = scale_to_01_range(ty)
+
+
+# elif reduction_method=='isomap':
+#     tsne_path = f'/home/Daniele/fig/cma_analysis/{scale}/'
+#     filename = f'isomap_{scale}_2d_cosine_500ep_Nonesamples.csv'
+#     df_tsne = pd.read_csv(tsne_path+filename)
+#     #df_tsne = df_tsne.drop('Selected_Index')
+#     print(df_tsne)
+#     #exit()
+# else:
+#     print('reduction method not supported!')
+
+image_path = f'/data1/crops/ir108_2013-2014-2015-2016_200K-300K_CMA/1/' #cot_2013_128_germany, ir108_2013_128_germany
 crop_path_list = sorted(glob(image_path+'*.tif'))
 #print(len(crop_path_list))
 
@@ -62,15 +66,23 @@ filename1 = 'rank0_chunk0_train_heads_inds.npy'
 #filename2 = 'rank0_chunk0_train_heads_targets.npy'
 #filename3 = 'rank0_chunk0_train_heads_features.npy'
 
-path_feature = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/features/'
+path_feature = f'/data1/runs/{scale}/features/'
 
-checkpoints_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/checkpoints/'  
+checkpoints_path = f'/data1/runs/{scale}/checkpoints/'  
 
 assignments = torch.load(checkpoints_path+'assignments_800ep.pt',map_location='cpu')
 sample_list = np.load(checkpoints_path+'samples_k7_800ep.npy')
 
 data1 = np.load(path_feature+filename1)
 print(data1)
+if n_subsample < n_samples:
+    indeces_filename = filename.split('.')[0] + '_indeces.npy' 
+    indeces = np.load(tsne_path+indeces_filename)
+    crop_path_list = [crop_path_list[i] for i in indeces]
+    data1 = indeces
+
+# Create a DataFrame for T-SNE coordinates
+df_tsne = pd.DataFrame({'Component_1': tx, 'Component_2': ty, 'Selected_Index': data1})
 
 print(assignments) #TODO it has 3 rows, DC used the first (why?)
 
@@ -78,13 +90,19 @@ print(assignments) #TODO it has 3 rows, DC used the first (why?)
 #distances_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{scale}/checkpoints/distance_800ep.pt'
 
 #Load the path and labels of the nc crops
-df_labels = pd.read_csv(f'{output_path}crop_list_{scale}_{n_subsample}_{sampling_type}.csv')
+df_labels = pd.read_csv(f'{output_path}crop_list_{scale}_{n_samples}_{sampling_type}.csv')
 print(df_labels)
 
 
 # Load the saved CSV into a new DataFrame
-merged_df = pd.read_csv(f'{output_path}physical_feature_vectors_{scale}_{sampling_type}_{n_subsample}_{stat}.csv')
+merged_df = pd.read_csv(f'{output_path}physical_feature_vectors_{scale}_{sampling_type}_{n_samples}_{stat}.csv')
 print(merged_df)
+
+if n_subsample < n_samples:
+    #get the rows that correspond to the selected samples from the ordering of the rows
+    merged_df = merged_df.iloc[data1]
+    df_labels = df_labels.iloc[data1]
+
 
 #Selected the variable that needs to be plot
 
@@ -193,7 +211,22 @@ for i, class_label in enumerate(merged_tsne_variable_df['label'].unique()):
     if class_data.empty:
         print(f"Skipping class {class_label} due to missing data.")
         continue
-    
+
+    # Calculate the KDE for the points in Component_1 and Component_2
+    kde = gaussian_kde(class_data[['Component_1', 'Component_2']].T)
+    kde_values = kde(class_data[['Component_1', 'Component_2']].T)
+
+    # Determine the 25th percentile of the KDE values
+    kde_threshold = np.percentile(kde_values, 25)
+
+    # Filter out points below the 25th percentile
+    class_data = class_data[kde_values >= kde_threshold]
+
+    # Ensure there's data to plot after filtering
+    if class_data.empty:
+        print(f"Skipping class {class_label} due to insufficient points after KDE filtering.")
+        continue
+        
     # Create a grid on Component_1 and Component_2 space
     grid_x, grid_y = np.mgrid[
         class_data['Component_1'].min():class_data['Component_1'].max():grid_res*1j, 
@@ -227,7 +260,7 @@ for i, class_label in enumerate(merged_tsne_variable_df['label'].unique()):
         )
     else:    
         # Step 3: Plot contourf for the variable (same color map for all subplots)
-        contour = ax.contourf(grid_x, grid_y, grid_z, cmap=cmap, alpha=0.6, levels=np.linspace(vmin, vmax, 100))
+        contour = ax.contourf(grid_x, grid_y, grid_z, cmap=cmap, alpha=0.5, levels=np.linspace(vmin, vmax, 100))
     
     
     # Step 2: Plot the KDE contours for each class
@@ -235,10 +268,10 @@ for i, class_label in enumerate(merged_tsne_variable_df['label'].unique()):
         x=class_data['Component_1'],
         y=class_data['Component_2'],
         ax=ax,
-        levels=[0.1, 0.5, 0.9],  #A vector argument must have increasing values in [0, 1]. Levels correspond to iso-proportions of the density: e.g., 20% of the probability mass will lie below the contour drawn for 0.2. 
-        linewidths=1,
-        color= 'black', #colors_per_class1_names[str(int(class_label))],  # Use color corresponding to the class
-        alpha=0.8,
+        levels=[0.95],  #A vector argument must have increasing values in [0, 1]. Levels correspond to iso-proportions of the density: e.g., 20% of the probability mass will lie below the contour drawn for 0.2. 
+        linewidths=1.,
+        color= 'magenta', #colors_per_class1_names[str(int(class_label))],  # Use color corresponding to the class
+        alpha=1.,
         label=f'Class {int(class_label)}'
     )
 
@@ -284,3 +317,102 @@ plt.subplots_adjust(wspace=0.1, hspace=0.1, top=0.95, right=0.85)  # Decrease ws
 filenamesave = output_path + filename.split('.')[0] + '_' + variable + '_contour_filled_cont_subplots.png'
 fig.savefig(filenamesave, bbox_inches='tight')
 print(f'Figure saved in: {filenamesave}')
+
+
+#####################
+
+# Plot classes separately
+
+# Create separate plots for each class
+for class_label in merged_tsne_variable_df['label'].unique():
+    # Filter the data for the current class
+    class_data = merged_tsne_variable_df[merged_tsne_variable_df['label'] == class_label]
+    
+    # Drop rows where 'Component_1', 'Component_2', or the variable of interest has NaN values
+    class_data = class_data.dropna(subset=['Component_1', 'Component_2', variable])
+    
+    # Skip if there's no data after filtering
+    if class_data.empty:
+        print(f"Skipping class {class_label} due to missing data.")
+        continue
+    
+    # KDE-based filtering (optional: adjust percentile as needed)
+    kde = gaussian_kde(class_data[['Component_1', 'Component_2']].T)
+    kde_values = kde(class_data[['Component_1', 'Component_2']].T)
+    kde_threshold = np.percentile(kde_values, 25)
+    class_data = class_data[kde_values >= kde_threshold]
+    
+    if class_data.empty:
+        print(f"Skipping class {class_label} due to insufficient points after KDE filtering.")
+        continue
+    
+    # Grid interpolation for the current class
+    grid_x, grid_y = np.mgrid[
+        class_data['Component_1'].min():class_data['Component_1'].max():grid_res * 1j, 
+        class_data['Component_2'].min():class_data['Component_2'].max():grid_res * 1j
+    ]
+    
+    grid_z = griddata(
+        (class_data['Component_1'], class_data['Component_2']),
+        class_data[variable],
+        (grid_x, grid_y),
+        method='linear',
+        fill_value=np.nan
+    )
+    
+    if np.isnan(grid_z).all():
+        print(f"Skipping class {class_label} due to all NaN values after interpolation.")
+        continue
+    
+    # Create a new figure for each class
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    if variable == 'cot':
+    
+        contour = ax.contourf(
+            grid_x, grid_y, grid_z, alpha=0.6, cmap=cmap,
+            levels=np.linspace(vmin, 20, 100), extend='max'
+        )
+    else:    
+        # Step 3: Plot contourf for the variable (same color map for all subplots)
+        contour = ax.contourf(grid_x, grid_y, grid_z, cmap=cmap, alpha=0.6, levels=np.linspace(vmin, vmax, 100))
+
+    
+    # # Overlay actual points
+    # scatter = ax.scatter(6    #     class_data['Component_1'], 
+    #     class_data['Component_2'], 
+    #     c=class_data[variable], 
+    #     cmap=cmap, 
+    #     edgecolor='k', 
+    #     s=50, 
+    #     vmin=vmin, vmax=vmax
+    # )
+
+    # Step 2: Plot the KDE contours for each class
+    sns.kdeplot(
+        x=class_data['Component_1'],
+        y=class_data['Component_2'],
+        ax=ax,
+        levels=[0.95],  #A vector argument must have increasing values in [0, 1]. Levels correspond to iso-proportions of the density: e.g., 20% of the probability mass will lie below the contour drawn for 0.2. 
+        linewidths=1.,
+        color= 'magenta', #colors_per_class1_names[str(int(class_label))],  # Use color corresponding to the class
+        alpha=1.,
+        label=f'Class {int(class_label)}'
+    )
+
+    
+    # Add title and labels
+    ax.set_title(f'Class {int(class_label)}', fontsize=14)
+    ax.set_xlabel('Component 1', fontsize=12)
+    ax.set_ylabel('Component 2', fontsize=12)
+    
+    # Add colorbar with shared range
+    cbar = fig.colorbar(contour, ax=ax, orientation='vertical', pad=0.05)
+    cbar.set_label(f'{variable} ({info_var["unit"] if "unit" in info_var else ""})', fontsize=12)
+    cbar.ax.tick_params(labelsize=10)
+    
+    # Save the individual plot
+    output_file = f"{output_path}{filename.split('.')[0]}_class_{int(class_label)}_{variable}_plot.png"
+    fig.savefig(output_file, bbox_inches='tight')
+    plt.close(fig)  # Close the figure to free memory
+    print(f"Saved plot for class {class_label}: {output_file}")

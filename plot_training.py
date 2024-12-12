@@ -1,3 +1,35 @@
+"""
+This script loads and processes JSON-structured data to plot various training metrics over iterations and epochs.
+The data is typically collected during model training and is visualized to analyze the training process,
+such as tracking parameter progression, loss, and learning rate. Multiple datasets can be plotted to compare
+results from different experiments.
+
+Modules:
+    - json: to handle JSON-formatted data files.
+    - matplotlib.pyplot: to create plots.
+    - torch: optional, for loading model checkpoints.
+    - numpy: to compute averages.
+    - os: to handle file path operations.
+
+Functions:
+    - load_data(file_path): Loads JSON data from a specified file.
+    - plot_parameter_old(data, parameter, label, color, skip_iter=1000): Plots a parameter over iterations with epoch annotations.
+    - plot_parameter(data, parameter, label, color, path_out, skip_iter=2000): Plots a parameter over epochs, adjusting x-axis labels by epoch.
+    - plot_parameter_avg(data, parameter, label, color, path_out): Plots the averaged parameter values per epoch.
+    - plot_parameter_multiple_datasets(datasets, parameter, labels, colors, path_out): Plots averaged values of a parameter for multiple datasets over epochs.
+
+Workflow:
+    1. Loads datasets from specified file paths.
+    2. For each dataset, various training parameters (e.g., loss) are visualized by plotting them over epochs or iterations.
+    3. Creates output directories if they don’t exist.
+    4. Saves the generated plots to a specified output directory.
+
+Usage:
+    - Customize the `path_out` variable to specify where the plots will be saved.
+    - Adjust labels and colors lists to customize plotting options for multiple datasets.
+    - Add additional plotting function calls as needed to visualize different parameters.
+"""
+
 import json
 import matplotlib.pyplot as plt
 import torch
@@ -134,7 +166,7 @@ def plot_parameter_multiple_datasets(datasets, parameter, labels, colors, path_o
     plt.close()
 
 
-path_out = '/home/Daniele/fig/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+path_out = '/home/Daniele/fig/dcv_ir108_128x128_k9_70k_grey_200-300K_CMA/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
 
 
 # Check if the directory exists
@@ -145,14 +177,14 @@ if not os.path.exists(path_out):
 # Initialize the list to store datasets
 datasets = []
 
-labels = ['10th-90th','10th-90th_CMA'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
+labels = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
 colors = ['red','blue','green', 'black', 'orange']
 
 #for each case open data 
 
 for label in labels:
     # Load the data from the JSON file
-    file_path = f'/data1/runs/dcv2_ir108_128x128_k9_germany_30kcrops_grey_{label}/checkpoints/'
+    file_path = f'/data1/runs/{label}/checkpoints/'
     data = []
 
     #collect data from jason output file
