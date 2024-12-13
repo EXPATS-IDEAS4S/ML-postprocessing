@@ -60,7 +60,7 @@ import re
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize
 
-scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_case_study'
+scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_test_msg_icon'
 random_state = '3' #all visualization were made with random state 3
 #dcv_cot_128x128_k7_germany_60kcrops
 #dcv2_ir_128x128_k7_germany_70kcrops
@@ -71,7 +71,7 @@ tsne_path = f'/home/Daniele/fig/{scale}/'
 reduction_method = 'tsne' # Options: 'tsne', 'isomap',
 n_random_samples = None #30000
 
-case_study = True
+case_study = False
 
 if reduction_method == 'tsne':
     tsne_filename = f'{reduction_method}_pca_cosine_{scale}_{random_state}.npy'  
@@ -83,7 +83,7 @@ filename = tsne_filename
 #tsne_filename = 'tsnegermany_pca_cosine_500annealing50_800ep.npy'
 #tsne_filename = 'tsnegermany_pca_cosine_500multiscale50_800ep.npy'
 
-image_path = f'/data1/crops/ir108_2013-2014-2015-2016_200K-300K_CMA_case_study/1/' #cot_2013_128_germany, ir108_2013_128_germany
+image_path = f'/data1/crops/ir108_2013-2014-2015-2016_200K-300K_CMA_test_msg_icon/1/' #cot_2013_128_germany, ir108_2013_128_germany
 crop_path_list = sorted(glob(image_path+'*.tif'))
 #print(len(crop_path_list))
 
@@ -316,7 +316,7 @@ df_subset2 = df_subset1.sample(n=20000)
 
 
 # Plot
-fig, ax = plt.subplots(figsize=(16, 10))
+fig, ax = plt.subplots(figsize=(12, 10))
 scatter = ax.scatter(df_subset2['Component_1'], df_subset2['Component_2'],
                      c=df_subset2['color'].tolist(), alpha=0.5, s=20)
 

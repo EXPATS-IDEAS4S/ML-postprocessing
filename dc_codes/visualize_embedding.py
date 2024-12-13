@@ -52,7 +52,7 @@ import pandas as pd
 from glob import glob
 import torch
 
-from embedding_plotting_func import plot_embedding_dots_iterative_test_msg_icon, scale_to_01_range, name_to_rgb, extract_hour, plot_embedding_dots, plot_embedding_filled, plot_embedding_crops, plot_embedding_dots_iterative_case_study
+from embedding_plotting_func import plot_embedding_crops_new, plot_embedding_dots_iterative_test_msg_icon, scale_to_01_range, name_to_rgb, extract_hour, plot_embedding_dots, plot_embedding_filled, plot_embedding_crops, plot_embedding_dots_iterative_case_study
 
 scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_test_msg_icon'
 random_state = '3' #all visualization were made with random state 3
@@ -64,8 +64,8 @@ tsne_path = f'/home/Daniele/fig/{scale}/'
 reduction_method = 'tsne' # Options: 'tsne', 'isomap',
 n_random_samples = None #30000
 
-case_study_msg = True
-case_study_icon = True
+case_study_msg = False
+case_study_icon = False
 
 if reduction_method == 'tsne':
     tsne_filename = f'{reduction_method}_pca_cosine_{scale}_{random_state}.npy'  
@@ -221,17 +221,17 @@ df_subset1['color'] = df_subset1['y'].map(lambda x: colors_per_class1_names[str(
 print(df_subset1)
 
 # Sample 20,000 points for plotting
-df_subset2 = df_subset1.sample(n=50000)
+df_subset2 = df_subset1.sample(n=20000)
 
 print(df_subset2)
 
 # Plot embedding with dots
 if case_study_msg and case_study_icon:
-    #plot_embedding_dots(df_subset2, colors_per_class1_names, output_path, filename, df_subset)
+    plot_embedding_dots(df_subset2, colors_per_class1_names, output_path, filename, df_subset)
     #plot_embedding_filled(df_subset2, colors_per_class1_names, output_path, filename, df_subset)
     #plot_embedding_dots_iterative_case_study(df_subset1, colors_per_class1_names, output_path+'trajectory_iter/', filename, df_subset1)
-    plot_embedding_dots_iterative_test_msg_icon(
-    df_subset1, colors_per_class1_names, output_path+'trajectory_iter/', filename, df_subset1, legend=True)
+    #plot_embedding_dots_iterative_test_msg_icon(df_subset1, colors_per_class1_names, output_path+'trajectory_iter/', filename, df_subset1, legend=True)
+    #plot_embedding_crops_new(df_subset2, output_path, filename)
 else:
     plot_embedding_dots(df_subset2, colors_per_class1_names, output_path, filename)
     plot_embedding_filled(df_subset2, colors_per_class1_names, output_path, filename)

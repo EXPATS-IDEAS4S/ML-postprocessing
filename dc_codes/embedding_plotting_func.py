@@ -271,15 +271,17 @@ def plot_embedding_dots_iterative_test_msg_icon(
     os.makedirs(output_path, exist_ok=True)
     
     # Filter case study points for MSG and ICON
-    df_case_study_msg = df_subset2[df_subset2['case_study_msg'] == True].sort_index()
-    df_case_study_icon = df_subset2[df_subset2['case_study_icon'] == True].sort_index()
+    #df_case_study_msg = df_subset2[df_subset2['case_study'] == True and df_subset2['vector_type']=='msg'].sort_index()
+    df_case_study_msg = df_subset2[(df_subset2['case_study'] == True) & (df_subset2['vector_type'] == 'msg')].sort_index()
+    df_case_study_icon = df_subset2[(df_subset2['case_study'] == True) & (df_subset2['vector_type'] == 'icon')].sort_index()
+    #df_case_study_icon = df_subset2[df_subset2['case_study'] == True & df_subset2['vector_type']=='icon'].sort_index()
 
     # Determine the maximum number of steps to iterate
     max_steps = max(len(df_case_study_msg), len(df_case_study_icon))
 
     # Plot base embedding
     for i in range(max_steps):
-        fig, ax = plt.subplots(figsize=(12, 14))
+        fig, ax = plt.subplots(figsize=(14, 12))
 
         #extract time 
         time = df_case_study_msg.iloc[i]['location'].split('/')[-1].split('_')[4]
@@ -300,7 +302,7 @@ def plot_embedding_dots_iterative_test_msg_icon(
             ax.scatter(
                 current_msg['Component_1'], 
                 current_msg['Component_2'], 
-                c=current_msg['color'],  # Follow the same color coding as the background
+                c= "red", #current_msg['color'],  # Follow the same color coding as the background
                 s=120, 
                 edgecolor="red", 
                 linewidth=2, 
@@ -323,9 +325,9 @@ def plot_embedding_dots_iterative_test_msg_icon(
             ax.scatter(
                 current_icon['Component_1'], 
                 current_icon['Component_2'], 
-                c=current_icon['color'],  # Follow the same color coding as the background
+                c= 'blue', #current_icon['color'],  # Follow the same color coding as the background
                 s=120, 
-                edgecolor="black", 
+                edgecolor="blue", 
                 linewidth=2, 
                 zorder=5, 
                 label='ICON Trajectory Points' if i == 0 else ""
@@ -334,7 +336,7 @@ def plot_embedding_dots_iterative_test_msg_icon(
                 ax.plot(
                     current_icon['Component_1'], 
                     current_icon['Component_2'], 
-                    color="black", 
+                    color="blue", 
                     linewidth=2, 
                     alpha=0.8, 
                     label='ICON Trajectory' if i == 0 else ""
@@ -377,7 +379,7 @@ def plot_embedding_dots_iterative_test_msg_icon(
         if legend:
             handles = [
                 plt.Line2D([0], [0], color="red", label="MSG Trajectory"),
-                plt.Line2D([0], [0], color="black", label="ICON Trajectory"),
+                plt.Line2D([0], [0], color="blue", label="ICON Trajectory"),
             ]
             ax.legend(handles=handles, title="", fontsize=14, loc="upper right")
             
@@ -393,7 +395,7 @@ def plot_embedding_dots_iterative_test_msg_icon(
         # Set limits
         # Set limits
         padding = 0.03
-        extra_bottom_space = 0.3  # Proportion of extra space to add at the bottom
+        extra_bottom_space = 0.4  # Proportion of extra space to add at the bottom
         x_min, x_max = np.min(df_subset2['Component_1']), np.max(df_subset2['Component_1'])
         y_min, y_max = np.min(df_subset2['Component_2']), np.max(df_subset2['Component_2'])
 
@@ -457,6 +459,44 @@ def plot_embedding_crops(indices, selected_images, df_conc, tsne_plot, output_pa
     plt.gca().spines['left'].set_visible(False)
 
     fig.savefig(output_path+filename.split('.')[0]+'_crops.png',bbox_inches='tight')
+
+
+def plot_embedding_crops_new(df, output_path, filename):
+
+    # Create a figure and axis for plotting
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Plot the scatter plot with component 1 as x and component 2 as y
+    #ax.scatter(df['Component_1'], df['Component_2'], s=100, color='blue', alpha=0.6)
+
+    # Iterate over each row of the dataframe and overlay the image
+    for i, row in df.iterrows():
+        img_path = row['location']
+        # Load the image using PIL or matplotlib
+        img = Image.open(img_path)  # PIL can be used to open image
+        # Alternatively, you can use mpimg.imread() if you prefer
+        # img = mpimg.imread(img_path)
+
+        # Convert the image to greyscale
+        img = img.convert('L')  # 'L' mode is for greyscale
+
+        # Create an OffsetImage with the loaded image
+        imagebox = OffsetImage(img, zoom=0.3, cmap='gray')  # You can adjust zoom to scale the image
+        
+        # Position the image at the corresponding (x, y) of component1 and component2
+        ab = AnnotationBbox(imagebox, (row['Component_1'], row['Component_2']), frameon=False)
+        
+        # Add the image to the plot
+        ax.add_artist(ab)
+
+        ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+
+        plt.gca().spines['top'].set_visible(False)
+        plt.gca().spines['right'].set_visible(False)
+        plt.gca().spines['bottom'].set_visible(False)
+        plt.gca().spines['left'].set_visible(False)
+
+        fig.savefig(output_path+filename.split('.')[0]+'_crops_new.png',bbox_inches='tight')
 
 
 
