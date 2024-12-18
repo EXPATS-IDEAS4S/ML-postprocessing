@@ -13,8 +13,8 @@ from feature_space_plot_functions import colors_per_class1_names
 from aux_functions import get_variable_info
 
 reduction_method = 'tsne' #'tsne
-variable = 'cot'
-data_type = 'continuous' #'continuous' 
+variable = 'cma'
+data_type = 'categorical' #'continuous' 
 scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 random_state = '3' #all visualization were made with random state 3
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
@@ -107,10 +107,12 @@ if n_subsample < n_samples:
 #Selected the variable that needs to be plot
 
 df_variable = merged_df[variable]
+df_cot = merged_df['cot']
 print(df_variable)
 
 #take only the useful columns from the dataframs and merge them
 df_variable = pd.concat([df_variable,df_labels], axis=1)
+df_variable_cot = pd.concat([df_cot,df_labels], axis=1)
 print(df_variable)
 
 
@@ -138,6 +140,7 @@ print(df_tsne)
 
 # Extract the last part of the 'path' and 'location' columns (after the last '/')
 df_variable['path_last_part'] = df_variable['path'].apply(lambda x: x.split('/')[-1].split('.')[0])
+df_variable_cot['path_last_part'] = df_variable_cot['path'].apply(lambda x: x.split('/')[-1].split('.')[0])
 df_tsne['path_last_part'] = df_tsne['location'].apply(lambda x: '_'.join(x.split('/')[-1].split('_')[0:4]))
 
 print(df_variable)
@@ -145,22 +148,28 @@ print(df_tsne)
 
 # Filter df_tsne to match the last part of df_variables' paths
 filtered_df_tsne = df_tsne[df_tsne['path_last_part'].isin(df_variable['path_last_part'])]
+filtered_df_tsne_cot = df_tsne[df_tsne['path_last_part'].isin(df_variable_cot['path_last_part'])]
 
 print(filtered_df_tsne)
 
 # Sort both DataFrames to ensure they align correctly before concatenation
 df_variables_sorted = df_variable[df_variable['path_last_part'].isin(filtered_df_tsne['path_last_part'])].sort_values(by='path_last_part').reset_index(drop=True)
+df_variables_sorted_cot = df_variable_cot[df_variable_cot['path_last_part'].isin(filtered_df_tsne_cot['path_last_part'])].sort_values(by='path_last_part').reset_index(drop=True)
 filtered_df_tsne_sorted = filtered_df_tsne.sort_values(by='path_last_part').reset_index(drop=True)
+filtered_df_tsne_sorted_cot = filtered_df_tsne_cot.sort_values(by='path_last_part').reset_index(drop=True)
 
 print(df_variables_sorted)
 print(filtered_df_tsne_sorted)
 
 # Drop the helper columns used for matching
 df_variables_sorted = df_variables_sorted.drop(columns=['path_last_part', 'path'])
+df_variables_sorted_cot = df_variables_sorted_cot.drop(columns=['path_last_part', 'path'])
 filtered_df_tsne_sorted = filtered_df_tsne_sorted.drop(columns=['path_last_part','y','location'])
+filtered_df_tsne_sorted_cot = filtered_df_tsne_sorted_cot.drop(columns=['path_last_part','y','location'])
 
 # Concatenate along axis 1
 merged_tsne_variable_df = pd.concat([df_variables_sorted, filtered_df_tsne_sorted], axis=1)
+merged_tsne_variable_df_cot = pd.concat([df_variables_sorted_cot, filtered_df_tsne_sorted_cot], axis=1)
 
 # Display the merged DataFrame
 print(merged_tsne_variable_df)
@@ -171,6 +180,7 @@ print(merged_tsne_variable_df)
 
 # Map labels to colors
 merged_tsne_variable_df['color'] = merged_tsne_variable_df['label'].map(lambda x: colors_per_class1_names[str(int(x))])
+merged_tsne_variable_df_cot['color'] = merged_tsne_variable_df_cot['label'].map(lambda x: colors_per_class1_names[str(int(x))])
 print(merged_tsne_variable_df)
 
 # Sample 20,000 points for plotting
@@ -327,9 +337,21 @@ print(f'Figure saved in: {filenamesave}')
 for class_label in merged_tsne_variable_df['label'].unique():
     # Filter the data for the current class
     class_data = merged_tsne_variable_df[merged_tsne_variable_df['label'] == class_label]
+    class_data_cot = merged_tsne_variable_df_cot[merged_tsne_variable_df_cot['label'] == class_label]
     
     # Drop rows where 'Component_1', 'Component_2', or the variable of interest has NaN values
     class_data = class_data.dropna(subset=['Component_1', 'Component_2', variable])
+    class_data_cot = class_data_cot.dropna(subset=['Component_1', 'Component_2', 'cot'])
+
+    #Extract the indices from both DataFrames
+    indices_class_data = class_data.index
+    indices_class_data_cot = class_data_cot.index
+
+    # Find the common indices
+    common_indices = indices_class_data.intersection(indices_class_data_cot)
+
+    # Select the rows from both DataFrames that correspond to the common indices
+    class_data = class_data.loc[common_indices]
     
     # Skip if there's no data after filtering
     if class_data.empty:
@@ -388,17 +410,17 @@ for class_label in merged_tsne_variable_df['label'].unique():
     #     vmin=vmin, vmax=vmax
     # )
 
-    # Step 2: Plot the KDE contours for each class
-    sns.kdeplot(
-        x=class_data['Component_1'],
-        y=class_data['Component_2'],
-        ax=ax,
-        levels=[0.95],  #A vector argument must have increasing values in [0, 1]. Levels correspond to iso-proportions of the density: e.g., 20% of the probability mass will lie below the contour drawn for 0.2. 
-        linewidths=1.,
-        color= 'magenta', #colors_per_class1_names[str(int(class_label))],  # Use color corresponding to the class
-        alpha=1.,
-        label=f'Class {int(class_label)}'
-    )
+    # # Step 2: Plot the KDE contours for each class
+    # sns.kdeplot(
+    #     x=class_data['Component_1'],
+    #     y=class_data['Component_2'],
+    #     ax=ax,
+    #     levels=[0.95],  #A vector argument must have increasing values in [0, 1]. Levels correspond to iso-proportions of the density: e.g., 20% of the probability mass will lie below the contour drawn for 0.2. 
+    #     linewidths=1.,
+    #     color= 'magenta', #colors_per_class1_names[str(int(class_label))],  # Use color corresponding to the class
+    #     alpha=1.,
+    #     label=f'Class {int(class_label)}'
+    # )
 
     
     # Add title and labels

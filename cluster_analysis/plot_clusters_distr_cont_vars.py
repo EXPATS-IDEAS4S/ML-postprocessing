@@ -12,7 +12,7 @@ from aux_functions import compute_percentile, concatenate_values, extend_labels,
 run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 
 # Define sampling type
-sampling_types = ['closest','farthest']  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_types = ['all']  # Options: 'random', 'closest', 'farthest', 'all'
 
 # Pick the statistics to compute for each crop, the percentile values
 stats = [50] #[1,50,99,'25-75']   #'1%', '5%', '25%', '50%', '75%', '95%', '99%' ,None if all points are needed
@@ -142,14 +142,14 @@ for sampling_type in sampling_types:
                 df_continuous.to_csv(f'{output_path}{data_type}_crops_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
                 print('Continous Stats for each crop are saved to CSV files.')
 
-                # # Compute stats for continuous variables
-                # continuous_stats = df_continuous.groupby('label').agg(['mean', 'std'])
-                # continuous_stats.columns = ['_'.join(col).strip() for col in continuous_stats.columns.values]
-                # continuous_stats.reset_index(inplace=True)
+                # Compute stats for continuous variables
+                continuous_stats = df_continuous.groupby('label').agg(['mean', 'std'])
+                continuous_stats.columns = ['_'.join(col).strip() for col in continuous_stats.columns.values]
+                continuous_stats.reset_index(inplace=True)
 
-                # Save continuous stats to a CSV file
-                #continuous_stats.to_csv(f'{output_path}{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
-                #print('Overall Continous Stats for each cluster are saved to CSV files.')
+                #Save continuous stats to a CSV file
+                continuous_stats.to_csv(f'{output_path}{data_type}_clusters_stats_{run_name}_{sampling_type}_{n_subsample}_{stat}.csv', index=False)
+                print('Overall Continous Stats for each cluster are saved to CSV files.')
 
                 #extract class label
                 #label_names = np.unique(df_continuous['label'].values)

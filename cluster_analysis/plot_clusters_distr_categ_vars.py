@@ -14,7 +14,7 @@ from aux_functions import concatenate_values, extend_labels
 run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 
 # Define sampling type
-sampling_types = ['farthest']#,'furthest'] #'all'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_types = ['all']#,'furthest'] #'all'  # Options: 'random', 'closest', 'farthest', 'all'
 
 # Pick the statistics to compute for each crop, the percentile values
 stat = True  #True or False, if True 
