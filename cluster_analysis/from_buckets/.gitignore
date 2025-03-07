@@ -1,0 +1,34 @@
+# environments
+#.sat_enviroment
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# file containing credentials
+credentials_buckets.py
+
+# file for testing functions
+test_functions.py
+
+# nohup file
+nohup.out
+
+#product files
+products.txt
+
+#batch file during downloading
+temp_batch_files.txt
+temp_products.txt
+
+#log file download
+logfile.txt
+missing_timestamps.txt
+
+#log folder
+download/log/
+
+output.txt
+
+process/log/elapsed_time_satpy.txt
+
+credentials_buckets.py
