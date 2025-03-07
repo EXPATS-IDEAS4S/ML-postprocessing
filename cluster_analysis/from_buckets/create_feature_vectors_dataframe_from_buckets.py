@@ -31,17 +31,13 @@ from glob import glob
 import numpy as np
 import os
 
-run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
+run_names = ['dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA']
 
 # Define sampling type
-sampling_type = 'farthest'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 
 n_subsample = 100  # Number of samples per cluster
 
-# Paths to CMSAF cloud properties crops
-cloud_properties_path = '/data1/crops/cmsaf_2013-2014-2015-2016_expats/nc_clouds/'
-cloud_properties_crop_list = sorted(glob(cloud_properties_path + '*.nc'))
-print(len(cloud_properties_crop_list))
 
 for run_name in run_names:
 
@@ -52,13 +48,18 @@ for run_name in run_names:
     distances_path = f'/data1/runs/{run_name}/checkpoints/distance_800ep.pt'
 
     # Path to fig folder for outputs
-    output_path = f'/home/Daniele/fig/{run_name}/{sampling_type}/'
+    output_path = f'/data1/fig/{run_name}/{sampling_type}/'
 
     # Create the directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
 
+    # List of the image crops
+    image_crops_path = f'/data1/crops/{run_name}/1/'
+    list_image_crops = sorted(glob(image_crops_path+'*.tif'))
+
     # Read data
-    n_samples = len(cloud_properties_crop_list)
+    n_samples = len( list_image_crops)
+    print('n samples: ', n_samples)
 
     if sampling_type=='all':
         n_subsample = n_samples
@@ -71,6 +72,8 @@ for run_name in run_names:
     # Convert to numpy arrays for easier manipulation
     assignments = assignments[0].cpu().numpy()
     distances = distances[0].cpu().numpy()
+    print(len(assignments))
+    print(len(distances))
 
     # Get unique cluster labels
     unique_clusters = np.unique(assignments)
@@ -123,7 +126,7 @@ for run_name in run_names:
     print(len(subsample_indices))
     # Now, create the DataFrame with the selected subsamples
     df_labels = pd.DataFrame({
-        'path': [cloud_properties_crop_list[i] for i in subsample_indices],
+        'path': [list_image_crops[i] for i in subsample_indices],
         'label': [assignments[i] for i in subsample_indices],  # The labels of the subsamples
         'distance': subsample_distances  # Corresponding distances
     })

@@ -39,7 +39,7 @@ import numpy as np
 from sklearn.manifold import Isomap
 import random
 
-run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
+run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_test_msg_icon']
 
 reduction_method = 'isomap' # Options: 'tsne', 'isomap', 
 #if using tsne select the random state

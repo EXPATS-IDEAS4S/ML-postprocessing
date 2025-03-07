@@ -6,11 +6,11 @@ import torch
 
 from embedding_plotting_func import plot_embedding_crops_new, plot_embedding_dots_iterative_test_msg_icon, scale_to_01_range, name_to_rgb, extract_hour, plot_embedding_dots, plot_embedding_filled, plot_embedding_crops, plot_embedding_dots_iterative_case_study
 
-scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_test_msg_icon'
+scale = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
 random_state = '3' #all visualization were made with random state 3
 reduction_method = 'tsne' # Options: 'tsne', 'isomap',
 
-output_path = f'/home/Daniele/fig/{scale}/'
+output_path = f'/data1/fig/{scale}/'
 filename = f'{reduction_method}_pca_cosine_{scale}_{random_state}.npy'
 
 # Open csv file with already labels and dim red features

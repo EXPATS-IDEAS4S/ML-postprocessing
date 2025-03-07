@@ -44,6 +44,15 @@ def load_data(file_path):
             data.append(json.loads(line))
     return data
 
+def load_data_new(file_path):
+    data = []
+    with open(file_path, "r") as f:
+        for line in f:
+            try:
+                data.append(json.loads(line))  # Read each line as a separate JSON object
+            except json.JSONDecodeError as e:
+                print(f"JSON Decode Error: {e} in line: {line.strip()}")
+    return data
 
 def plot_parameter_old(data, parameter, label, color, skip_iter=1000):
     iterations = [entry['iter'] for entry in data]
@@ -148,6 +157,8 @@ def plot_parameter_multiple_datasets(datasets, parameter, labels, colors, path_o
             avg_values.append(avg_value)
         
         # Plotting the parameter
+        print(epochs)
+        print(avg_values)
         ax1.plot(epochs, avg_values, label=label, color=color)
     
     # Setting labels and title
@@ -166,7 +177,7 @@ def plot_parameter_multiple_datasets(datasets, parameter, labels, colors, path_o
     plt.close()
 
 
-path_out = '/home/Daniele/fig/dcv_ir108_128x128_k9_70k_grey_200-300K_CMA/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+path_out = '/data1/fig/dcv2_ir108_200x200_k9_70k_GS_200-300K_CMA-closed/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
 
 
 # Check if the directory exists
@@ -177,8 +188,8 @@ if not os.path.exists(path_out):
 # Initialize the list to store datasets
 datasets = []
 
-labels = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
-colors = ['red','blue','green', 'black', 'orange']
+labels = ['dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
+colors = ['red']#,'blue','green', 'black', 'orange']
 
 #for each case open data 
 
@@ -188,11 +199,12 @@ for label in labels:
     data = []
 
     #collect data from jason output file
-    data = load_data(file_path+'stdout.json')
+    data = load_data_new(file_path+'stdout.json')
 
     # Add the loaded data to the datasets list
     if data:
         datasets.append(data)
+
 
 plot_parameter_multiple_datasets(datasets, 'loss', labels, colors, path_out)
 

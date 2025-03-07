@@ -63,6 +63,12 @@ def pick_variable(data_type):
         vars_units = [None, None]
         vars_logscale = [False, False]
         vars_dir = ['incr','incr']  
+    elif data_type=='cmsaf':
+        vars = ['cot','cth','cma','cph']
+        vars_long_name = ['cloud optical thickness', 'cloud top height', 'cloud mask', 'cloud phase']
+        vars_units = [None , 'm', None, None]
+        vars_logscale = [False, False, False, False]
+        vars_dir = ['incr','incr', 'incr', 'incr']
     else:
         print('wrong data type name!')
         exit()

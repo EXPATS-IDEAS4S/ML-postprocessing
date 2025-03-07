@@ -60,13 +60,13 @@ import re
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize
 
-scale = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA_test_msg_icon'
+scale = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
 random_state = '3' #all visualization were made with random state 3
 #dcv_cot_128x128_k7_germany_60kcrops
 #dcv2_ir_128x128_k7_germany_70kcrops
-output_path = f'/home/Daniele/fig/{scale}/'
+output_path = f'/data1/fig/{scale}/'
 
-tsne_path = f'/home/Daniele/fig/{scale}/'
+tsne_path = f'/data1/fig/{scale}/'
 
 reduction_method = 'tsne' # Options: 'tsne', 'isomap',
 n_random_samples = None #30000
@@ -83,7 +83,7 @@ filename = tsne_filename
 #tsne_filename = 'tsnegermany_pca_cosine_500annealing50_800ep.npy'
 #tsne_filename = 'tsnegermany_pca_cosine_500multiscale50_800ep.npy'
 
-image_path = f'/data1/crops/ir108_2013-2014-2015-2016_200K-300K_CMA_test_msg_icon/1/' #cot_2013_128_germany, ir108_2013_128_germany
+image_path = f'/data1/crops/ir108_2013-2014-2015-2016_GS_200-300_CMA-closed_200x200/1/' #cot_2013_128_germany, ir108_2013_128_germany
 crop_path_list = sorted(glob(image_path+'*.tif'))
 #print(len(crop_path_list))
 

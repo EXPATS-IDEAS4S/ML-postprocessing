@@ -1,8 +1,22 @@
 import torch
 import matplotlib.pyplot as plt
 
-# Load the model
 model_path = "/data1/runs/dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA/checkpoints/model_final_checkpoint_phase799.torch"
+checkpoint = torch.load(model_path)
+print(checkpoint.keys())
+state_dict = checkpoint['classy_state_dict']  # This is where the model weights are likely stored.
+print(state_dict.keys())
+model_state_dict = state_dict['base_model']
+print(model_state_dict.keys())
+model_weights = model_state_dict['model']
+print(model_weights.keys())
+print('...')
+print(model_weights['trunk'].keys())
+meta = model_state_dict['meta']
+
+exit()
+
+# Load the model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = YourModelClass()  # Replace with your model definition
 model.load_state_dict(torch.load(model_path, map_location=device))
