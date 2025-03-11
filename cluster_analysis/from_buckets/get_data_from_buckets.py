@@ -4,8 +4,9 @@ from glob import glob
 import numpy as np
 import os
 import boto3
-
-from credentials_buckets import S3_BUCKET_NAME, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
+import io
+import logging
+from botocore.exceptions import ClientError
 
 def read_file(s3, file_name, bucket):
     """Upload a file to an S3 bucket
@@ -37,7 +38,7 @@ def Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY):
     return s3
 
 
-def get_list_objects(s3, S3_BUCKET_NAME)
+def get_list_objects(s3, S3_BUCKET_NAME):
     # List the objects in our bucket
     response = s3.list_objects(Bucket=S3_BUCKET_NAME)
     for item in response['Contents']:
