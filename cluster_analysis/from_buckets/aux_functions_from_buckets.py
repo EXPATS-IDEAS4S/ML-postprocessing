@@ -1,5 +1,8 @@
 import re
 import numpy as np
+from glob import glob
+import pandas as pd
+import os
 
 def extract_coordinates(filename):
     """
@@ -105,3 +108,50 @@ def compute_categorical_values(values, var):
         raise ValueError('Wrong variable names!')
 
     return values
+
+
+def get_num_crop(run_name, extenion='tif'):
+    image_crops_path = f'/data1/crops/{run_name}/1/'
+    list_image_crops = sorted(glob(image_crops_path + '*.' + extenion))
+    n_samples = len(list_image_crops)
+
+    return n_samples
+
+
+def find_crops_with_coordinates(df, lat, lon):
+    """
+    Given a dataframe with a 'path' column, find crop files that contain the specified latitude and longitude.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing a column 'path' with crop file paths.
+        lat (float): Latitude to search for.
+        lon (float): Longitude to search for.
+
+    Returns:
+        list: A list of filenames (last part of the path) that contain the given coordinates.
+    """
+    matching_crops = []
+
+    for path in df['path']:
+        filename = os.path.basename(path)
+
+        # Extract information from filename using regex
+        parts = filename.split("_")
+        
+        crop_UL_lat = float(parts[1])
+        crop_UL_lon = float(parts[2])
+        resolution = float(parts[3])
+        width = int(parts[4].split('x')[0])
+        height = int(parts[4].split('x')[1])
+
+        # Calculate crop boundaries using the upper left corner
+        lat_min = crop_UL_lat - (resolution * height)
+        lat_max = crop_UL_lat
+        lon_min = crop_UL_lon
+        lon_max = crop_UL_lon + (resolution * width)
+
+        # Check if the given lat/lon falls within the boundaries
+        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
+            matching_crops.append(filename)
+
+    return matching_crops

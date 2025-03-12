@@ -110,29 +110,35 @@ for index, row in df_labels.iterrows():
                 # Read the imerg file from the bucket
                 my_obj = read_file(s3, bucket_filename, BUCKET_IMERG_NAME)
 
-            ds_day = xr.open_dataset(io.BytesIO(my_obj))
+            try:
+                ds_day = xr.open_dataset(io.BytesIO(my_obj))
 
-            # Select the variable of interest
-            ds_day  = ds_day[var]
+                # Select the variable of interest
+                ds_day  = ds_day[var]
 
-            # Select the region of interest
-            ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+                # Select the region of interest
+                ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
 
-            #Select the Time of interest
-            ds_day = ds_day.sel(time=datetime_obj)
-            #print(ds_day)
+                #Select the Time of interest
             
-            values = ds_day.values.flatten()
-        
-            # Apply percentile if 'stat' is provided (stat can be a percentile or another function)
-            if stat != 'None':
-                try:
-                    values = compute_percentile(values, int(stat))
-                except IndexError:
-                    print(f"Not enough values to calculate {stat} for {var} in {row['path']}")
-                    continue  # Skip if there are not enough values for the given percentile
-            else:
-                values = compute_categorical_values(values, var)
+                ds_day = ds_day.sel(time=datetime_obj)
+                #print(ds_day)
+                
+                values = ds_day.values.flatten()
+            
+                # Apply percentile if 'stat' is provided (stat can be a percentile or another function)
+                if stat != 'None':
+                    try:
+                        values = compute_percentile(values, int(stat))
+                    except IndexError:
+                        print(f"Not enough values to calculate {stat} for {var} in {row['path']}")
+                        values = np.nan
+                        #continue  # Skip if there are not enough values for the given percentile
+                else:
+                    values = compute_categorical_values(values, var)
+            except KeyError:
+                print(f"Data not available for {var} in {row['path']}")
+                values = np.nan
 
         # Ensure values is a list or array before extending
         df_labels.at[index, entry] = values
@@ -164,4 +170,4 @@ continuous_stats.reset_index(inplace=True)
 continuous_stats.to_csv(f'{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}.csv', index=False)
 print('Overall Stats for each cluster are saved to CSV files.')
 
-
+#nohup 689381
