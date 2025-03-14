@@ -9,7 +9,7 @@ import sys
 from aux_functions_from_buckets import extract_datetime, get_num_crop, find_crops_with_coordinates, compute_categorical_values
 from get_data_from_buckets import read_file, Initialize_s3_client, get_list_objects
 from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
-sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))
+#sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))
 
 # Initialize S3 client
 BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
@@ -29,6 +29,9 @@ my_obj = read_file(s3, bucket_filename, BUCKET_CROP_MSG)
 ds_msg_day = xr.open_dataset(io.BytesIO(my_obj))
 lat = ds_msg_day['lat'].values
 lon = ds_msg_day['lon'].values
+print(len(lat), lat.min(), lat.max())
+print(len(lon), lon.min(), lon.max())
+exit()
 #lat = np.arange(45,45.1,0.04)
 #lon = np.arange(9,9.1,0.04)
 
@@ -126,5 +129,3 @@ for label in unique_labels:
     df_results.to_csv(class_output_path, index=False)
     print(f'Processing complete for class {label}. CSV saved at {class_output_path}')
 
-
-#nohup 1913418

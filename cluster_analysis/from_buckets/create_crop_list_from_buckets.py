@@ -57,6 +57,13 @@ for run_name in run_names:
     image_crops_path = f'/data1/crops/{run_name}/1/'
     list_image_crops = sorted(glob(image_crops_path+'*.tif'))
 
+    # Path for data index 
+    filename1 = 'rank0_chunk0_train_heads_inds.npy' 
+    path_feature = f'/data1/runs/{run_name}/features/'
+    data_index = np.load(path_feature+filename1)
+    print(data_index)
+    
+
     # Read data
     n_samples = len( list_image_crops)
     print('n samples: ', n_samples)
@@ -118,6 +125,9 @@ for run_name in run_names:
         
         # Collect distances for the selected samples
         selected_distances = distances[selected_indices]
+        
+        # Get data index for the samples in this cluster
+        #selected_data_index = data_index[selected_indices]
 
         # Add selected indices and distances to the lists
         subsample_indices.extend(selected_indices)
@@ -126,13 +136,14 @@ for run_name in run_names:
     print(len(subsample_indices))
     # Now, create the DataFrame with the selected subsamples
     df_labels = pd.DataFrame({
+        'crop_index': [i for i in subsample_indices],
         'path': [list_image_crops[i] for i in subsample_indices],
         'label': [assignments[i] for i in subsample_indices],  # The labels of the subsamples
         'distance': subsample_distances  # Corresponding distances
     })
 
     # Filter out invalid labels (-100)
-    df_labels = df_labels[df_labels['label'] != -100]
+    #df_labels = df_labels[df_labels['label'] != -100]
 
     # Optionally print and save the dataframe for inspection
     print(df_labels)

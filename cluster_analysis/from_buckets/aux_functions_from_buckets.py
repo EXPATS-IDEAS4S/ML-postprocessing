@@ -155,3 +155,35 @@ def find_crops_with_coordinates(df, lat, lon):
             matching_crops.append(filename)
 
     return matching_crops
+
+
+
+def get_variable_info(var_name):
+    """
+    Retrieves information for a specific variable.
+
+    Parameters:
+    -----------
+    var_name : str
+        The specific variable to retrieve information for (e.g., 'cot').
+
+    Returns:
+    --------
+    var_info : dict
+        Dictionary containing the variable's long name, unit, logscale, and direction.
+        Returns None if the variable is not found.
+    """
+
+    variables = {
+        'cot':  {'long_name': 'cloud optical thickness', 'unit': None,   'logscale': False, 'direction': 'incr'},
+        'cth':  {'long_name': 'cloud top height',       'unit': 'm',     'logscale': False, 'direction': 'incr'},
+        'cma':  {'long_name': 'cloud mask',            'unit': None,    'logscale': False, 'direction': 'incr'},
+        'cph':  {'long_name': 'cloud phase',           'unit': None,    'logscale': False, 'direction': 'incr'},
+        'precipitation': {'long_name': 'precipitation', 'unit': 'mm/h',  'logscale': False, 'direction': 'incr'},
+        'hour': {'long_name': 'hour',                  'unit': 'UTC',   'logscale': False, 'direction': 'incr'},
+        'month': {'long_name': 'month',                'unit': None,    'logscale': False, 'direction': 'incr'},
+        'lat_mid': {'long_name': 'latitude middle point', 'unit': '°N', 'logscale': False, 'direction': 'incr'},
+        'lon_mid': {'long_name': 'longitude middle point', 'unit': '°E', 'logscale': False, 'direction': 'incr'}
+    }
+
+    return variables.get(var_name, None)  # Returns None if var_name is not found
