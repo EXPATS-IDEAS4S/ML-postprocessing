@@ -22,7 +22,7 @@ BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
 BUCKET_IMERG_NAME = 'expats-imerg-prec'
 
 run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
-sampling_type = 'all'
+sampling_type = 'closest'
 vars = ['cot', 'cth', 'cma', 'cph', 'precipitation']
 stats = [50, 99]
 categ_vars = ['cma', 'cph']
@@ -38,7 +38,7 @@ print('n samples: ', n_samples)
 if sampling_type == 'all':
     n_subsample = n_samples  # Number of samples per cluster
 else:
-    n_subsample = 100
+    n_subsample = 1000
 
 # Generate column names
 table_entries = [f"{var}-{num}" for var in vars if var not in categ_vars for num in stats]

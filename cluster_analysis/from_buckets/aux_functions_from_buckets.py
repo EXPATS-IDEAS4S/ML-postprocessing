@@ -3,6 +3,69 @@ import numpy as np
 from glob import glob
 import pandas as pd
 import os
+import matplotlib.pyplot as plt
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+
+def plot_cartopy_map(output_path, latmin, lonmin, latmax, lonmax, n_divs=5):
+    """
+    Plots a Cartopy map with country borders and a grid of vertical and horizontal lines.
+
+    Parameters:
+    -----------
+    latmin : float
+        Minimum latitude of the map.
+    lonmin : float
+        Minimum longitude of the map.
+    latmax : float
+        Maximum latitude of the map.
+    lonmax : float
+        Maximum longitude of the map.
+    n_divs : int, optional (default=5)
+        Number of vertical and horizontal grid lines.
+    """
+
+    # Define the figure and axis with a PlateCarree projection
+    fig, ax = plt.subplots(figsize=(8, 6), subplot_kw={'projection': ccrs.PlateCarree()})
+
+    # Set map extent
+    ax.set_extent([lonmin, lonmax, latmin, latmax], crs=ccrs.PlateCarree())
+
+    # Add map features
+    ax.add_feature(cfeature.BORDERS, linewidth=1)  # Country borders
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.8)  # Coastlines
+    ax.add_feature(cfeature.LAND, facecolor='lightgray', alpha=0.5)  # Land color
+    ax.add_feature(cfeature.OCEAN, facecolor='lightblue', alpha=0.5)  # Ocean color
+
+    # Generate grid lines
+    lon_ticks = np.linspace(lonmin, lonmax, n_divs+1)
+    lat_ticks = np.linspace(latmin, latmax, n_divs+1)
+
+    # Plot vertical grid lines (longitude)
+    for lon in lon_ticks:
+        ax.plot([lon, lon], [latmin, latmax], transform=ccrs.PlateCarree(), color='black', linestyle='--', alpha=0.7)
+
+    # Plot horizontal grid lines (latitude)
+    for lat in lat_ticks:
+        ax.plot([lonmin, lonmax], [lat, lat], transform=ccrs.PlateCarree(), color='black', linestyle='--', alpha=0.7)
+
+    # Add custom tick labels at the bottom (longitude)
+    ax.set_xticks(lon_ticks)  
+    ax.set_xticklabels([f"{lon:.1f}°E" if lon >= 0 else f"{-lon:.1f}°W" for lon in lon_ticks], fontsize=10)
+    ax.xaxis.set_ticks_position('bottom')  # Only at the bottom
+
+    # Add custom tick labels on the left (latitude)
+    ax.set_yticks(lat_ticks)  
+    ax.set_yticklabels([f"{lat:.1f}°N" if lat >= 0 else f"{-lat:.1f}°S" for lat in lat_ticks], fontsize=10)
+    ax.yaxis.set_ticks_position('left')  # Only on the left
+
+    # Hide top and right tick labels
+    ax.tick_params(top=False, right=False)
+
+    # Save the figure
+    plt.savefig(f'{output_path}map_divided_{n_divs}.png', bbox_inches='tight', dpi=300)
+
 
 def extract_coordinates(filename):
     """
@@ -152,6 +215,47 @@ def find_crops_with_coordinates(df, lat, lon):
 
         # Check if the given lat/lon falls within the boundaries
         if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max:
+            matching_crops.append(filename)
+
+    return matching_crops
+
+
+def find_crops_in_range(df, lat_min, lat_max, lon_min, lon_max):
+    """
+    Given a DataFrame with a 'path' column, find crop files that overlap with a specified latitude and longitude range.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing a column 'path' with crop file paths.
+        lat_min (float): Minimum latitude of the search range.
+        lat_max (float): Maximum latitude of the search range.
+        lon_min (float): Minimum longitude of the search range.
+        lon_max (float): Maximum longitude of the search range.
+
+    Returns:
+        list: A list of filenames (last part of the path) that intersect with the given coordinate range.
+    """
+    matching_crops = []
+
+    for path in df['path']:
+        filename = os.path.basename(path)
+
+        # Extract information from filename
+        parts = filename.split("_")
+        crop_UL_lat = float(parts[1])  # Upper-left latitude
+        crop_UL_lon = float(parts[2])  # Upper-left longitude
+        resolution = float(parts[3])   # Resolution in degrees
+        width = int(parts[4].split('x')[0])  # Width in pixels
+        height = int(parts[4].split('x')[1]) # Height in pixels
+
+        # Calculate crop boundaries using the upper-left corner
+        crop_lat_min = crop_UL_lat - (resolution * height)
+        crop_lat_max = crop_UL_lat
+        crop_lon_min = crop_UL_lon
+        crop_lon_max = crop_UL_lon + (resolution * width)
+        #print(crop_lat_min, crop_lat_max, crop_lon_min, crop_lon_max)
+
+        # Check if the crop intersects with the given range
+        if not (crop_lat_max < lat_min or crop_lat_min > lat_max or crop_lon_max < lon_min or crop_lon_min > lon_max):
             matching_crops.append(filename)
 
     return matching_crops

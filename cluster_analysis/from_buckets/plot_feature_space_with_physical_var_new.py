@@ -14,7 +14,7 @@ from feature_space_plot_functions import name_to_rgb, colors_per_class1_names
 
 reduction_method = 'tsne' #'tsne
 #varlable_list = ['cot-50', 'cth-50', 'cot-99', 'cth-99', 'cma-None', 'cph-None', 'precipitation-50', 'precipitation-99']
-variable = 'cth-50'
+variable = 'precipitation-99'
 run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
 random_state = '3' #all visualization were made with random state 3
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
@@ -56,6 +56,11 @@ grid_res = 100
 # Get the min and max values of the variable to ensure consistent color mapping across all subplots
 vmin, vmax = df_merged[variable].min(), df_merged[variable].max()
 print(vmin, vmax)
+
+
+# Create a new directory for the variable 
+output_path = f'{output_path}/{variable}/'
+os.makedirs(output_path, exist_ok=True)
 
 
 # Step 1: Loop through unique classes and plot in each subplot

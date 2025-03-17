@@ -34,9 +34,9 @@ import os
 run_names = ['dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA']
 
 # Define sampling type
-sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
+sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
 
-n_subsample = 100  # Number of samples per cluster
+n_subsample = 1000  # Number of samples per cluster
 
 
 for run_name in run_names:
