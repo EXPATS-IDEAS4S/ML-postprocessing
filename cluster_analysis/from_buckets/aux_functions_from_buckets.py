@@ -281,8 +281,8 @@ def get_variable_info(var_name):
     variables = {
         'cot':  {'long_name': 'cloud optical thickness', 'unit': None,   'logscale': False, 'direction': 'incr'},
         'cth':  {'long_name': 'cloud top height',       'unit': 'm',     'logscale': False, 'direction': 'incr'},
-        'cma':  {'long_name': 'cloud mask',            'unit': None,    'logscale': False, 'direction': 'incr'},
-        'cph':  {'long_name': 'cloud phase',           'unit': None,    'logscale': False, 'direction': 'incr'},
+        'cma':  {'long_name': 'cloud cover',            'unit': None,    'logscale': False, 'direction': 'incr'},
+        'cph':  {'long_name': 'ice ratio',           'unit': None,    'logscale': False, 'direction': 'incr'},
         'precipitation': {'long_name': 'precipitation', 'unit': 'mm/h',  'logscale': False, 'direction': 'incr'},
         'hour': {'long_name': 'hour',                  'unit': 'UTC',   'logscale': False, 'direction': 'incr'},
         'month': {'long_name': 'month',                'unit': None,    'logscale': False, 'direction': 'incr'},

@@ -4,6 +4,8 @@ import numpy as np
 import io
 import os
 from joblib import Parallel, delayed
+import cftime
+import time 
 
 from aux_functions_from_buckets import (
     extract_datetime,
@@ -12,6 +14,9 @@ from aux_functions_from_buckets import (
 )
 from get_data_from_buckets import read_file, Initialize_s3_client
 from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
+
+# Start tracking time
+start_time = time.time()
 
 # Initialize S3 client
 BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
@@ -50,10 +55,10 @@ df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsamples}_{samp
 df_labels = df_labels[df_labels['label'] != -100]
 
 # Take a sample (for testing)
-#df_labels = df_labels.sample(n=3)
+#df_labels = df_labels.sample(n=10)
 
 # Process per unique label
-unique_labels = df_labels['label'].unique()
+unique_labels = sorted(df_labels['label'].unique())
 
 # Function to process a single lat/lon cell
 def process_lat_lon(i, j, lat_inf, lat_sup, lon_inf, lon_sup, df_filtered, label):
@@ -66,12 +71,16 @@ def process_lat_lon(i, j, lat_inf, lat_sup, lon_inf, lon_sup, df_filtered, label
     # Find the list of crops in the range
     crops_list = sorted(find_crops_in_range(df_filtered, lat_inf, lat_sup, lon_inf, lon_sup))
     if not crops_list:
+        print(f'No crops found for label {label} at lat: {lat_inf} to {lat_sup}, lon: {lon_inf} to {lon_sup}')
         return {key: np.nan for key in results.keys()}
 
     data_values = {var: [] for var in vars}
 
     for crop_filename in crops_list:
         datetime_info = extract_datetime(crop_filename)
+        #skip if year is different than 2015
+        #if datetime_info['year'] != 2015:
+        #    continue
         datetime_obj = np.datetime64(
             f"{datetime_info['year']:04d}-{datetime_info['month']:02d}-{datetime_info['day']:02d}T"
             f"{datetime_info['hour']:02d}:{datetime_info['minute']:02d}:00"
@@ -92,6 +101,8 @@ def process_lat_lon(i, j, lat_inf, lat_sup, lon_inf, lon_sup, df_filtered, label
             try:
                 my_obj = read_file(s3, bucket_filename, bucket_name)
                 ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
+                if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
+                    ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
                 ds_day = ds_day.sel(lat=slice(lat_inf, lat_sup), lon=slice(lon_inf, lon_sup), time=datetime_obj)
                 values = ds_day.values.flatten()
 
@@ -102,10 +113,10 @@ def process_lat_lon(i, j, lat_inf, lat_sup, lon_inf, lon_sup, df_filtered, label
                 print(f"Error processing {var} for {crop_filename}: {e}")
                 print(datetime_obj)
                 print(ds_day.time.values)
-                print(lat_inf, lat_sup, ds_day.lat.values)
-                print(lon_inf, lon_sup, ds_day.lon.values)
-                print(ds_day.values)
-                exit()
+                #print(lat_inf, lat_sup, ds_day.lat.values)
+                #print(lon_inf, lon_sup, ds_day.lon.values)
+                #print(ds_day.values)
+                
                 continue
 
     # Compute percentiles and categorical values
@@ -120,24 +131,42 @@ def process_lat_lon(i, j, lat_inf, lat_sup, lon_inf, lon_sup, df_filtered, label
     return results
 
 # Process data separately for each label in parallel
+print(unique_labels)
 for label in unique_labels:
+    print(label)
     print(f"Processing label: {label}")
 
+    # Filter the dataframe by the current label
     df_filtered = df_labels[df_labels['label'] == label]
 
     num_cores = max(1, os.cpu_count() - 4)
+
+    # Parallel processing to get results for each (i, j) grid
     results_list = Parallel(n_jobs=num_cores)(
         delayed(process_lat_lon)(i, j, lat_edges[i], lat_edges[i+1], lon_edges[j], lon_edges[j+1], df_filtered, label)
         for i in range(n_div) for j in range(n_div)
     )
 
-    # Convert results into a structured format
-    results = {key: np.full((n_div, n_div), np.nan) for key in results_list[0].keys()}
+    # Filter out empty dictionaries from the results_list
+    filtered_results_list = [res for res in results_list if res]
 
+    # Initialize the results dictionary based on the first valid (non-empty) dictionary
+    if filtered_results_list:
+        # Use the keys of the first non-empty dictionary to initialize results
+        results = {key: np.full((n_div, n_div), np.nan) for key in filtered_results_list[0].keys()}
+    else:
+        results = {}  # If no valid dictionary, results will be empty
+
+    # Now populate the results dictionary with the processed values
     for idx, result in enumerate(results_list):
-        i, j = divmod(idx, n_div)
-        for key in results.keys():
-            results[key][i, j] = result[key]
+        if result:  # Only process non-empty results
+            i, j = divmod(idx, n_div)
+            for key in results.keys():
+                results[key][i, j] = result[key]
+
+    # Convert all arrays in results to np.float32
+    for key in results.keys():
+        results[key] = results[key].astype(np.float32)
 
     # Create dataset
     ds = xr.Dataset(
@@ -145,17 +174,29 @@ for label in unique_labels:
         coords={"lat": lat_mids, "lon": lon_mids}
     )
 
-    # Add metadata
+    #for var in ds.data_vars:
+    #    ds[var] = ds[var].astype("float32")
+
+    ds["lat"] = ds["lat"].astype("float32")
+    ds["lon"] = ds["lon"].astype("float32")
+
+    #Add metadata
     ds.attrs["description"] = f"Processed data for label: {label}"
     ds.attrs["note"] = "Lat/Lon coordinates represent the midpoints of grid cells derived from given edges."
-    ds.attrs["lat_edges"] = lat_edges.tolist()
-    ds.attrs["lon_edges"] = lon_edges.tolist()
+    ds.attrs["lat_edges"] = str(lat_edges.tolist())
+    ds.attrs["lon_edges"] = str(lon_edges.tolist())
     ds["lat"].attrs["units"] = "degrees_north"
     ds["lon"].attrs["units"] = "degrees_east"
 
-    # Save dataset
-    output_filename = f"{output_path}percentile_maps_label_{label}.nc"
-    ds.to_netcdf(output_filename)
+    print(ds)
+    ds.close()  # Close before saving
+
+    # # Save dataset
+    output_filename = f"{output_path}percentile_maps_res_{n_div}x{n_div}_label_{label}.nc"
+    ds.to_netcdf(output_filename, format="NETCDF4", engine="h5netcdf")
 
     print(f"Saved {output_filename}")
 
+# End of script time tracking
+end_time = time.time()
+print(f"Total script execution time: {end_time - start_time:.2f} seconds")
