@@ -118,7 +118,7 @@ def add_trajectory_case_study(df_subset, ax, fig, cmap, colorbar=False):
 def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filename, df_subset2=None):
 
     # Plot
-    fig, ax = plt.subplots(figsize=(16, 10))
+    fig, ax = plt.subplots(figsize=(12, 10))
     scatter = ax.scatter(df_subset1['Component_1'], df_subset1['Component_2'],
                         c=df_subset1['color'].tolist(), alpha=0.5, s=20)
 
@@ -418,7 +418,7 @@ def plot_embedding_dots_iterative_test_msg_icon(
 def plot_embedding_crops(indices, selected_images, df_conc, tsne_plot, output_path, filename, image_centers_area_size, offset, max_image_size, min_1, max_1, min_2, max_2, colors_per_class, df_subset2=None):
     #TODO how to plot crops with trajectory and line contours?
     #TODO maybe it is a problem of coordiantes, images and dots are not aligned!
-    fig, ax = plt.subplots(figsize=(36,30))
+    fig, ax = plt.subplots(figsize=(20,20))
     for i,index in enumerate(indices):
         image_path = selected_images[i] #df.iloc[index,2]
         row = df_conc.loc[index]  # 'index' here is the row number
@@ -461,17 +461,78 @@ def plot_embedding_crops(indices, selected_images, df_conc, tsne_plot, output_pa
     fig.savefig(output_path+filename.split('.')[0]+'_crops.png',bbox_inches='tight')
 
 
+
+def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closest"):
+    """
+    Plots crops in a table format where each row corresponds to a label, 
+    and 'n' images are selected based on the specified selection method.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing image paths, labels, and distances.
+        output_path (str): Path to save the output plot.
+        filename (str): Name of the output file.
+        n (int): Number of crops to display per label.
+        selection (str): Method of selection - "closest", "farthest", or "random".
+    """
+    labels = df['label'].unique()
+    num_labels = len(labels)
+    
+    fig, axes = plt.subplots(num_labels, n, figsize=(n * 2, num_labels * 2))
+    fig.suptitle(f"Crops Sorted by {selection.capitalize()} Distance from Centroid", fontsize=14, fontweight="bold")
+
+    # Ensure axes is iterable even if there's only one row
+    if num_labels == 1:
+        axes = np.expand_dims(axes, axis=0)
+
+    for i, label in enumerate(labels):
+        subset = df[df['label'] == label].sort_values(by='distance')
+
+        # Select crops based on the specified method
+        if selection == "closest":
+            subset = subset.head(n)
+        elif selection == "farthest":
+            subset = subset.tail(n)
+        elif selection == "random":
+            subset = subset.sample(n=min(n, len(subset)), random_state=42)  # Ensure at least `n` samples
+        else:
+            raise ValueError("Invalid selection method. Choose 'closest', 'farthest', or 'random'.")
+
+        for j, (_, row) in enumerate(subset.iterrows()):
+            img_path = row['path']
+            img = Image.open(img_path).convert('L')  # Convert to grayscale
+            
+            ax = axes[i, j] if num_labels > 1 else axes[j]  # Select subplot
+            ax.imshow(img, cmap='gray')
+            ax.axis('off')
+
+            # Row label (on the left)
+            if j == 0:
+                ax.set_ylabel(f"Label {label}", fontsize=12, fontweight='bold', rotation=0, labelpad=30, va='center')
+
+    # Add column headers (1, 2, 3, ... n)
+    for j in range(n):
+        axes[0, j].set_title(f"{j+1}", fontsize=12, fontweight="bold")  # Add column numbers
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to fit the title
+    output_file = f"{output_path}/{filename.split('.')[0]}_{n}_{selection}_crops_table.png"
+    plt.savefig(output_file, bbox_inches='tight', dpi=300)
+    plt.close()
+
+    print(f"Saved plot: {output_file}")
+
+
+
 def plot_embedding_crops_new(df, output_path, filename):
 
     # Create a figure and axis for plotting
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 8))
 
     # Plot the scatter plot with component 1 as x and component 2 as y
     #ax.scatter(df['Component_1'], df['Component_2'], s=100, color='blue', alpha=0.6)
 
     # Iterate over each row of the dataframe and overlay the image
     for i, row in df.iterrows():
-        img_path = row['location']
+        img_path = row['path']
         # Load the image using PIL or matplotlib
         img = Image.open(img_path)  # PIL can be used to open image
         # Alternatively, you can use mpimg.imread() if you prefer
@@ -560,3 +621,58 @@ def plot_embedding_filled(df_subset1, colors_per_class, output_path, filename, d
     fig.savefig(output_path + filename.split('.')[0] + '_contours.png', bbox_inches='tight')
 
 
+def plot_average_crop_shapes(df, output_path, filename, n=10, selection="closest", alpha=0.05):
+    """
+    Overlays `n` crop images with high transparency to visualize the average shape for each label.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing crop information including 'path', 'distance', and 'label'.
+        output_path (str): Path to save the output images.
+        filename (str): Base name for the output file.
+        n (int): Number of images to use per label.
+        selection (str): Selection method ('closest', 'farthest', 'random').
+        alpha (float): Transparency level for each image.
+    """
+
+    os.makedirs(output_path, exist_ok=True)  # Ensure output directory exists
+    unique_labels = df['label'].unique()  # Get all unique labels
+
+    for label in unique_labels:
+        # Filter dataset for the given label and sort by distance
+        subset = df[df['label'] == label].sort_values(by='distance')
+
+        if selection == "closest":
+            subset = subset.head(n)
+        elif selection == "farthest":
+            subset = subset.tail(n)
+        elif selection == "random":
+            subset = subset.sample(n=min(n, len(subset)), random_state=42)
+
+        image_paths = subset['path'].tolist()
+
+        if not image_paths:
+            print(f"No images found for label {label}. Skipping.")
+            continue
+
+        # Load images and convert to grayscale arrays
+        images = [np.array(Image.open(path).convert('L'), dtype=np.float32) for path in image_paths]
+
+        # Get dimensions (assume all images are the same size)
+        height, width = images[0].shape
+
+        # Compute the averaged image
+        avg_image = np.zeros((height, width), dtype=np.float32)
+        for img in images:
+            avg_image += img / len(images)  # Normalized sum
+
+        # Plot the averaged image
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.imshow(avg_image, cmap="gray", alpha=1)  # Show the final averaged shape
+        ax.axis("off")
+
+        # Save the output
+        output_file = os.path.join(output_path, f"{filename.split('.')[0]}_label_{label}_{n}_{selection}_average.png")
+        plt.savefig(output_file, bbox_inches="tight", dpi=300)
+        plt.close()
+
+        print(f"Saved averaged shape plot for label {label}: {output_file}")
