@@ -8,9 +8,9 @@ sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analy
 from feature_space_plot_functions import name_to_rgb, scale_to_01_range, colors_per_class1_names
 
 reduction_method = 'tsne' #'tsne
-run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
+run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 random_state = '3' #all visualization were made with random state 3
-sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all''
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all''
 
 # Get number of samples
 if sampling_type == 'all':
@@ -36,10 +36,11 @@ tx = scale_to_01_range(tx)
 ty = scale_to_01_range(ty)
 
 # Get index of the crops
-filename1 = 'rank0_chunk0_train_heads_inds.npy' 
-path_feature = f'/data1/runs/{run_name}/features/'
-data1 = np.load(path_feature+filename1)
+# filename1 = 'rank0_chunk0_train_heads_inds.npy' 
+# path_feature = f'/data1/runs/{run_name}/features/'
+# data1 = np.load(path_feature+filename1)
 #print(data1)
+data1 = np.arange(n_samples)
 
 # Create a DataFrame for T-SNE coordinates
 df_tsne = pd.DataFrame({'Component_1': tx, 'Component_2': ty, 'crop_index': data1})

@@ -113,6 +113,9 @@ for index, row in df_labels.iterrows():
             try:
                 ds_day = xr.open_dataset(io.BytesIO(my_obj))
 
+                if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
+                    ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
+
                 # Select the variable of interest
                 ds_day  = ds_day[var]
 

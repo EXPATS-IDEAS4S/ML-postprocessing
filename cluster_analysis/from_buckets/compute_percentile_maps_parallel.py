@@ -24,7 +24,7 @@ BUCKET_IMERG_NAME = 'expats-imerg-prec'
 BUCKET_CROP_MSG = 'expats-msg-training'
 
 # Configuration
-run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
+run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 sampling_type = 'closest'
 n_subsamples = 1000
 vars = ['cot', 'cth', 'cma', 'cph', 'precipitation']
@@ -200,3 +200,5 @@ for label in unique_labels:
 # End of script time tracking
 end_time = time.time()
 print(f"Total script execution time: {end_time - start_time:.2f} seconds")
+
+#nohup 650899

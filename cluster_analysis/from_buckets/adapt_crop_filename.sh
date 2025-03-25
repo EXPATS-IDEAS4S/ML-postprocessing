@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the directory containing the old filenames
-DIR="/data1/crops/dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA/1"
+DIR="/data1/crops/dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA/1"
 
 # Loop through each file in the directory
 for file in "$DIR"/*.tif; do

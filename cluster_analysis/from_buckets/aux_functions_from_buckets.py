@@ -279,15 +279,15 @@ def get_variable_info(var_name):
     """
 
     variables = {
-        'cot':  {'long_name': 'cloud optical thickness', 'unit': None,   'logscale': False, 'direction': 'incr'},
-        'cth':  {'long_name': 'cloud top height',       'unit': 'm',     'logscale': False, 'direction': 'incr'},
-        'cma':  {'long_name': 'cloud cover',            'unit': None,    'logscale': False, 'direction': 'incr'},
-        'cph':  {'long_name': 'ice ratio',           'unit': None,    'logscale': False, 'direction': 'incr'},
-        'precipitation': {'long_name': 'precipitation', 'unit': 'mm/h',  'logscale': False, 'direction': 'incr'},
-        'hour': {'long_name': 'hour',                  'unit': 'UTC',   'logscale': False, 'direction': 'incr'},
-        'month': {'long_name': 'month',                'unit': None,    'logscale': False, 'direction': 'incr'},
-        'lat_mid': {'long_name': 'latitude middle point', 'unit': '°N', 'logscale': False, 'direction': 'incr'},
-        'lon_mid': {'long_name': 'longitude middle point', 'unit': '°E', 'logscale': False, 'direction': 'incr'}
+        'cot':  {'long_name': 'cloud optical thickness', 'unit': None,   'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},   
+        'cth':  {'long_name': 'cloud top height',       'unit': 'm',     'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'cma':  {'long_name': 'cloud cover',            'unit': None,    'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'cph':  {'long_name': 'ice ratio',           'unit': None,    'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'precipitation': {'long_name': 'precipitation', 'unit': 'mm/h',  'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'hour': {'long_name': 'hour',                  'unit': 'UTC',   'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'month': {'long_name': 'month',                'unit': None,    'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'lat_mid': {'long_name': 'latitude middle point', 'unit': '°N', 'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100},
+        'lon_mid': {'long_name': 'longitude middle point', 'unit': '°E', 'logscale': False, 'direction': 'incr', 'vmin': 0, 'vmax': 100}
     }
 
     return variables.get(var_name, None)  # Returns None if var_name is not found

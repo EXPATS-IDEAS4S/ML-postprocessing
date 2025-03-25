@@ -5,7 +5,7 @@ import os
 import numpy as np
 
 # Define folder and file pattern
-run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
+run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 sampling_type = 'closest'
 n_div = 8
 output_path = f'/data1/fig/{run_name}/{sampling_type}/'

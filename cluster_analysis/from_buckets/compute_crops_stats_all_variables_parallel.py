@@ -21,8 +21,8 @@ from aux_functions import compute_percentile
 BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
 BUCKET_IMERG_NAME = 'expats-imerg-prec'
 
-run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
-sampling_type = 'closest'
+run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
+sampling_type = 'all'
 vars = ['cot', 'cth', 'cma', 'cph', 'precipitation']
 stats = [50, 99]
 categ_vars = ['cma', 'cph']
@@ -81,6 +81,10 @@ def process_row(row):
             try:
                 my_obj = read_file(s3, bucket_filename, bucket_name)
                 ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
+
+                if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
+                    ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
+
                 ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
 
                 # Select time (use nearest if exact time is missing)

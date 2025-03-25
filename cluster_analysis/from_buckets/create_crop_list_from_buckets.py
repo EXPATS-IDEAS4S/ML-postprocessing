@@ -31,7 +31,7 @@ from glob import glob
 import numpy as np
 import os
 
-run_names = ['dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA']
+run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 
 # Define sampling type
 sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
@@ -57,16 +57,18 @@ for run_name in run_names:
     image_crops_path = f'/data1/crops/{run_name}/1/'
     list_image_crops = sorted(glob(image_crops_path+'*.tif'))
 
-    # Path for data index 
-    filename1 = 'rank0_chunk0_train_heads_inds.npy' 
-    path_feature = f'/data1/runs/{run_name}/features/'
-    data_index = np.load(path_feature+filename1)
-    print(data_index)
-    
-
-    # Read data
     n_samples = len( list_image_crops)
     print('n samples: ', n_samples)
+
+    # Path for data index 
+    # filename1 = 'rank0_chunk0_train_heads_inds.npy' 
+    # path_feature = f'/data1/runs/{run_name}/features/'
+    # data_index = np.load(path_feature+filename1)
+    # print(data_index)
+    data_index = np.arange(n_samples).astype(np.int32)
+    print(data_index)    
+
+    # Read data
 
     if sampling_type=='all':
         n_subsample = n_samples

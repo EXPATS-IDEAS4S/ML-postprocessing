@@ -113,7 +113,7 @@ def plot_dataset_maps(ds, ds_oro, output_path, label, cmap, vmin_vmax_df):
         print(f"Saved plot: {output_file}")
 
 # Example usage
-run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
+run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 sampling_type = 'closest'
 output_path = f'/data1/fig/{run_name}/{sampling_type}/'
 cmap = cmc.nuuk #RdYlBu_r'
