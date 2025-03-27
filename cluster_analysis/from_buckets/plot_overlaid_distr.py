@@ -22,13 +22,18 @@ BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
 BUCKET_IMERG_NAME = 'expats-imerg-prec'
 BUCKET_MSG_NAME = 'expats-msg-training'
 
-run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
+run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
 sampling_type = 'closest'
 vars = ['IR_108', 'WV_062','cot', 'cth', 'precipitation']  # Variables to extract
 #categ_vars = ['cma', 'cph']  # Categorical variables
 units = ['K', 'K', None, 'm', 'mm/h']  # Units for each variable
 logs = [False, False, True, False, True]  # Logarithmic scale for each variable
+xlims = [(200, 320), (205, 250), (0, 150), (0, 17500), (0, 80)]  # X-axis limits for each variable
+ylims = [(0, 0.30), (0, 0.25), (0, 0.70), (0, 0.15), (0, 0.70)]  # Y-axis limits for each variable
 alpha = 0.01
+# x_pixel_size = 128
+# y_pixel_size = 128
+# n_pixels = x_pixel_size * y_pixel_size
 
 # Path to figures folder
 output_path = f'/data1/fig/{run_name}/{sampling_type}/'
@@ -104,21 +109,34 @@ labels = df_labels['label'].unique()
 for label in labels:
     # Select the rows with the current label
     df_labels_selection = df_labels[df_labels['label'] == label]
-    for entry, unit, log in zip(vars, units, logs):
+    for entry, unit, log, xlim, ylim in zip(vars, units, logs, xlims, ylims):
         print(f"Processing label {label} for variable {entry}")
         # Create figure
         fig, ax = plt.subplots(figsize=(8, 6))
         for _, row in df_labels_selection.iterrows():
             values = extract_variable_values(row, entry) 
-            sns.histplot(values, bins=100, kde=False, alpha=alpha, element="bars", fill=True, edgecolor=None, color='blue')
-
+            total_values = len(values)  # Get total count of values
+            sns.histplot(
+                values,
+                bins=100,
+                kde=False,
+                alpha=alpha,
+                element="bars",
+                fill=True,
+                edgecolor=None,
+                color='blue',
+                stat="probability"  # Normalize histogram by total count
+            )
+    
         if unit:
             plt.xlabel(f'{entry} [{unit}]')
         else:
             plt.xlabel(f'{entry}')
-        plt.ylabel('Occurrences')
+        plt.ylabel('Frequency')
         if log:
             plt.yscale('log')
+        #plt.xlim(xlim[0], xlim[1])
+        #plt.ylim(ylim[0], ylim[1])
         plt.title(f'Distribution of {entry} for Class {label}')
         plt.grid(True, linestyle='--', alpha=0.5)
         output_dir = f'{output_path}overlaid_histograms/{label}/'
@@ -128,4 +146,4 @@ for label in labels:
 
         print("Histograms saved successfully!")
      
-#nohup 814895
+#nohup 841950

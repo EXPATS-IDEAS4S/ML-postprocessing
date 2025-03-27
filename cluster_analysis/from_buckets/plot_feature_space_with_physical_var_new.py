@@ -24,11 +24,13 @@ output_path = f'/data1/fig/{run_name}/{sampling_type}/'
 df_merged = pd.read_csv(f'{output_path}merged_tsne_variables_{run_name}_{sampling_type}_{random_state}.csv')
 print(df_merged)
 
+n_subsample = None #put None if no subsampling is needed
+
 # Number of classes and subplot grid setup
 n_classes = df_merged['label'].nunique()
 #print(n_classes)
 
-varlable_list = ['cot-50', 'cth-50', 'cot-99', 'cth-99', 'cma-None', 'cph-None', 'precipitation-50', 'precipitation-99']
+varlable_list = ['cma-None', 'cph-None']#['cot-50', 'cth-50', 'cot-99', 'cth-99', 'cma-None', 'cph-None', 'precipitation-50', 'precipitation-99']
 for variable in varlable_list:
     print(variable)
     # Extract the statistic from the variable name
@@ -55,7 +57,10 @@ for variable in varlable_list:
 
 
     # Create a new directory for the variable 
-    output_dir = f'{output_path}/{variable}/'
+    if n_subsample:
+        output_dir = f'{output_path}/physical_embeddings/{variable}_{n_subsample}/'
+    else:
+        output_dir = f'{output_path}/{variable}/'
     os.makedirs(output_dir, exist_ok=True)
 
 
@@ -189,6 +194,12 @@ for variable in varlable_list:
         # Filter the data for the current class
         class_data = df_merged[df_merged['label'] == class_label]
         #class_data_cot = df_merged[df_merged['label'] == class_label]
+
+        if n_subsample:
+            # Select the closest n_subsample rows based on 'distance'
+            # Take the largest values of distance since a cosine is used
+            class_data = class_data.nlargest(n_subsample, 'distance')
+           
         
         # Drop rows where 'Component_1', 'Component_2', or the variable of interest has NaN values
         class_data = class_data.dropna(subset=['Component_1', 'Component_2', variable])
@@ -210,10 +221,10 @@ for variable in varlable_list:
             continue
         
         # KDE-based filtering (optional: adjust percentile as needed)
-        kde = gaussian_kde(class_data[['Component_1', 'Component_2']].T)
-        kde_values = kde(class_data[['Component_1', 'Component_2']].T)
-        kde_threshold = np.percentile(kde_values, 25)
-        class_data = class_data[kde_values >= kde_threshold]
+        #kde = gaussian_kde(class_data[['Component_1', 'Component_2']].T)
+        #kde_values = kde(class_data[['Component_1', 'Component_2']].T)
+        #kde_threshold = np.percentile(kde_values, 25)
+        #class_data = class_data[kde_values >= kde_threshold]
         
         if class_data.empty:
             print(f"Skipping class {class_label} due to insufficient points after KDE filtering.")
