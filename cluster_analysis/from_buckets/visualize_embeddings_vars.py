@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import cmcrameri.cm as cmc
 from matplotlib.colors import ListedColormap
+from scipy.spatial import cKDTree
 
 from get_data_from_buckets import read_file, Initialize_s3_client
 from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
@@ -108,6 +109,64 @@ def plot_nc_crops_scatter(df, output_path, filename, var, cmap, norm):
     print(f"Saved scatter plot: {output_path + filename.split('.')[0]}_nc_scatter_{var}.png")
 
 
+def plot_nc_crops_grid(df, output_path, filename, var, cmap, norm, grid_size=10):
+    """
+    Plots NetCDF crops on a regular grid using the closest data point to each grid cell.
+    Avoids overlapping by ensuring one image per grid cell.
+    """
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    # Normalize component coordinates to [0, 1]
+    x = df['Component_1'].values
+    y = df['Component_2'].values
+    x_norm = (x - x.min()) / (x.max() - x.min())
+    y_norm = (y - y.min()) / (y.max() - y.min())
+
+    # Build KDTree for fast nearest neighbor search
+    tree = cKDTree(np.c_[x_norm, y_norm])
+
+    # Build a grid of evenly spaced points
+    grid_x, grid_y = np.meshgrid(np.linspace(0, 1, grid_size), np.linspace(0, 1, grid_size))
+    grid_points = np.c_[grid_x.ravel(), grid_y.ravel()]
+
+    used_indices = set()
+
+    for point in grid_points:
+        dist, idx = tree.query(point)
+
+        if idx in used_indices:
+            continue  # already used this crop
+
+        used_indices.add(idx)
+        row = df.iloc[idx]
+        ds = select_ds_from_dataframe(row, var)
+
+        if ds is None or not isinstance(ds, xr.DataArray) or ds.name != var:
+            continue
+
+        img = ds.values.squeeze()
+        img = np.flipud(img)
+
+        if norm is not None and isinstance(norm, plt.Normalize):
+            vmin, vmax = norm.vmin, norm.vmax
+        else:
+            vmin, vmax = 0, 1
+
+        img = np.clip(img, vmin, vmax)
+        imagebox = OffsetImage(img, zoom=0.3, cmap=cmap)
+
+        ab = AnnotationBbox(imagebox, point, frameon=False)
+        ax.add_artist(ab)
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+
+    fig.savefig(output_path + filename.split('.')[0] + '_nc_grid_' + var + '.png', bbox_inches='tight', dpi=300)
+    plt.close()
+    print(f"Saved grid plot: {output_path + filename.split('.')[0]}_nc_grid_{var}.png")
+
+
 def plot_nc_crops_table(df, output_path, filename, var, cmap, norm, n=5, selection="closest"):
     """
     Plots NetCDF crops in a table format based on clustering labels.
@@ -177,12 +236,13 @@ run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 random_state = '3' #all visualization were made with random state 3
 sampling_type = 'all' 
 reduction_method = 'tsne' # Options: 'tsne', 'isomap',
-vars = ['WV_062', 'cot', 'cth','precipitation','cma', 'cph']
+vars = ['IR_108','WV_062', 'cot', 'cth','precipitation','cma', 'cph']
 #cmaps = [cmc.grayC, 'magma', 'cividis_r', cmc.batlowK, 'binary']
 #vmaxs = [None, 20, None, 10, None   ]
 sample_to_plot = 200
 
 colormap_dict = {
+    "IR_108": plt.get_cmap("Greys"),
     "WV_062": plt.get_cmap("Greys"),
     "cot": plt.get_cmap("magma"),
     "cth": plt.get_cmap("cividis"),
@@ -192,6 +252,7 @@ colormap_dict = {
 }
 
 norm_dict = {
+    "IR_108": None,
     "cot": plt.Normalize(vmin=0, vmax=20),  # Compress values above 20
     "precipitation": plt.Normalize(vmin=0, vmax=10),  # Compress values above 10
     "WV_062": None,
@@ -255,8 +316,8 @@ os.makedirs(output_dir, exist_ok=True)
 
 for var in vars:
     print(var)
-    plot_nc_crops_scatter(df_subset2, output_dir, filename, var, colormap_dict[var], norm_dict[var] )
-    plot_nc_crops_table(df_subset1, output_dir, filename, var, colormap_dict[var], norm_dict[var], n=10, selection="random")
-    plot_nc_crops_table(df_subset1, output_dir, filename, var, colormap_dict[var], norm_dict[var], n=10, selection="closest")
-
+    #plot_nc_crops_scatter(df_subset2, output_dir, filename, var, colormap_dict[var], norm_dict[var] )
+    #plot_nc_crops_table(df_subset1, output_dir, filename, var, colormap_dict[var], norm_dict[var], n=10, selection="random")
+    #plot_nc_crops_table(df_subset1, output_dir, filename, var, colormap_dict[var], norm_dict[var], n=10, selection="closest")
+    #plot_nc_crops_grid(df_subset2, output_dir, filename, var, colormap_dict[var], norm_dict[var], grid_size=10)
         

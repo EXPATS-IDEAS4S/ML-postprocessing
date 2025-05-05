@@ -46,7 +46,7 @@ labels = np.arange(0, 9)
 
 for label in labels:
    
-    folder_path = f'/data1/fig/dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA/closest/percentile_maps/{label}/'
+    folder_path = f'/data1/fig/dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA/all/percentile_maps/{label}/'
     output_gif_path = f'{folder_path}evolving_weather_maps_label_{label}.gif'
     # Get a list of all JPEG images in the folder, sorted by filename
     image_files = sorted(

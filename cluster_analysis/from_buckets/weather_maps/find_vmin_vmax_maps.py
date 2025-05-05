@@ -6,8 +6,8 @@ import numpy as np
 
 # Define folder and file pattern
 run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
-sampling_type = 'closest'
-n_div = 8
+sampling_type = 'all'
+n_div = 16
 output_path = f'/data1/fig/{run_name}/{sampling_type}/percentile_maps/'
 
 file_pattern = f"percentile_maps_res_{n_div}x{n_div}_label_*.nc"

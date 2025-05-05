@@ -7,6 +7,7 @@ import cmcrameri.cm as cmc
 import os
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import pandas as pd
+from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 
 # Load custom functions
 import sys
@@ -60,7 +61,7 @@ def plot_dataset_maps(ds, ds_oro, output_path, label, cmap, vmin_vmax_df, hour):
 
         var_info = get_variable_info(var_name)
 
-        fig, ax = plt.subplots(figsize=(7, 5), subplot_kw={'projection': ccrs.PlateCarree()})
+        fig, ax = plt.subplots(figsize=(6, 5), subplot_kw={'projection': ccrs.PlateCarree()})
         ax.set_extent([lon_edges.min(), lon_edges.max(), lat_edges.min(), lat_edges.max()], crs=ccrs.PlateCarree())
 
         # Plot data variable
@@ -77,9 +78,9 @@ def plot_dataset_maps(ds, ds_oro, output_path, label, cmap, vmin_vmax_df, hour):
         # Add colorbar
         cbar = plt.colorbar(pcm, ax=ax, orientation="vertical", shrink=0.7)
         if var_info['unit'] is not None:
-            cbar.set_label(f"{var_name} ({var_info['unit']})", fontsize=10)
+            cbar.set_label(f"{var_name} ({var_info['unit']})", fontsize=12)
         else:
-            cbar.set_label(f"{var_name}", fontsize=10)
+            cbar.set_label(f"{var_name}", fontsize=12)
 
         # Labels and title
         title_text = f"{var_info['long_name']} map for class {label} and hour {hour}"
@@ -90,13 +91,20 @@ def plot_dataset_maps(ds, ds_oro, output_path, label, cmap, vmin_vmax_df, hour):
         plt.xlabel("Longitude")
         plt.ylabel("Latitude")
 
+        #increase font size of title
+        plt.title(title_text, fontsize=14, fontweight="bold")
+
         # Add lat/lon grid lines aligning with data centers
         gl = ax.gridlines(draw_labels=True, linestyle="--", linewidth=0.5, alpha=0.7)
-        gl.xlocator = plt.FixedLocator(lon_centers)  # Exact lon centers
-        gl.ylocator = plt.FixedLocator(lat_centers)  # Exact lat centers
+        #gl.xlocator = plt.FixedLocator(lon_centers)  # Exact lon centers
+        #gl.ylocator = plt.FixedLocator(lat_centers)  # Exact lat centers
 
-        gl.xformatter = LONGITUDE_FORMATTER
-        gl.yformatter = LATITUDE_FORMATTER
+        # Use custom formatters with one decimal
+        gl.xformatter = LongitudeFormatter(number_format='.1f')
+        gl.yformatter = LatitudeFormatter(number_format='.1f')
+
+        gl.xlocator = plt.FixedLocator(np.arange(5, 16, 2))  # -10 to 10 every 2.5 degrees
+        gl.ylocator = plt.FixedLocator(np.arange(42, 52, 2))     # 40 to 50 every 1 degree
 
         # Show labels only on bottom and left
         gl.right_labels = False
@@ -105,8 +113,8 @@ def plot_dataset_maps(ds, ds_oro, output_path, label, cmap, vmin_vmax_df, hour):
         gl.left_labels = True
 
         # Increase font size of labels
-        gl.xlabel_style = {'fontsize': 10}
-        gl.ylabel_style = {'fontsize': 10}
+        gl.xlabel_style = {'fontsize': 12}
+        gl.ylabel_style = {'fontsize': 12}
 
         # Save the plot
         output_file = f"{output_path}percentile_{var}_maps_res_label_{label}_hour_{hour}.png"
@@ -117,10 +125,10 @@ def plot_dataset_maps(ds, ds_oro, output_path, label, cmap, vmin_vmax_df, hour):
 
 # Example usage
 run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
-sampling_type = 'closest'
+sampling_type = 'all'
 output_path = f'/data1/fig/{run_name}/{sampling_type}/percentile_maps/'
 cmap = cmc.nuuk #RdYlBu_r'
-n_div = 8
+n_div = 16
 
 #path to orography
 path_dem = '/data1/other_data/DEM_EXPATS_0.01x0.01.nc'

@@ -29,7 +29,7 @@ vars = ['IR_108', 'WV_062','cot', 'cth', 'precipitation']  # Variables to extrac
 units = ['K', 'K', None, 'm', 'mm/h']  # Units for each variable
 logs = [False, False, True, False, True]  # Logarithmic scale for each variable
 xlims = [(200, 320), (205, 250), (0, 150), (0, 17500), (0, 80)]  # X-axis limits for each variable
-ylims = [(0, 0.30), (0, 0.25), (0, 0.70), (0, 0.15), (0, 0.70)]  # Y-axis limits for each variable
+ylims = [(0, 0.50), (0, 0.25), (0, 0.70), (0, 0.15), (0, 0.70)]  # Y-axis limits for each variable
 alpha = 0.01
 # x_pixel_size = 128
 # y_pixel_size = 128
@@ -104,46 +104,74 @@ def extract_variable_values(row, var):
 
     return values
 
+
 labels = df_labels['label'].unique()
 #labels = [0] 
 for label in labels:
     # Select the rows with the current label
     df_labels_selection = df_labels[df_labels['label'] == label]
     for entry, unit, log, xlim, ylim in zip(vars, units, logs, xlims, ylims):
-        print(f"Processing label {label} for variable {entry}")
-        # Create figure
-        fig, ax = plt.subplots(figsize=(8, 6))
-        for _, row in df_labels_selection.iterrows():
-            values = extract_variable_values(row, entry) 
-            total_values = len(values)  # Get total count of values
-            sns.histplot(
-                values,
-                bins=100,
-                kde=False,
-                alpha=alpha,
-                element="bars",
-                fill=True,
-                edgecolor=None,
-                color='blue',
-                stat="probability"  # Normalize histogram by total count
-            )
-    
-        if unit:
-            plt.xlabel(f'{entry} [{unit}]')
-        else:
-            plt.xlabel(f'{entry}')
-        plt.ylabel('Frequency')
-        if log:
-            plt.yscale('log')
-        #plt.xlim(xlim[0], xlim[1])
-        #plt.ylim(ylim[0], ylim[1])
-        plt.title(f'Distribution of {entry} for Class {label}')
-        plt.grid(True, linestyle='--', alpha=0.5)
-        output_dir = f'{output_path}overlaid_histograms/{label}/'
-        os.makedirs(output_dir, exist_ok=True)
-        plt.savefig(f'{output_dir}histogram_{entry}_label_{label}.png', dpi=300, bbox_inches="tight")
-        plt.close()
+        if entry == 'IR_108':
+            print(f"Processing label {label} for variable {entry}")
 
-        print("Histograms saved successfully!")
-     
-#nohup 841950
+            # Histogram bin setup
+            num_bins = 50
+            bin_edges = np.linspace(xlim[0], xlim[1], num_bins + 1)
+            bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+            sum_in_bins = np.zeros(num_bins)
+            count_in_bins = np.zeros(num_bins)
+            #values_in_bins = [[] for _ in range(num_bins)]  # Optional: for percentiles
+
+            # Create figure
+            fig, ax = plt.subplots(figsize=(8, 6))
+            for _, row in df_labels_selection.iterrows():
+                values = extract_variable_values(row, entry) 
+                if len(values) == 0:
+                    continue
+
+                #total_values = len(values)  # Get total count of values
+                sns.histplot(
+                    values,
+                    bins=bin_edges,
+                    kde=False,
+                    alpha=alpha,
+                    element="bars",
+                    fill=True,
+                    edgecolor=None,
+                    color='blue',
+                    stat="probability"  # Normalize histogram by total count
+                )
+
+                # Bin-wise aggregation for mean and percentiles
+                hist, _ = np.histogram(values, bins=bin_edges)
+                bin_value_sums, _ = np.histogram(values, bins=bin_edges, weights=values)
+
+                sum_in_bins += np.nan_to_num(bin_value_sums)
+                count_in_bins += hist
+        
+            # Final stats
+            #mean_per_bin = sum_in_bins / np.maximum(count_in_bins, 1)
+            probability_per_bin = count_in_bins / count_in_bins.sum()
+            
+            # Plot the summary curves
+            ax.plot(bin_centers, probability_per_bin, color='red', lw=2, label='Mean')
+
+            if unit:
+                plt.xlabel(f'{entry} [{unit}]')
+            else:
+                plt.xlabel(f'{entry}')
+            plt.ylabel('Frequency')
+            if log:
+                plt.yscale('log')
+            #plt.xlim(xlim[0], xlim[1])
+            plt.ylim(ylim[0], ylim[1])
+            plt.title(f'Distribution of {entry} for Class {label}')
+            plt.grid(True, linestyle='--', alpha=0.5)
+            output_dir = f'{output_path}overlaid_histograms/{label}/'
+            os.makedirs(output_dir, exist_ok=True)
+            plt.savefig(f'{output_dir}histogram_{entry}_label_{label}.png', dpi=300, bbox_inches="tight")
+            plt.close()
+
+            print("Histograms saved successfully!")
+        
+#nohup 1816481

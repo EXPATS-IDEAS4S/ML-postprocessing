@@ -6,6 +6,10 @@ import os
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import xarray as xr
+import io
+
+from get_data_from_buckets import read_file
 
 
 def plot_cartopy_map(output_path, latmin, lonmin, latmax, lonmax, n_divs=5):
@@ -291,3 +295,49 @@ def get_variable_info(var_name):
     }
 
     return variables.get(var_name, None)  # Returns None if var_name is not found
+
+
+
+
+# Function to extract data from S3
+def extract_variable_values(row, var, s3, BUCKET_MSG_NAME, BUCKET_IMERG_NAME, BUCKET_CMSAF_NAME):
+    crop_filename = row['path'].split('/')[-1]
+    coords = extract_coordinates(crop_filename)
+    lat_min, lat_max, lon_min, lon_max = coords['lat_min'], coords['lat_max'], coords['lon_min'], coords['lon_max']
+    
+    datetime_info = extract_datetime(crop_filename)
+    year, month, day, hour, minute = datetime_info['year'], datetime_info['month'], datetime_info['day'], datetime_info['hour'], datetime_info['minute']
+    datetime_obj = np.datetime64(f'{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00')
+    print('processing timestamp:', datetime_obj)
+
+    values = []  # Store label for grouping
+        
+    if var == 'precipitation' and (minute == 15 or minute == 45):
+        return values
+
+    if var in ['IR_108', 'WV_062']:
+        bucket_name = BUCKET_MSG_NAME
+        bucket_filename = f'/data/sat/msg/ml_train_crops/IR_108-WV_062-CMA_FULL_EXPATS_DOMAIN/{year:04d}/{month:02d}/merged_MSG_CMSAF_{year:04d}-{month:02d}-{day:02d}.nc'	
+    elif var == 'precipitation':
+        bucket_name = BUCKET_IMERG_NAME
+        bucket_filename = f'IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc'
+    else:
+        bucket_name = BUCKET_CMSAF_NAME 
+        bucket_filename = f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc'
+    try:
+        my_obj = read_file(s3, bucket_filename, bucket_name)
+        ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
+
+        if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
+            ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
+
+        ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+        ds_day = ds_day.sel(time=datetime_obj)
+
+        values = ds_day.values.flatten()
+  
+    except Exception as e:
+        print(f"Error processing {var} for {row['path']}: {e}")
+        values = []
+
+    return values

@@ -28,8 +28,8 @@ BUCKET_CROP_MSG = 'expats-msg-training'
 
 # Configuration
 run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
-sampling_type = 'closest' #TODO try to use all the samples
-n_subsamples = 1000
+sampling_type = 'all' #TODO try to use all the samples
+n_subsamples = 67425
 vars = ['cma'] #['cot', 'cth', 'cma', 'cph', 'precipitation']
 stats = [50, 99]
 categ_vars = ['cma', 'cph']
@@ -44,7 +44,7 @@ lat = ds_msg_day['lat'].values
 lon = ds_msg_day['lon'].values
 
 # Define grid
-n_div = 8
+n_div = 16
 lat_edges = np.linspace(lat.min(), lat.max(), n_div + 1)
 lon_edges = np.linspace(lon.min(), lon.max(), n_div + 1)
 lat_mids = (lat_edges[:-1] + lat_edges[1:]) / 2
@@ -169,7 +169,7 @@ for label in unique_labels:
 
         #print(df_filtered_hour)
         print(f"Label {label}: {len(df_filtered)} samples")
-        print(f"Hour {hour}: {len(df_filtered_hour)} samples")    
+        print(f"Hour {hour}: {len(df_filtered_hour)} samples") 
         
         # df_filtered['datetime'] = df_filtered['path'].apply(
         #     lambda p: pd.to_datetime(
@@ -245,4 +245,4 @@ for label in unique_labels:
 end_time = time.time()
 print(f"Total script execution time: {end_time - start_time:.2f} seconds")
 
-#nohup 1890954
+#nohup 1910490

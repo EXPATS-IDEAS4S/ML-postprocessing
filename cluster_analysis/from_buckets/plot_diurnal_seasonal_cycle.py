@@ -6,7 +6,7 @@ import os
 import sys
 import cmcrameri.cm as cmc
 
-from aux_functions_from_buckets import get_variable_info
+from aux_functions_from_buckets import get_variable_info, extract_datetime
 
 sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))
 
@@ -19,6 +19,24 @@ output_path = f'/data1/fig/{run_name}/{sampling_type}/'
 
 # Open dataframe
 df = pd.read_csv(f'{output_path}merged_tsne_variables_{run_name}_{sampling_type}_{random_state}.csv')
+print(df.columns)
+
+
+def safe_parse_datetime(path):
+    try:
+        dt_dict = extract_datetime(os.path.basename(path))
+        date_str = "{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00".format(**dt_dict)
+        return pd.to_datetime(date_str, errors='coerce')
+    except Exception as e:
+        print(f"Failed to parse datetime for {path}: {e}")
+        return pd.NaT
+
+# Extract datetime from the path
+df.loc[:, 'datetime'] = df['path'].apply(safe_parse_datetime)
+
+# Drop rows where datetime parsing failed
+df = df.dropna(subset=['datetime'])
+#print(df.datetime)
 
 # Ensure 'hour' and 'month' columns are integers
 df['hour'] = df['hour'].astype(int)
@@ -31,13 +49,36 @@ df = df[df['month'].between(4, 9)]
 month_names = {4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep"}
 df['month'] = df['month'].map(month_names)
 
-# Compute diurnal distribution
-hourly_counts = df.groupby(['hour', 'label']).size().unstack(fill_value=0)
-hourly_percentage = hourly_counts.div(hourly_counts.sum(axis=1), axis=0) * 100  # Normalize
+
+# Sort by timestamp to preserve chronological order
+df['datetime'] = pd.to_datetime(df['datetime'])  # Ensure datetime exists
+df = df.sort_values('datetime')
+
+# Shift label and datetime for comparison
+df['label_shifted'] = df['label'].shift()
+df['time_shifted'] = df['datetime'].shift()
+print(df['label_shifted'])
+print(df['time_shifted'])
+exit()
+
+# Calculate time gap in minutes
+df['gap'] = (df['datetime'] - df['time_shifted']).dt.total_seconds() / 60.0
+
+# Define new block: label changed OR time gap too big (e.g. > 30 min)
+df['is_new_block'] = (df['label'] != df['label_shifted']) | (df['gap'] > 30)
+
+# Filter to get one row per block
+df_filtered = df[df['is_new_block']].copy()
+
+
+# Compute diurnal distribution (based on filtered non-repeating blocks)
+hourly_counts = df_filtered.groupby(['hour', 'label']).size().unstack(fill_value=0)
+hourly_percentage = hourly_counts.div(hourly_counts.sum(axis=1), axis=0) * 100
 
 # Compute seasonal distribution
-monthly_counts = df.groupby(['month', 'label']).size().unstack(fill_value=0)
-monthly_percentage = monthly_counts.div(monthly_counts.sum(axis=1), axis=0) * 100  # Normalize
+monthly_counts = df_filtered.groupby(['month', 'label']).size().unstack(fill_value=0)
+monthly_percentage = monthly_counts.div(monthly_counts.sum(axis=1), axis=0) * 100
+
 
 # --- PLOTTING SETTINGS ---
 sns.set_context("talk")  # Set larger default sizes
@@ -56,13 +97,13 @@ label_colors = df[['label', 'color']].drop_duplicates().set_index('label')['colo
 
 # 1. Diurnal Distribution - Separate Line Plots
 for label in hourly_percentage.columns:
-    plt.figure(figsize=(7, 5))
+    plt.figure(figsize=(6, 4))
     
     plt.plot(hourly_percentage.index, hourly_percentage[label], 
              label=f'Class {label}', linewidth=2, color=label_colors.get(label, 'black'))  # Default to black if missing
 
     plt.title(f"Diurnal Distribution - Class {label}", fontsize=fontsize_title)
-    plt.ylim(0, 50)
+    plt.ylim(0, 40)
     plt.xlabel("Hour of Day", fontsize=fontsize_labels)
     plt.ylabel("Percentage", fontsize=fontsize_labels)
     plt.xticks(fontsize=fontsize_ticks)
