@@ -299,45 +299,103 @@ def get_variable_info(var_name):
 
 
 
-# Function to extract data from S3
-def extract_variable_values(row, var, s3, BUCKET_MSG_NAME, BUCKET_IMERG_NAME, BUCKET_CMSAF_NAME):
+
+def get_bucket_and_filename(var, year, month, day, BUCKETS):
+    """
+    Determine the appropriate S3 bucket and file path for the given variable.
+    """
+    if var in ['IR_108', 'WV_062']:
+        bucket = BUCKETS['crop']
+        filename = (
+            f"/data/sat/msg/ml_train_crops/IR_108-WV_062-CMA_FULL_EXPATS_DOMAIN/"
+            f"{year:04d}/{month:02d}/merged_MSG_CMSAF_{year:04d}-{month:02d}-{day:02d}.nc"
+        )
+    elif var == 'precipitation':
+        bucket = BUCKETS['imerg']
+        filename = f"IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc"
+    else:
+        bucket = BUCKETS['cmsaf']
+        filename = f"MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc"
+    
+    return bucket, filename
+
+
+def extract_variable_values(row, var, s3, **BUCKETS):
+    """
+    Extract variable values from an S3 bucket given a row of metadata and a variable name.
+
+    Parameters:
+    - row: DataFrame row containing 'path' with datetime and spatial metadata.
+    - var: Name of the variable to extract.
+    - s3: Initialized S3 client.
+    - **BUCKETS: Dictionary with keys 'cmsaf', 'imerg', and 'crop' for bucket names.
+
+    Returns:
+    - 1D NumPy array of extracted values, or empty list if error occurs.
+    """
     crop_filename = row['path'].split('/')[-1]
     coords = extract_coordinates(crop_filename)
-    lat_min, lat_max, lon_min, lon_max = coords['lat_min'], coords['lat_max'], coords['lon_min'], coords['lon_max']
-    
     datetime_info = extract_datetime(crop_filename)
-    year, month, day, hour, minute = datetime_info['year'], datetime_info['month'], datetime_info['day'], datetime_info['hour'], datetime_info['minute']
-    datetime_obj = np.datetime64(f'{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00')
-    print('processing timestamp:', datetime_obj)
 
-    values = []  # Store label for grouping
-        
-    if var == 'precipitation' and (minute == 15 or minute == 45):
+    lat_min, lat_max = coords['lat_min'], coords['lat_max']
+    lon_min, lon_max = coords['lon_min'], coords['lon_max']
+    year, month, day, hour, minute = (
+        datetime_info['year'], datetime_info['month'], datetime_info['day'],
+        datetime_info['hour'], datetime_info['minute']
+    )
+    datetime_obj = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00")
+    #print(f"Processing timestamp: {datetime_obj}")
+
+    # Skip known invalid precipitation times
+    if var == 'precipitation' and minute in {15, 45}:
+        return []
+
+    # Determine S3 path
+    bucket, filename = get_bucket_and_filename(var, year, month, day, BUCKETS)
+
+    try:
+        file_obj = read_file(s3, filename, bucket)
+        ds = xr.open_dataset(io.BytesIO(file_obj))[var]
+
+        # Convert time format if needed
+        if isinstance(ds.indexes["time"], xr.CFTimeIndex):
+            ds["time"] = ds["time"].astype("datetime64[ns]")
+
+        # Subset spatially and temporally
+        ds = ds.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max), time=datetime_obj)
+
+        return ds.values.flatten()
+
+    except Exception as e:
+        print(f"Error extracting '{var}' for {row['path']}: {e}")
+        return []
+
+
+
+def filter_cma_values(values, cma_values, var_name, cma_filter=True):
+    """
+    Filter input values based on cloud mask (CMA) values.
+
+    Parameters:
+        values (array-like): Array of values to filter.
+        cma_values (array-like): Corresponding cloud mask values (1 = cloudy).
+        var_name (str): Variable name, e.g., 'precipitation'.
+        cma_filter (bool): Whether to apply the cloud mask filter.
+
+    Returns:
+        np.ndarray or list: Filtered values or [0] if no valid values remain.
+    """
+    if not cma_filter:
         return values
 
-    if var in ['IR_108', 'WV_062']:
-        bucket_name = BUCKET_MSG_NAME
-        bucket_filename = f'/data/sat/msg/ml_train_crops/IR_108-WV_062-CMA_FULL_EXPATS_DOMAIN/{year:04d}/{month:02d}/merged_MSG_CMSAF_{year:04d}-{month:02d}-{day:02d}.nc'	
-    elif var == 'precipitation':
-        bucket_name = BUCKET_IMERG_NAME
-        bucket_filename = f'IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc'
+    if var_name == 'precipitation':
+        if len(values) == 0:
+            return [np.nan]
+        else:
+            filtered = values[values > 0.1]
     else:
-        bucket_name = BUCKET_CMSAF_NAME 
-        bucket_filename = f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc'
-    try:
-        my_obj = read_file(s3, bucket_filename, bucket_name)
-        ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
+        if len(values) != len(cma_values):
+            raise ValueError("Length mismatch: 'values' and 'cma_values' must be the same.")
+        filtered = values[cma_values == 1]
 
-        if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
-            ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
-
-        ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-        ds_day = ds_day.sel(time=datetime_obj)
-
-        values = ds_day.values.flatten()
-  
-    except Exception as e:
-        print(f"Error processing {var} for {row['path']}: {e}")
-        values = []
-
-    return values
+    return filtered if len(filtered) > 0 else [0]
