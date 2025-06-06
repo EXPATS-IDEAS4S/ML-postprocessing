@@ -1,28 +1,9 @@
 """
 Sample Cloud Properties Based on Cluster Proximity and Save Subsamples
 
-This script processes cloud property crop images by sampling cluster-based subsamples based on specified criteria. 
-For each specified run, it loads cluster assignments and distances from centroids, then selects a subset of images 
-from each cluster based on the chosen sampling method. The results are saved to CSV files with the selected sample 
-paths, cluster labels, and distances.
-
-Parameters:
-    run_names (list): Names of training runs to process (defines folder paths for clusters).
-    sampling_type (str): Sampling criterion for selecting samples from clusters; options are:
-                         - 'random': Random selection from each cluster.
-                         - 'closest': Samples closest to the cluster centroid.
-                         - 'farthest': Samples farthest from the cluster centroid.
-                         - 'all': All samples in the cluster (up to `n_subsample`).
-    n_subsample (int): Maximum samples per cluster (if applicable to the sampling type).
-
-Paths:
-    cloud_properties_path (str): Path to cloud property images in .nc format.
-    labels_path (str): Path to cluster assignments (.pt format).
-    distances_path (str): Path to cluster centroid distances (.pt format).
-    output_path (str): Output directory for CSV files containing sampled data.
-
-Output:
-    CSV files containing paths, labels, and distances of selected samples, saved to `output_path`..
+This script processes cloud property crop images by sampling cluster-based subsamples
+based on specified criteria. It supports filtering by daytime (06–16 UTC) and
+IMERG-compatible timestamps (minutes == 00 or 30).
 """
 
 import pandas as pd
@@ -30,126 +11,129 @@ import torch
 from glob import glob
 import numpy as np
 import os
+from datetime import datetime
 
+# === CONFIGURATION ===
 run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
+n_subsample = 67425  # Max samples per cluster
+filter_daytime = False        # Enable daytime filter (06–16 UTC)
+filter_imerg_minutes = True  # Only keep timestamps with minutes 00 or 30
 
-# Define sampling type
-sampling_type = 'closest'  # Options: 'random', 'closest', 'farthest', 'all'
+# === HELPER FUNCTIONS ===
+def parse_crop_datetime(filename: str) -> datetime:
+    try:
+        timestamp_str = os.path.basename(filename).split('_')[0]  # e.g., '20130401-00:00'
+        return datetime.strptime(timestamp_str, "%Y%m%d-%H:%M")
+    except Exception as e:
+        print(f"Could not parse datetime from {filename}: {e}")
+        return None
 
-n_subsample = 1000  # Number of samples per cluster
+def is_daytime(filename: str) -> bool:
+    dt = parse_crop_datetime(filename)
+    return dt and (6 <= dt.hour <= 16)
 
+def is_valid_imerg_minute(filename: str) -> bool:
+    dt = parse_crop_datetime(filename)
+    return dt and (dt.minute in [0, 30])
 
+# === MAIN SCRIPT ===
 for run_name in run_names:
-
-    # Path to cluster assignments of crops
+    # Paths
     labels_path = f'/data1/runs/{run_name}/checkpoints/assignments_800ep.pt'
-
-    # Path to cluster distances (from centroids)
     distances_path = f'/data1/runs/{run_name}/checkpoints/distance_800ep.pt'
-
-    # Path to fig folder for outputs
+    image_crops_path = f'/data1/crops/{run_name}/1/'
     output_path = f'/data1/fig/{run_name}/{sampling_type}/'
 
-    # Create the directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
 
-    # List of the image crops
-    image_crops_path = f'/data1/crops/{run_name}/1/'
-    list_image_crops = sorted(glob(image_crops_path+'*.tif'))
+    # Load image paths
+    list_image_crops = sorted(glob(image_crops_path + '*.tif'))
+    n_samples = len(list_image_crops)
+    print('Initial n samples:', n_samples)
 
-    n_samples = len( list_image_crops)
-    print('n samples: ', n_samples)
+    # Load cluster labels and distances
+    assignments = torch.load(labels_path, map_location='cpu')[0].numpy()
+    distances = torch.load(distances_path, map_location='cpu')[0].numpy()
+    data_index = np.arange(n_samples)
 
-    # Path for data index 
-    # filename1 = 'rank0_chunk0_train_heads_inds.npy' 
-    # path_feature = f'/data1/runs/{run_name}/features/'
-    # data_index = np.load(path_feature+filename1)
-    # print(data_index)
-    data_index = np.arange(n_samples).astype(np.int32)
-    print(data_index)    
+    # Build DataFrame
+    df_all = pd.DataFrame({
+        'index': data_index,
+        'path': list_image_crops,
+        'assignment': assignments,
+        'distance': distances
+    })
 
-    # Read data
+    # Apply filters
+    if filter_daytime:
+        df_all = df_all[df_all['path'].apply(is_daytime)]
+        print(f"After daytime filter: {len(df_all)} samples")
 
-    if sampling_type=='all':
-        n_subsample = n_samples
-    else:
-        n_subsample = min(n_subsample, n_samples)  # Ensure it doesn't exceed available samples
+    if filter_imerg_minutes:
+        df_all = df_all[df_all['path'].apply(is_valid_imerg_minute)]
+        print(f"After IMERG minute filter: {len(df_all)} samples")
 
-    assignments = torch.load(labels_path, map_location='cpu')  # Cluster labels for each sample
-    distances = torch.load(distances_path, map_location='cpu')  # Distances to cluster centroids
+    df_all = df_all.reset_index(drop=True)
 
-    # Convert to numpy arrays for easier manipulation
-    assignments = assignments[0].cpu().numpy()
-    distances = distances[0].cpu().numpy()
-    print(len(assignments))
-    print(len(distances))
+    # Adjust sample limit if sampling all
+    if sampling_type == 'all':
+        n_subsample = len(df_all)
 
-    # Get unique cluster labels
-    unique_clusters = np.unique(assignments)
-    print(unique_clusters)
+    # Sample from clusters
+    filtered_paths = df_all['path'].tolist()
+    filtered_assignments = df_all['assignment'].to_numpy()
+    filtered_distances = df_all['distance'].to_numpy()
+    filtered_indices = df_all['index'].to_numpy()
 
-    # Prepare a list for subsample indices
+    unique_clusters = np.unique(filtered_assignments)
     subsample_indices = []
     subsample_distances = []
 
-    # Loop over each cluster and sample data
     for cluster in unique_clusters:
-        # Get indices for all samples in this cluster
-        cluster_indices = np.where(assignments == cluster)[0]
-        
-        # Get distances for the samples in this cluster
-        cluster_distances = distances[cluster_indices]
+        cluster_indices = np.where(filtered_assignments == cluster)[0]
+        cluster_distances = filtered_distances[cluster_indices]
 
-        # Determine subsample for this cluster based on sampling_type
         if sampling_type == 'random':
-            # Randomly select indices from the current cluster
-            if len(cluster_indices) <= n_subsample:
-                selected_indices = cluster_indices
-            else:
-                selected_indices = np.random.choice(cluster_indices, n_subsample, replace=False)
-        
+            selected = np.random.choice(cluster_indices, min(n_subsample, len(cluster_indices)), replace=False)
         elif sampling_type == 'closest':
-            # Sort by distance (ascending) and select the closest ones
             sorted_idx = np.argsort(cluster_distances)
-            selected_indices = cluster_indices[sorted_idx[:n_subsample]]
-        
+            selected = cluster_indices[sorted_idx[:n_subsample]]
         elif sampling_type == 'farthest':
-            # Sort by distance (descending) and select the farthest ones
             sorted_idx = np.argsort(cluster_distances)
-            selected_indices = cluster_indices[sorted_idx[-n_subsample:]]
-        
+            selected = cluster_indices[sorted_idx[-n_subsample:]]
         elif sampling_type == 'all':
-            # Use all the available data from this cluster (up to n_subsample if specified)
-            selected_indices = cluster_indices
-        
+            selected = cluster_indices
         else:
-            raise ValueError("Invalid sampling type. Choose from 'random', 'closest', 'farthest', or 'all'.")
-        
-        # Collect distances for the selected samples
-        selected_distances = distances[selected_indices]
-        
-        # Get data index for the samples in this cluster
-        #selected_data_index = data_index[selected_indices]
+            raise ValueError(f"Invalid sampling type: {sampling_type}")
 
-        # Add selected indices and distances to the lists
-        subsample_indices.extend(selected_indices)
-        subsample_distances.extend(selected_distances)
+        subsample_indices.extend(selected)
+        subsample_distances.extend(filtered_distances[selected])
 
-    print(len(subsample_indices))
-    # Now, create the DataFrame with the selected subsamples
+    # Build result DataFrame
     df_labels = pd.DataFrame({
-        'crop_index': [i for i in subsample_indices],
-        'path': [list_image_crops[i] for i in subsample_indices],
-        'label': [assignments[i] for i in subsample_indices],  # The labels of the subsamples
-        'distance': subsample_distances  # Corresponding distances
+        'crop_index': [filtered_indices[i] for i in subsample_indices],
+        'path': [filtered_paths[i] for i in subsample_indices],
+        'label': [filtered_assignments[i] for i in subsample_indices],
+        'distance': [subsample_distances[i] for i in range(len(subsample_indices))]
     })
 
-    # Filter out invalid labels (-100)
-    #df_labels = df_labels[df_labels['label'] != -100]
+    # Remove invalid labels
+    df_labels = df_labels[df_labels['label'] != -100].reset_index(drop=True)
+    print(f"Final number of samples: {len(df_labels)}")
 
-    # Optionally print and save the dataframe for inspection
-    print(df_labels)
+    # === Construct filename with filters ===
+    filter_tags = []
+    if filter_daytime:
+        filter_tags.append("daytime")
+    if filter_imerg_minutes:
+        filter_tags.append("imergmin")
 
-    df_labels.to_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv', index=False)
+    filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
+    csv_filename = f"crop_list_{run_name}_{n_subsample}_{sampling_type}{filter_suffix}.csv"
+    output_file = os.path.join(output_path, csv_filename)
 
+    # Save
+    print(f"Saving {len(df_labels)} samples to {output_file} ...")
+    df_labels.to_csv(output_file, index=False)

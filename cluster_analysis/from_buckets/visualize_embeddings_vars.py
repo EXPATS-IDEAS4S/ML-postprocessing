@@ -316,7 +316,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 for var in vars:
     print(var)
-    #plot_nc_crops_scatter(df_subset2, output_dir, filename, var, colormap_dict[var], norm_dict[var] )
+    plot_nc_crops_scatter(df_subset2, output_dir, filename, var, colormap_dict[var], norm_dict[var] )
     #plot_nc_crops_table(df_subset1, output_dir, filename, var, colormap_dict[var], norm_dict[var], n=10, selection="random")
     #plot_nc_crops_table(df_subset1, output_dir, filename, var, colormap_dict[var], norm_dict[var], n=10, selection="closest")
     #plot_nc_crops_grid(df_subset2, output_dir, filename, var, colormap_dict[var], norm_dict[var], grid_size=10)

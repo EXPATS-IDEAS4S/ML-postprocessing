@@ -9,7 +9,7 @@ import sys
 import boto3
 
 
-from aux_functions_from_buckets import extract_coordinates, extract_datetime, compute_categorical_values
+from aux_functions_from_buckets import extract_coordinates, extract_datetime, compute_categorical_values, extract_variable_values, filter_cma_values
 from get_data_from_buckets import read_file, Initialize_s3_client
 from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))  
@@ -26,6 +26,16 @@ sampling_type = 'all'
 vars = ['cot', 'cth', 'cma', 'cph', 'precipitation']
 stats = [50, 99]
 categ_vars = ['cma', 'cph']
+filter_daytime = False        # Enable daytime filter (06–16 UTC)
+filter_imerg_minutes = True  # Only keep timestamps with minutes 00 or 30
+
+filter_tags = []
+if filter_daytime:
+    filter_tags.append("daytime")
+if filter_imerg_minutes:
+    filter_tags.append("imergmin")
+
+filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
 # Read data
 # List of the image crops
@@ -36,7 +46,7 @@ print('n samples: ', n_samples)
 
 # Read data
 if sampling_type == 'all':
-    n_subsample = n_samples  # Number of samples per cluster
+    n_subsample = 33729  # Number of samples per cluster
 else:
     n_subsample = 1000
 
@@ -49,58 +59,76 @@ table_entries = [item if '-' in item else f"{item}-None" for item in table_entri
 output_path = f'/data1/fig/{run_name}/{sampling_type}/'
 
 # Load CSV file with the crops path and labels into a pandas DataFrame
-df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}.csv')
-print(df_labels)
+
+df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}{filter_suffix}.csv')
+print(df_labels['path'].to_list())
 
 # Function to process each row in parallel
 def process_row(row):
-    # Reinitialize S3 client inside the worker
     s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
 
-    crop_filename = row['path'].split('/')[-1]
+    crop_filename = os.path.basename(row['path'])
     coords = extract_coordinates(crop_filename)
-    lat_min, lat_max, lon_min, lon_max = coords['lat_min'], coords['lat_max'], coords['lon_min'], coords['lon_max']
-    
-    datetime_info = extract_datetime(crop_filename)
-    year, month, day, hour, minute = datetime_info['year'], datetime_info['month'], datetime_info['day'], datetime_info['hour'], datetime_info['minute']
+    lat_min, lat_max = coords['lat_min'], coords['lat_max']
+    lon_min, lon_max = coords['lon_min'], coords['lon_max']
 
-    datetime_obj = np.datetime64(f'{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00')
-    print(f"Processing {crop_filename} at {datetime_obj}")
+    datetime_info = extract_datetime(crop_filename)
+    year, month, day, hour, minute = (
+        datetime_info[k] for k in ['year', 'month', 'day', 'hour', 'minute']
+    )
+    base_time = np.datetime64(f'{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00')
 
     row_data = {}
 
-    for entry in table_entries:
-        var, stat = entry.split('-')
-        
-        if var == 'precipitation' and (minute == 15 or minute == 45):
-            row_data[entry] = np.nan
-        else:
-            bucket_filename = f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc' if var != 'precipitation' else f'IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc'
-            bucket_name = BUCKET_CMSAF_NAME if var != 'precipitation' else BUCKET_IMERG_NAME
+    for var in vars:
+        for stat in stats if var not in categ_vars else ['None']:
+            entry = f"{var}-{stat}"
 
             try:
+                if var == 'precipitation':
+                    bucket_name = BUCKET_IMERG_NAME
+                    bucket_filename = f'IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc'
+                    time_to_use = [base_time]
+                else:
+                    bucket_name = BUCKET_CMSAF_NAME
+                    bucket_filename = f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc'
+
+                    # Merge timestamps ONLY if 'precipitation' is among vars
+                    time_to_use = (
+                        [base_time, base_time + np.timedelta64(15, 'm')]
+                        if 'precipitation' in vars else [base_time]
+                    )
+
                 my_obj = read_file(s3, bucket_filename, bucket_name)
                 ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
 
+                # Open CMA values
+                my_obj_cma = read_file(s3,  f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc', BUCKET_CMSAF_NAME)
+                ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))['cma']
+
                 if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
                     ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
+                    ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
 
                 ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+                ds_subset = ds_day.sel(time=time_to_use)
+                ds_day_cma = ds_day_cma.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+                ds_subset_cma = ds_day_cma.sel(time=time_to_use)
 
-                # Select time (use nearest if exact time is missing)
-                ds_day = ds_day.sel(time=datetime_obj)#, method='nearest', tolerance=np.timedelta64(1, 'h'))
-                values = ds_day.values.flatten()
+                values = ds_subset.values.flatten()
+                values_cma = ds_subset_cma.values.flatten()
+                values = filter_cma_values(values, values_cma, var)
 
-                if stat != 'None':
-                    values = compute_percentile(values, int(stat))
+                if stat == 'None':
+                    result = compute_categorical_values(values, var)
                 else:
-                    values = compute_categorical_values(values, var)
+                    result = compute_percentile(values, int(stat))
 
             except Exception as e:
-                print(f"Error processing {var} for {row['path']}: {e}")
-                values = np.nan
+                print(f"Error processing {entry} for {row['path']}: {e}")
+                result = np.nan
 
-            row_data[entry] = values
+            row_data[entry] = result
 
     row_data.update({
         'month': int(month),
@@ -110,6 +138,7 @@ def process_row(row):
     })
 
     return row_data
+
 
 # Run parallel processing
 num_cores = os.cpu_count() - 3  # Use all but one CPU
@@ -122,7 +151,7 @@ df_results = pd.DataFrame(results)
 df_labels = pd.concat([df_labels, df_results], axis=1)
 
 # Save output
-df_labels.to_csv(f'{output_path}crops_stats_{run_name}_{sampling_type}_{n_subsample}.csv', index=False)
+df_labels.to_csv(f'{output_path}crops_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv', index=False)
 print('Parallelized processing complete. CSV saved!')
 
 
@@ -134,3 +163,5 @@ print('Parallelized processing complete. CSV saved!')
 # #Save continuous stats to a CSV file
 # continuous_stats.to_csv(f'{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}.csv', index=False)
 # print('Overall Stats for each cluster are saved to CSV files.')
+
+#2975083
