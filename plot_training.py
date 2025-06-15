@@ -119,11 +119,16 @@ def plot_parameter_avg(data, parameter, label, color, path_out):
     avg_values = [np.mean(epoch_dict[epoch]) for epoch in epochs]
 
     # Plotting the averaged values
-    fig, ax1 = plt.subplots(figsize=(18, 5))
-    ax1.plot(epochs, avg_values, label=label, color=color)
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel(label)
-    ax1.set_title(f'Average {label} over Epochs')
+    fig, ax1 = plt.subplots(figsize=(12, 4))
+
+    ax1.plot(epochs, avg_values, label=label, color=color, linewidth=2)
+    ax1.set_xlabel('Epoch', fontsize=16)
+    ax1.set_ylabel(label, fontsize=16)
+    #fix tick size
+    ax1.tick_params(axis='x', labelsize=16)
+    ax1.tick_params(axis='y', labelsize=16)
+    ax1.grid(True)
+    ax1.set_title(f'Average {label} over Epochs', fontsize=16, fontweight='bold')
 
     # Save the figure
     fig.savefig(f'{path_out}{parameter}_avg_per_epoch.png', bbox_inches='tight')
@@ -177,51 +182,48 @@ def plot_parameter_multiple_datasets(datasets, parameter, labels, colors, path_o
     plt.close()
 
 
-path_out = '/data1/fig/dcv2_ir108_200x200_k9_70k_GS_200-300K_CMA-closed/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+if __name__ == "__main__":
+
+    path_out = '/data1/fig/dcv2_ir108_100x100_k9_expats_35k_nc/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+    os.makedirs(path_out, exist_ok=True)  # Ensure the output directory exists
+
+    # Initialize the list to store datasets
+    datasets = []
+
+    labels = ['dcv2_ir108_100x100_k9_expats_35k_nc'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
+    colors = ['red']#,'blue','green', 'black', 'orange']
+
+    #for each case open data 
+
+    for label in labels:
+        # Load the data from the JSON file
+        file_path = f'/data1/runs/{label}/checkpoints/'
+        data = []
+
+        #collect data from jason output file
+        data = load_data_new(file_path+'stdout.json')
+
+        # Add the loaded data to the datasets list
+        if data:
+            datasets.append(data)
 
 
-# Check if the directory exists
-if not os.path.exists(path_out):
-    # Create the directory if it doesn't exist
-    os.makedirs(path_out) 
+    #plot_parameter_multiple_datasets(datasets, 'loss', labels, colors, path_out)
 
-# Initialize the list to store datasets
-datasets = []
+    # Plot learning rate
+    #plot_parameter(data, 'lr', 'Learning Rate', 'blue', path_out)
 
-labels = ['dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
-colors = ['red']#,'blue','green', 'black', 'orange']
-
-#for each case open data 
-
-for label in labels:
-    # Load the data from the JSON file
-    file_path = f'/data1/runs/{label}/checkpoints/'
-    data = []
-
-    #collect data from jason output file
-    data = load_data_new(file_path+'stdout.json')
-
-    # Add the loaded data to the datasets list
-    if data:
-        datasets.append(data)
+    # plot loss:
+    plot_parameter_avg(data, 'loss', 'Loss', 'red', path_out)
 
 
-plot_parameter_multiple_datasets(datasets, 'loss', labels, colors, path_out)
-
-# Plot learning rate
-#plot_parameter(data, 'lr', 'Learning Rate', 'blue', path_out)
-
-# plot loss:
-#plot_parameter_avg(data, 'loss', 'Loss', 'red', path_out)
+    # filename = 'model_final_checkpoint_phase799.torch'
 
 
-# filename = 'model_final_checkpoint_phase799.torch'
+    # data = torch.load(file_path+filename)
+    # #data = np.load(file_path+filename)
 
-
-# data = torch.load(file_path+filename)
-# #data = np.load(file_path+filename)
-
-# print(data)
+    # print(data)
 
 
 

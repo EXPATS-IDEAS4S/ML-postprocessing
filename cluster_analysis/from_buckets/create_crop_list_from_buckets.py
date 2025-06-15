@@ -14,11 +14,13 @@ import os
 from datetime import datetime
 
 # === CONFIGURATION ===
-run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
+run_names = ['dcv2_ir108_100x100_k9_expats_35k_nc']
+file_extension = 'nc'  # Image file extension
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
-n_subsample = 67425  # Max samples per cluster
+n_subsample = 35118  # Max samples per cluster
+epoch = 500  # Epoch number for the run
 filter_daytime = False        # Enable daytime filter (06–16 UTC)
-filter_imerg_minutes = True  # Only keep timestamps with minutes 00 or 30
+filter_imerg_minutes = False  # Only keep timestamps with minutes 00 or 30
 
 # === HELPER FUNCTIONS ===
 def parse_crop_datetime(filename: str) -> datetime:
@@ -40,15 +42,16 @@ def is_valid_imerg_minute(filename: str) -> bool:
 # === MAIN SCRIPT ===
 for run_name in run_names:
     # Paths
-    labels_path = f'/data1/runs/{run_name}/checkpoints/assignments_800ep.pt'
-    distances_path = f'/data1/runs/{run_name}/checkpoints/distance_800ep.pt'
-    image_crops_path = f'/data1/crops/{run_name}/1/'
-    output_path = f'/data1/fig/{run_name}/{sampling_type}/'
+    labels_path = f'/data1/runs/{run_name}/checkpoints/assignments.pt'
+    distances_path = f'/data1/runs/{run_name}/checkpoints/distances.pt'
+    image_crops_path = f'/data1/crops/{run_name}/{file_extension}/1/'
+    output_path = f'/data1/fig/{run_name}/epoch_{epoch}/{sampling_type}/'
 
     os.makedirs(output_path, exist_ok=True)
 
     # Load image paths
-    list_image_crops = sorted(glob(image_crops_path + '*.tif'))
+    print(f"Loading image crops from {image_crops_path} ...")
+    list_image_crops = sorted(glob(image_crops_path + '*.'+ file_extension))
     n_samples = len(list_image_crops)
     print('Initial n samples:', n_samples)
 
@@ -131,7 +134,7 @@ for run_name in run_names:
 
     filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
-    csv_filename = f"crop_list_{run_name}_{n_subsample}_{sampling_type}{filter_suffix}.csv"
+    csv_filename = f"crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
     output_file = os.path.join(output_path, csv_filename)
 
     # Save

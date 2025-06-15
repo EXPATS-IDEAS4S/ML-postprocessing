@@ -12,7 +12,7 @@ from scipy.stats import gaussian_kde
 from PIL import Image
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import os
-
+from scipy.spatial import cKDTree
 
 # Convert color names to RGB values
 def name_to_rgb(color_name):
@@ -118,7 +118,7 @@ def add_trajectory_case_study(df_subset, ax, fig, cmap, colorbar=False):
 def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filename, df_subset2=None):
 
     # Plot
-    fig, ax = plt.subplots(figsize=(12, 10))
+    fig, ax = plt.subplots(figsize=(10, 10))
     scatter = ax.scatter(df_subset1['Component_1'], df_subset1['Component_2'],
                         c=df_subset1['color'].tolist(), alpha=0.5, s=20)
 
@@ -462,6 +462,112 @@ def plot_embedding_crops(indices, selected_images, df_conc, tsne_plot, output_pa
 
 
 
+def plot_embedding_crops_grid(df, output_path, filename, grid_size=10, zoom=0.3):
+    """
+    Plot image crops aligned on a regular grid using normalized Component_1 and Component_2,
+    placing one image per grid bin based on minimal distance to bin center.
+    """
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Normalize Component_1 and Component_2
+    x = df['Component_1'].values
+    y = df['Component_2'].values
+    x_norm = (x - x.min()) / (x.max() - x.min())
+    y_norm = (y - y.min()) / (y.max() - y.min())
+    df['x_norm'] = x_norm
+    df['y_norm'] = y_norm
+
+    # Assign grid bins
+    ix = np.minimum((x_norm * grid_size).astype(int), grid_size - 1)
+    iy = np.minimum((y_norm * grid_size).astype(int), grid_size - 1)
+    centers = np.linspace(0.5 / grid_size, 1 - 0.5 / grid_size, grid_size)
+
+    # Select best image per bin (closest to center)
+    placed = {}
+    for i, j, xn, yn, idx in zip(ix, iy, x_norm, y_norm, df.index):
+        bin_key = (i, j)
+        cx, cy = centers[i], centers[j]
+        dist = (xn - cx) ** 2 + (yn - cy) ** 2
+        if bin_key not in placed or dist < placed[bin_key][0]:
+            placed[bin_key] = (dist, idx)
+
+    # Plot the selected images at bin centers
+    for (i, j), (_, idx) in placed.items():
+        row = df.loc[idx]
+        cx, cy = centers[i], centers[j]
+        try:
+            img = Image.open(row['path']).convert('L')
+            imagebox = OffsetImage(img, zoom=zoom, cmap='gray')
+            ab = AnnotationBbox(imagebox, (cx, cy), frameon=False)
+            ax.add_artist(ab)
+        except Exception as e:
+            print(f"Skipping image {row['path']}: {e}")
+            continue
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    #ax.invert_yaxis()
+    ax.axis('off')
+
+    plt.tight_layout()
+    base_filename = os.path.splitext(filename)[0]
+    save_path = os.path.join(output_path, base_filename + '_grid.png')
+    fig.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
+
+
+def plot_embedding_crops_binned_grid(df, output_path, filename, grid_size=10, zoom=0.3):
+    """
+    Place each crop into one of grid_size×grid_size bins in the (Component_1,Component_2) plane,
+    then for each non-empty bin pick the point closest to the bin center and plot it there.
+    This ensures a nicely filled grid with no overlapping crops.
+    """
+    fig, ax = plt.subplots(figsize=(10,10))
+
+    # 1) normalize to [0,1]
+    x = df['Component_1'].values
+    y = df['Component_2'].values
+    x_norm = (x - x.min()) / (x.max() - x.min())
+    y_norm = (y - y.min()) / (y.max() - y.min())
+    
+    # 2) compute bin indices
+    ix = np.minimum((x_norm * grid_size).astype(int), grid_size - 1)
+    iy = np.minimum((y_norm * grid_size).astype(int), grid_size - 1)
+    
+    # 3) prepare bin-centers
+    centers = np.linspace(0.5/grid_size, 1 - 0.5/grid_size, grid_size)
+    
+    placed = {}
+    for i, j, xn, yn in zip(ix, iy, x_norm, y_norm):
+        bin_key = (i,j)
+        # compute distance to bin center
+        cx, cy = centers[i], centers[j]
+        d = (xn - cx)**2 + (yn - cy)**2
+        # keep the closest point to the center
+        if bin_key not in placed or d < placed[bin_key][0]:
+            placed[bin_key] = (d, df.index[(ix==i)&(iy==j)][0])
+    
+    # 4) plot one per bin
+    for (i,j), (_, idx) in placed.items():
+        row = df.loc[idx]
+        img = Image.open(row['path']).convert('L')
+        imbox = OffsetImage(img, zoom=zoom, cmap='gray')
+        # map bin coordinate to [0,1] for plotting
+        px, py = centers[i], centers[j]
+        ab = AnnotationBbox(imbox, (px,py), frameon=False)
+        ax.add_artist(ab)
+
+    ax.set_xlim(0,1); ax.set_ylim(0,1); ax.invert_yaxis()
+    ax.axis('off')
+    plt.tight_layout()
+
+    base = os.path.splitext(filename)[0]
+    save_path = os.path.join(output_path, base + '_binned_grid.png')
+    fig.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
+    print("Saved:", save_path)
+
+
 def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closest"):
     """
     Plots crops in a table format where each row corresponds to a label, 
@@ -676,3 +782,61 @@ def plot_average_crop_shapes(df, output_path, filename, n=10, selection="closest
         plt.close()
 
         print(f"Saved averaged shape plot for label {label}: {output_file}")
+
+
+
+def plot_average_crop_values(df, output_path, filename, n=10, selection="closest"):
+    """
+    Computes and plots the average pixel values for `n` crop images per label.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing crop information including 'path', 'distance', and 'label'.
+        output_path (str): Path to save the output images.
+        filename (str): Base name for the output file.
+        n (int): Number of images to use per label.
+        selection (str): Selection method ('closest', 'farthest', 'random').
+    """
+
+    os.makedirs(output_path, exist_ok=True)  # Ensure output directory exists
+    unique_labels = df['label'].unique()  # Get all unique labels
+
+    for label in unique_labels:
+        # Filter dataset for the given label and sort by distance
+        subset = df[df['label'] == label].sort_values(by='distance')
+
+        if selection == "closest":
+            subset = subset.head(n)
+        elif selection == "farthest":
+            subset = subset.tail(n)
+        elif selection == "random":
+            subset = subset.sample(n=min(n, len(subset)), random_state=42)
+
+        image_paths = subset['path'].tolist()
+
+        if not image_paths:
+            print(f"No images found for label {label}. Skipping.")
+            continue
+
+        # Load images and convert to grayscale arrays
+        images = [np.array(Image.open(path).convert('L'), dtype=np.float32) for path in image_paths]
+        # Get dimensions (assume all images are the same size)
+        height, width = images[0].shape
+
+        # Compute the averaged pixel values
+        avg_image = np.mean(images, axis=0)
+
+        # Plot the averaged pixel values
+        fig, ax = plt.subplots(figsize=(5, 5))
+        im = ax.imshow(avg_image, cmap="gray", interpolation="nearest")  # Show the final averaged shape
+        ax.axis("off")
+
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label("Average Pixel Intensity", fontsize=12)
+
+        # Save the output
+        output_file = os.path.join(output_path, f"{filename.split('.')[0]}_label_{label}_{n}_{selection}_average.png")
+        plt.savefig(output_file, bbox_inches="tight", dpi=300)
+        plt.close()
+
+        print(f"Saved average pixel intensity plot for label {label}: {output_file}")

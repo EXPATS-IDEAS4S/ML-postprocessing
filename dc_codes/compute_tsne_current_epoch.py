@@ -52,7 +52,7 @@ gc.collect()
 for scale in scales:
     for random_state in random_states:
 
-        output_path = f'/data1/fig/{scale}/'
+        output_path = f'/data1/fig/{scale}/epoch_500/'
         os.makedirs(output_path, exist_ok=True)
 
         # # Open datafrae with the features
@@ -60,7 +60,7 @@ for scale in scales:
         # #extract the feature vectors from the DataFrame      
         # data3 = df_features.iloc[:, :-2].values
 
-        common_path = f'/data1/runs/{scale}/features/'          
+        common_path = f'/data1/runs/{scale}/features/epoch_500/'         
 
         #data1 = np.load(common_path+filename1)
         #data2 = np.load(common_path+filename2)
@@ -95,9 +95,9 @@ for scale in scales:
 
         #tsne = TSNE(n_components=2, random_state=5).fit_transform(data)
 
-        np.save(f'{output_path}tsne_pca_cosine_{scale}_{random_state}.npy', embedding_pca_cosine)  ##
+        np.save(f'{output_path}tsne_pca_cosine_{scale}_{random_state}_epoch_500.npy', embedding_pca_cosine)  ##
 
-        print(f'{output_path}tsne_pca_cosine_{scale}_{random_state}.npy calculated and saved')
+        print(f'{output_path}tsne_pca_cosine_{scale}_{random_state}_500.npy calculated and saved')
 
 """
 embedding_annealing = openTSNE.TSNE(

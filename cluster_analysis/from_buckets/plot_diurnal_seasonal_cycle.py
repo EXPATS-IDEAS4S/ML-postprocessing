@@ -44,7 +44,7 @@ colors_per_class1_names = {
 }
 
 VARIABLE_INFO = {
-    'cot': {'long_name': 'Cloud Optical Thickness', 'units': None, 'dir': 'incr', 'log': True, 'limit': (0.01, 150)},
+    'cot': {'long_name': 'Cloud Optical Thickness', 'units': None, 'dir': 'incr', 'log': True, 'limit': (0.1, 150)},
     'cth': {'long_name': 'Cloud Top Height', 'units': 'Km', 'dir': 'incr', 'log': False, 'limit': (0, 14)},
     'cma': {'long_name': 'Cloud Cover', 'units': None, 'dir': 'incr', 'log': False, 'limit': (0, 1)},
     'cph': {'long_name': 'Ice ratio', 'units': None, 'dir': 'incr', 'log': False, 'limit': (0, 1)},
@@ -169,6 +169,9 @@ def plot_diurnal_variable_cycle_by_class(df, variable, output_dir, colors_dict, 
         if VARIABLE_INFO[var_name]['log']: plt.yscale('log')
         if VARIABLE_INFO[var_name]['dir'] == 'decr': plt.yaxis()
 
+        if var_name == 'cot':
+            plt.xlim(5,16)
+
         output_file = os.path.join(output_dir, f"diurnal_{variable}_class_{label}.png")
         plt.savefig(output_file, bbox_inches="tight", dpi=300, transparent=True)
         plt.close()
@@ -221,7 +224,7 @@ def plot_seasonal_variable_cycle_by_class(df, variable, output_dir, month_order,
 
 
 # --- MAIN EXECUTION ---
-csv_path = f'{output_path}merged_tsne_variables_{run_name}_{sampling_type}_{random_state}.csv'
+csv_path = f'{output_path}crops_stats_{run_name}_{sampling_type}_33729_imergmin.csv'
 df_filtered = prepare_dataframe(csv_path, False)
 
 # if column cth-50 and cth-99 exixst, divide them by 1000

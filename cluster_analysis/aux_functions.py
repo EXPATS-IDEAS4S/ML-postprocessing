@@ -69,6 +69,12 @@ def pick_variable(data_type):
         vars_units = [None , 'm', None, None]
         vars_logscale = [False, False, False, False]
         vars_dir = ['incr','incr', 'incr', 'incr']
+    elif data_type=='imerg':
+        vars = ['precipitation']
+        vars_long_name = ['precipitation']
+        vars_units = ['mm/h']
+        vars_logscale = [False]
+        vars_dir = ['incr']
     else:
         print('wrong data type name!')
         exit()

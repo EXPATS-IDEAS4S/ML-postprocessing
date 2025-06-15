@@ -6,6 +6,8 @@ import seaborn as sns
 import cmcrameri.cm as cmc
 from datetime import datetime
 from matplotlib.lines import Line2D
+from matplotlib.colors import ListedColormap, Normalize
+from matplotlib.patches import Patch
 
 from aux_functions_from_buckets import extract_variable_values, compute_categorical_values, filter_cma_values, extract_datetime
 from get_data_from_buckets import Initialize_s3_client
@@ -20,14 +22,14 @@ BUCKETS = {
 
 RUN_NAME = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
 SAMPLE_TYPE = 'all'
-N_SUBSAMPLES = 67425
+N_SUBSAMPLES = 33729
 USE_HEATMAP = False
 APPLY_CMA_FILTER = True
 N_SAMPLES = None #Apply further random subsampling during testig the script
 PLOT_CLASSES_TOGETHER = False  # If True, plot all classes together; if False, plot each class separately
 
 filter_daytime = False       # Enable daytime filter (06–16 UTC)
-filter_imerg_minutes = False  # Only keep timestamps with minutes 00 or 30
+filter_imerg_minutes = True  # Only keep timestamps with minutes 00 or 30
 
 filter_tags = []
 if filter_daytime:
@@ -41,6 +43,7 @@ VAR_X = 'cot'
 VAR_Y = 'cth'
 VAR_COLOR = 'precipitation'
 PERCENTILES = [50]
+colormap = cmc.bamako
 
 USE_CACHED = True  # Set to False to force recompute and overwrite the cache
 
@@ -103,6 +106,8 @@ def get_color_norm(var_color, percentile):
         # Default normalization
         return plt.Normalize(vmin=0, vmax=1)
 
+
+
 def plot_data(x, y, color, label, percentile):
     fig, ax = plt.subplots(figsize=(6, 5))
 
@@ -110,26 +115,42 @@ def plot_data(x, y, color, label, percentile):
         hb = ax.hexbin(x, y, gridsize=40, cmap=cmc.buda, mincnt=1)
         plt.colorbar(hb, ax=ax, label='Counts')
     else:
+        color = np.array(color)
+        x = np.array(x)
+        y = np.array(y)
+
+        # Separate zero and positive values
+        mask_zero = color == 0
+        mask_pos = color > 0
+
+        # Plot zero values
+        ax.scatter(x[mask_zero], y[mask_zero], c='red', s=30, alpha=1, label='Zero values')
+
+        # Normalization and colormap for >0 values
         norm = get_color_norm(VAR_COLOR, percentile)
-        scatter = ax.scatter(x, y, c=color, cmap=cmc.hawaii_r, norm=norm, s=20, alpha=0.5)
+        scatter = ax.scatter(x[mask_pos], y[mask_pos], c=color[mask_pos], cmap=colormap, norm=norm, s=15, alpha=0.5)
+
+        # Colorbar for >0 values
         cbar = plt.colorbar(scatter, ax=ax)
-        cbar.set_label(f"{ADDITIONAL_VARS[VAR_COLOR]['long_name']} [{ADDITIONAL_VARS[VAR_COLOR]['units']}]", fontsize=14)
-        #increase ticks of colorbar
+        cbar.set_label(f"{ADDITIONAL_VARS[VAR_COLOR]['long_name']} [{ADDITIONAL_VARS[VAR_COLOR]['units']}]", fontsize=16)
         cbar.ax.tick_params(labelsize=12)
 
+        # Add manual legend patch for zero
+        #legend_elements = [Patch(facecolor='darkblue', edgecolor='black', label='Zero values')]
+        #ax.legend(handles=legend_elements, loc='upper right', fontsize=12)
+
+    # Axis labels and formatting
     unit_x = VARIABLE_INFO[VAR_X].get('units')
     unit_y = VARIABLE_INFO[VAR_Y].get('units')
     x_label = VARIABLE_INFO[VAR_X]['long_name'] + (f" [{unit_x}]" if unit_x else "")
     y_label = VARIABLE_INFO[VAR_Y]['long_name'] + (f" [{unit_y}]" if unit_y else "")
-    ax.set_xlabel(x_label, fontsize=14)
-    ax.set_ylabel(y_label, fontsize=14)
-    ax.set_title(f'Label {label}', fontsize=16, fontweight='bold')
-
-    #increase font size of ticks
-    ax.tick_params(axis='both', which='major', labelsize=14)
-    #ax.tick_params(axis='both', which='minor', labelsize=10)
+    ax.set_xlabel(x_label, fontsize=16)
+    ax.set_ylabel(y_label, fontsize=16)
+    ax.set_title(f'Label {label}', fontsize=18, fontweight='bold')
+    ax.tick_params(axis='both', which='major', labelsize=16)
     ax.grid(True, linestyle='--', alpha=0.7)
-    
+
+    # Axis limits, log scale, direction
     ax.set_xlim(VARIABLE_INFO[VAR_X]['limit'])
     ax.set_ylim(VARIABLE_INFO[VAR_Y]['limit'])
     if VARIABLE_INFO[VAR_X]['log']: ax.set_xscale('log')
@@ -137,13 +158,15 @@ def plot_data(x, y, color, label, percentile):
     if VARIABLE_INFO[VAR_X]['dir'] == 'decr': ax.invert_xaxis()
     if VARIABLE_INFO[VAR_Y]['dir'] == 'decr': ax.invert_yaxis()
 
+    # Save
     out_dir = f'/data1/fig/{RUN_NAME}/{SAMPLE_TYPE}/scatterplots/'
     os.makedirs(out_dir, exist_ok=True)
     suffix = 'heatmap' if USE_HEATMAP else 'scatter'
     fname = f"{VAR_X}_{VAR_Y}_perc_{percentile}_3rd-var_{VAR_COLOR}_label{label}_{RUN_NAME}_{SAMPLE_TYPE}_{suffix}.png"
-    #save the plots transparent
     fig.savefig(os.path.join(out_dir, fname), dpi=300, bbox_inches='tight', transparent=True)
     plt.close()
+
+
 
 def plot_single_variable_distribution_per_class(
     df_subset, label, variable, run_name, sample_type,
@@ -446,11 +469,11 @@ def main():
         else:
             for label in sorted(cached_df['label'].unique()):
                 df_subset = cached_df[(cached_df['label'] == label)]
-                # #plot_data(df_subset[f'{VAR_X}-{percentile}'].values, 
-                #           df_subset[f'{VAR_Y}-{percentile}'].values, 
-                #           df_subset[f'{VAR_COLOR}-99'].values, 
-                #           label, 
-                #           percentile)
+                plot_data(df_subset[f'{VAR_X}-{percentile}'].values, 
+                          df_subset[f'{VAR_Y}-{percentile}'].values, 
+                          df_subset[f'{VAR_COLOR}-99'].values, 
+                          label, 
+                          percentile)
                 # plot_single_variable_distribution_per_class(
                 #     df_subset, label,
                 #     f'{VAR_Y}-{percentile}', 
@@ -461,13 +484,13 @@ def main():
                 #     log_scale=VARIABLE_INFO[VAR_Y].get('log', False)
                 # )
 
-                plot_data_two_vars(df_subset, 
-                                   label, 
-                                   'precipitation-99', 
-                                   'cth-50', 
-                                   RUN_NAME, 
-                                   SAMPLE_TYPE, 
-                                   use_heatmap=False)
+                # plot_data_two_vars(df_subset, 
+                #                    label, 
+                #                    'precipitation-99', 
+                #                    'cth-50', 
+                #                    RUN_NAME, 
+                #                    SAMPLE_TYPE, 
+                #                    use_heatmap=False)
 
     print("All plots generated.")
 
