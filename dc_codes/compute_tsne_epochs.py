@@ -36,10 +36,12 @@ import pandas as pd
 
 import openTSNE
 
-scales = ['dcv2_ir108_100x100_k9_expats_35k_nc']
+scales = ['dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1']
 random_states = [3] #[0,3,16,23,57] #old was 3, already computed
 
-n_crops =  35118
+n_crops =  70072
+
+sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
 
 perplexity = 50
 
@@ -47,7 +49,7 @@ perplexity = 50
 #filename2 = 'rank0_chunk0_train_heads_targets.npy'
 filename3 = 'rank0_chunk0_train_heads_features.npy'
 
-epochs = [500]
+epochs = [800]
 
 import gc
 gc.collect()
@@ -56,7 +58,7 @@ for epoch in epochs:
     for scale in scales:
         for random_state in random_states:
 
-            output_path = f'/data1/fig/{scale}/epoch_{epoch}/'
+            output_path = f'/data1/fig/{scale}/epoch_{epoch}/{sampling_type}/'
             os.makedirs(output_path, exist_ok=True)
 
             # # Open datafrae with the features

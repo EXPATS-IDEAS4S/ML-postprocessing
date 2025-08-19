@@ -71,6 +71,38 @@ def plot_cartopy_map(output_path, latmin, lonmin, latmax, lonmax, n_divs=5):
     plt.savefig(f'{output_path}map_divided_{n_divs}.png', bbox_inches='tight', dpi=300)
 
 
+def extract_coord_from_nc(filename, dir_path):
+    """
+    Extracts latitude and longitude boundaries from a NetCDF file.
+
+    Args:
+    filename (str): The name of the NetCDF file.
+    dir_path (str): The directory path where the file is located.
+
+    Returns:
+    dict: A dictionary containing lat_min, lat_max, lon_min, lon_max.
+    """
+    filepath = os.path.join(dir_path, filename)
+    
+    try:
+        ds = xr.open_dataset(filepath, engine='h5netcdf')
+        lat_min = ds['lat'].min().item()
+        lat_max = ds['lat'].max().item()
+        lon_min = ds['lon'].min().item()
+        lon_max = ds['lon'].max().item()
+        
+        return {
+            "lat_min": round(lat_min, 3),
+            "lat_max": round(lat_max, 3),
+            "lon_min": round(lon_min, 3),
+            "lon_max": round(lon_max, 3)
+        }
+    
+    except Exception as e:
+        print(f"Error reading {filename}: {e}")
+        return None
+                          
+
 def extract_coordinates(filename):
     """
     Extracts latitude and longitude boundaries from a given filename.
@@ -81,6 +113,8 @@ def extract_coordinates(filename):
     Returns:
     dict: A dictionary containing lat_min, lat_max, lon_min, lon_max.
     """
+    print(filename)
+    exit()
     parts = filename.split("_")  # Split by underscore (_)
 
     if len(parts) < 7:
@@ -106,6 +140,40 @@ def extract_coordinates(filename):
         "lon_max": round(lon_max, 4)
     }
 
+
+def extract_datetime_from_nc(filename, dir_path):
+    """
+    Extracts year, month, day, hour, and minute from a NetCDF filename.
+
+    Args:
+    filename (str): The name of the NetCDF file.
+    dir_path (str): The directory path where the file is located.
+
+    Returns:
+    dict: A dictionary containing 'year', 'month', 'day', 'hour', and 'minute'.
+    """
+    filepath = os.path.join(dir_path, filename)
+    
+    try:
+        ds = xr.open_dataset(filepath, engine='h5netcdf')
+        time_var = ds['time']
+        
+        # Assuming time is in datetime64 format
+        time_value = time_var.values[0]  # Get the first time value
+        dt = np.datetime64(time_value)
+
+        return {
+            "year": dt.astype('datetime64[Y]').astype(int) + 1970,
+            "month": dt.astype('datetime64[M]').astype(int) % 12 + 1,
+            "day": dt.astype('datetime64[D]').astype(int) % 31 + 1,
+            "hour": dt.astype('datetime64[h]').astype(int) % 24,
+            "minute": dt.astype('datetime64[m]').astype(int) % 60
+        }
+    
+    except Exception as e:
+        print(f"Error reading {filename}: {e}")
+        return None
+    
 
 def extract_datetime(filename):
     """

@@ -9,7 +9,7 @@ import sys
 import boto3
 
 
-from aux_functions_from_buckets import extract_coordinates, extract_datetime, compute_categorical_values, extract_variable_values, filter_cma_values
+from aux_functions_from_buckets import extract_coordinates, extract_datetime, compute_categorical_values, extract_variable_values, filter_cma_values, extract_coord_from_nc, extract_datetime_from_nc
 from get_data_from_buckets import read_file, Initialize_s3_client
 from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))  
@@ -21,13 +21,16 @@ from aux_functions import compute_percentile
 BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
 BUCKET_IMERG_NAME = 'expats-imerg-prec'
 
-run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA'
+run_name = 'dcv2_ir108_ot_100x100_k9_35k_nc_vit'
+crops_name = 'dcv2_ir108_OT_100x100_35k_nc'  # Name of the crops
 sampling_type = 'all'
+epoch = 500  # Epoch number for the run
+data_format = 'nc'  # Image file extension
 vars = ['cot', 'cth', 'cma', 'cph', 'precipitation']
 stats = [50, 99]
 categ_vars = ['cma', 'cph']
 filter_daytime = False        # Enable daytime filter (06–16 UTC)
-filter_imerg_minutes = True  # Only keep timestamps with minutes 00 or 30
+filter_imerg_minutes = False  # Only keep timestamps with minutes 00 or 30
 
 filter_tags = []
 if filter_daytime:
@@ -39,14 +42,14 @@ filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
 # Read data
 # List of the image crops
-image_crops_path = f'/data1/crops/{run_name}/1/'
+image_crops_path = f'/data1/crops/{crops_name}/{data_format}/1/'
 list_image_crops = sorted(glob(image_crops_path+'*.tif'))
 n_samples = len( list_image_crops)
 print('n samples: ', n_samples)
 
 # Read data
 if sampling_type == 'all':
-    n_subsample = 33729  # Number of samples per cluster
+    n_subsample = 35059  # Number of samples per cluster
 else:
     n_subsample = 1000
 
@@ -56,23 +59,31 @@ table_entries.extend(categ_vars)
 table_entries = [item if '-' in item else f"{item}-None" for item in table_entries]
 
 # Path to fig folder for outputs
-output_path = f'/data1/fig/{run_name}/{sampling_type}/'
+output_path = f'/data1/fig/{run_name}/epoch_{epoch}/{sampling_type}/'
 
 # Load CSV file with the crops path and labels into a pandas DataFrame
 
-df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{n_subsample}_{sampling_type}{filter_suffix}.csv')
-print(df_labels['path'].to_list())
+df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv')
+print(len(df_labels['path'].to_list()))
 
 # Function to process each row in parallel
 def process_row(row):
     s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
 
     crop_filename = os.path.basename(row['path'])
-    coords = extract_coordinates(crop_filename)
+    print(crop_filename)
+    if data_format == 'nc':
+        coords = extract_coord_from_nc(crop_filename, image_crops_path)
+        datetime_info = extract_datetime_from_nc(crop_filename, image_crops_path)
+    else:
+        coords = extract_coordinates(crop_filename)
+        datetime_info = extract_datetime(crop_filename)
+    print(coords)
+    print(datetime_info)
+    exit()
+
     lat_min, lat_max = coords['lat_min'], coords['lat_max']
     lon_min, lon_max = coords['lon_min'], coords['lon_max']
-
-    datetime_info = extract_datetime(crop_filename)
     year, month, day, hour, minute = (
         datetime_info[k] for k in ['year', 'month', 'day', 'hour', 'minute']
     )
@@ -141,7 +152,7 @@ def process_row(row):
 
 
 # Run parallel processing
-num_cores = os.cpu_count() - 3  # Use all but one CPU
+num_cores = os.cpu_count() - 5  # Use all but one CPU
 results = Parallel(n_jobs=num_cores)(delayed(process_row)(row) for _, row in df_labels.iterrows())
 
 # Convert results to DataFrame
@@ -164,4 +175,4 @@ print('Parallelized processing complete. CSV saved!')
 # continuous_stats.to_csv(f'{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}.csv', index=False)
 # print('Overall Stats for each cluster are saved to CSV files.')
 
-#2975083
+#

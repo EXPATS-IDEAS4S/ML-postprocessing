@@ -16,20 +16,27 @@ colors_per_class1_names = {
     '5': 'deepskyblue',
     '6': 'purple',
     '7': 'lightblue',
-    '8': 'green'
+    '8': 'green',
+    '9': 'goldenrod',
+    '10': 'magenta',
+    '11': 'dodgerblue',
+    '12': 'darkorange',
+    '13': 'olive',
+    '14': 'crimson'
 }
 
 reduction_method = 'tsne' #'tsne
-run_name = 'dcv2_ir108_100x100_k9_expats_35k_nc'
+run_name = 'dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1'
+crop_name = 'clips_ir108_100x100_8frames_2013-2020'  # Name of the crops
 random_state = '3' #all visualization were made with random state 3
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all''
 file_extension = 'nc'  # Image file extension
-epoch = 500  # Epoch number for the run
+epoch = 800  # Epoch number for the run
 FROM_CROP_STATS = False  # If True, use crop stats to get labels and paths, otherwise jsut crop list 
 
 # Get number of samples
 if sampling_type == 'all':
-    image_path = f'/data1/crops/{run_name}/{file_extension}/1/' 
+    image_path = f'/data1/crops/{crop_name}/{file_extension}/1/' 
     crop_path_list = sorted(glob(image_path+'*.'+file_extension))
     n_samples = len(crop_path_list)
 else:

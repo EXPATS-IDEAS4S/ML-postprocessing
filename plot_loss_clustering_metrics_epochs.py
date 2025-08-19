@@ -4,7 +4,7 @@ import numpy as np
 
 from plot_training import load_data_new
 
-run_name = 'dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA'
+run_name = 'dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1'
 output_dir = f"/data1/fig/{run_name}/clustering_metrics_output/"
 k = 9
 

@@ -13,6 +13,9 @@ from PIL import Image
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import os
 from scipy.spatial import cKDTree
+import matplotlib as mpl
+import matplotlib.cm as cm
+import matplotlib.image as mpimg
 
 # Convert color names to RGB values
 def name_to_rgb(color_name):
@@ -461,8 +464,24 @@ def plot_embedding_crops(indices, selected_images, df_conc, tsne_plot, output_pa
     fig.savefig(output_path+filename.split('.')[0]+'_crops.png',bbox_inches='tight')
 
 
+def create_WV_IR_diff_colormap(vmin, center, vmax, diverg_cmap=mpl.cm.seismic):
+    if vmin is None:
+        vmin = -1
+    if vmax is None:
+        vmax = 1
+    # get number of colors above and below center point representing the respective range percentages
+    n_pos = int(265*(vmax-center)/(vmax-vmin)) if vmax > center else 1
+    n_neg = int(265*(center-vmin)/(vmax-vmin)) if vmin < center else 1
+    # sample colors
+    colors_pos = diverg_cmap(np.linspace(0.7, 1, n_pos))
+    colors_neg = diverg_cmap(np.linspace(0, 0.5, n_neg))
+    # combine them and build a new colormap
+    colors = np.vstack((colors_neg, colors_pos))
+    
+    return mpl.colors.LinearSegmentedColormap.from_list('recentered_cmap', colors)
 
-def plot_embedding_crops_grid(df, output_path, filename, grid_size=10, zoom=0.3):
+
+def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, grid_size=10, zoom=0.3):
     """
     Plot image crops aligned on a regular grid using normalized Component_1 and Component_2,
     placing one image per grid bin based on minimal distance to bin center.
@@ -482,7 +501,7 @@ def plot_embedding_crops_grid(df, output_path, filename, grid_size=10, zoom=0.3)
     iy = np.minimum((y_norm * grid_size).astype(int), grid_size - 1)
     centers = np.linspace(0.5 / grid_size, 1 - 0.5 / grid_size, grid_size)
 
-    # Select best image per bin (closest to center)
+    #Select best image per bin (closest to center)
     placed = {}
     for i, j, xn, yn, idx in zip(ix, iy, x_norm, y_norm, df.index):
         bin_key = (i, j)
@@ -491,13 +510,27 @@ def plot_embedding_crops_grid(df, output_path, filename, grid_size=10, zoom=0.3)
         if bin_key not in placed or dist < placed[bin_key][0]:
             placed[bin_key] = (dist, idx)
 
+
+
     # Plot the selected images at bin centers
     for (i, j), (_, idx) in placed.items():
         row = df.loc[idx]
         cx, cy = centers[i], centers[j]
+        # try:
+        #     img = Image.open(row['path'])#.convert('L')
+        #     imagebox = OffsetImage(img, zoom=zoom)#, cmap='gray')
+        #     ab = AnnotationBbox(imagebox, (cx, cy), frameon=False)
+        #     ax.add_artist(ab)
+        # except Exception as e:
+        #     print(f"Skipping image {row['path']}: {e}")
+        #     continue
+
         try:
-            img = Image.open(row['path']).convert('L')
-            imagebox = OffsetImage(img, zoom=zoom, cmap='gray')
+            # Load image as NumPy array (assumes grayscale .png saved with matplotlib)
+            img_array = mpimg.imread(row['path'])
+            img_rgba = img_array  # RGB or RGBA already
+
+            imagebox = OffsetImage(img_rgba, zoom=zoom, cmap=cmap)
             ab = AnnotationBbox(imagebox, (cx, cy), frameon=False)
             ax.add_artist(ab)
         except Exception as e:
@@ -511,9 +544,12 @@ def plot_embedding_crops_grid(df, output_path, filename, grid_size=10, zoom=0.3)
 
     plt.tight_layout()
     base_filename = os.path.splitext(filename)[0]
-    save_path = os.path.join(output_path, base_filename + '_grid.png')
+    save_path = os.path.join(output_path, base_filename + '_'+ variable_type + '_grid.png')
     fig.savefig(save_path, bbox_inches='tight', dpi=300)
     plt.close()
+
+
+
 
 
 def plot_embedding_crops_binned_grid(df, output_path, filename, grid_size=10, zoom=0.3):
@@ -550,8 +586,10 @@ def plot_embedding_crops_binned_grid(df, output_path, filename, grid_size=10, zo
     # 4) plot one per bin
     for (i,j), (_, idx) in placed.items():
         row = df.loc[idx]
-        img = Image.open(row['path']).convert('L')
-        imbox = OffsetImage(img, zoom=zoom, cmap='gray')
+        img = Image.open(row['path'])#.convert('L')
+        print("Plotting image:", row['path'])
+        exit()
+        imbox = OffsetImage(img, zoom=zoom)# cmap='gray')
         # map bin coordinate to [0,1] for plotting
         px, py = centers[i], centers[j]
         ab = AnnotationBbox(imbox, (px,py), frameon=False)
@@ -626,6 +664,56 @@ def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closes
 
     print(f"Saved plot: {output_file}")
 
+
+def plot_classwise_grids(df, output_path, filename,cmap, n=100, selection="closest"):
+    """
+    For each class (label) in the DataFrame, plot a 10x10 grid of image crops
+    from that class only. Save each class grid as a separate image.
+
+    Args:
+        df (pd.DataFrame): DataFrame with 'path', 'label', and optionally 'distance' columns.
+        output_path (str): Directory where the output images will be saved.
+        selection (str): "closest", "farthest", or "random" selection strategy per label.
+    """
+    os.makedirs(output_path, exist_ok=True)
+    labels = sorted(df['label'].unique())
+
+    for label in labels:
+        subset = df[df['label'] == label]
+
+        # Apply selection strategy
+        if selection == "closest" and 'distance' in subset:
+            #sort values from highest to lowest distance
+            subset = subset.sort_values(by='distance', ascending=False).head(n)
+        elif selection == "farthest" and 'distance' in subset:
+            subset = subset.sort_values(by='distance', ascending=True).head(n)
+        elif selection == "random":
+            subset = subset.sample(n=min(n, len(subset)), random_state=42)
+        else:
+            raise ValueError("Invalid selection method. Choose 'closest', 'farthest', or 'random'.")
+
+        fig, axes = plt.subplots(10, 10, figsize=(12, 12))
+        fig.suptitle(f"Label {label} – {selection.capitalize()} Samples", fontsize=16, fontweight="bold")
+
+        for ax, (_, row) in zip(axes.flatten(), subset.iterrows()):
+            try:
+                #img_array = mpimg.imread(row['path'])
+                #img_rgba = img_array  # RGB or RGBA already
+                #imagebox = OffsetImage(img_rgba, zoom=zoom, cmap=cmap)
+                img = Image.open(row['path']).convert('L')
+                ax.imshow(img, cmap=cmap)
+            except Exception as e:
+                print(f"Error loading {row['path']}: {e}")
+                ax.axis('off')
+                continue
+            ax.axis('off')
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        #filename = os.path.join(output_path, f"label_{label}_{selection}_grid.png")
+        output_file = f"{output_path}/{filename.split('.')[0]}_label_{label}_{selection}_grid.png"
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved: {filename}")
 
 
 def plot_embedding_crops_new(df, output_path, filename):

@@ -9,26 +9,34 @@ import os
 # https://scikit-learn.org/stable/modules/clustering.html
 
 # Configuration
-scales = ['dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA']
-epochs = [100, 200, 300, 400, 500]
+scales = ['dcv2_ir108_ot_100x100_k6_35k_nc_vit',
+          'dcv2_ir108_ot_100x100_k7_35k_nc_vit',
+          'dcv2_ir108_ot_100x100_k8_35k_nc_vit',
+          'dcv2_ir108_ot_100x100_k9_35k_nc_vit',
+          'dcv2_ir108_ot_100x100_k10_35k_nc_vit']
+
+epochs = [500]
+
+sampling_type = 'all'  # Options: 'all', 'subsampled'   
+perplexity = 50  # t-SNE perplexity parameter
 
 # Initialize a list to store results
 results = []
 
-for epoch in epochs:
-    for scale in scales:
+# Define output directory
+output_dir = f"/data1/fig/k_optimization/dcv2_ir108_ot_100x100_35k_nc_vit/"
+os.makedirs(output_dir, exist_ok=True)
+
+for scale in scales:
+    for epoch in epochs:
         print(f"==> Processing scale: {scale}, epoch: {epoch}")
 
-        # Define output directory
-        output_dir = f"/data1/fig/{scale}/clustering_metrics_output/"
-        os.makedirs(output_dir, exist_ok=True)
-
         # Define path to t-SNE files
-        tsne_path = f'/data1/fig/{scale}/epoch_{epoch}/'
-        tsne_filenames = glob.glob(os.path.join(tsne_path, f'tsne_pca_cosine_{scale}_*.npy'))
+        tsne_path = f'/data1/fig/{scale}/epoch_{epoch}/{sampling_type}/'
+        tsne_filenames = glob.glob(os.path.join(tsne_path, f'tsne_pca_cosine_perp-{perplexity}_{scale}_*.npy'))
 
         # Define path to clustering assignments TODO 
-        checkpoint_path = f'/data1/runs/{scale}/checkpoints/assignments_800ep.pt'
+        checkpoint_path = f'/data1/runs/{scale}/checkpoints/assignments.pt'
 
         if not tsne_filenames:
             print(f"⚠️ No t-SNE files found for epoch {epoch}. Skipping.")

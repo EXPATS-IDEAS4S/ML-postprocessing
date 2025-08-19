@@ -14,11 +14,12 @@ import os
 from datetime import datetime
 
 # === CONFIGURATION ===
-run_names = ['dcv2_ir108_100x100_k9_expats_35k_nc']
+run_names = ['dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1']
+crops_name = 'clips_ir108_100x100_8frames_2013-2020'  # Name of the crops 
 file_extension = 'nc'  # Image file extension
 sampling_type = 'all'  # Options: 'random', 'closest', 'farthest', 'all'
-n_subsample = 35118  # Max samples per cluster
-epoch = 500  # Epoch number for the run
+n_subsample = 70072   # Max samples per cluster
+epoch = 800 # Epoch number for the run
 filter_daytime = False        # Enable daytime filter (06–16 UTC)
 filter_imerg_minutes = False  # Only keep timestamps with minutes 00 or 30
 
@@ -44,7 +45,7 @@ for run_name in run_names:
     # Paths
     labels_path = f'/data1/runs/{run_name}/checkpoints/assignments.pt'
     distances_path = f'/data1/runs/{run_name}/checkpoints/distances.pt'
-    image_crops_path = f'/data1/crops/{run_name}/{file_extension}/1/'
+    image_crops_path = f'/data1/crops/{crops_name}/{file_extension}/1/'
     output_path = f'/data1/fig/{run_name}/epoch_{epoch}/{sampling_type}/'
 
     os.makedirs(output_path, exist_ok=True)

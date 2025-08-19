@@ -184,15 +184,14 @@ def plot_parameter_multiple_datasets(datasets, parameter, labels, colors, path_o
 
 if __name__ == "__main__":
 
-    path_out = '/data1/fig/dcv2_ir108_100x100_k9_expats_35k_nc/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
+    path_out = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/' #dcv_ir108_128x128_k9_30k_grey_5th-95th/'
     os.makedirs(path_out, exist_ok=True)  # Ensure the output directory exists
 
     # Initialize the list to store datasets
     datasets = []
 
-    labels = ['dcv2_ir108_100x100_k9_expats_35k_nc'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
+    labels = ['dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1'] #['min-max', '1th-99th', '5th-95th', '10th-90th', '25th-75th']
     colors = ['red']#,'blue','green', 'black', 'orange']
-
     #for each case open data 
 
     for label in labels:
