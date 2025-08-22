@@ -2,5 +2,7 @@ nohup.out
 
 credentials_buckets.py
 
-#pycache
-__pycache__
+# Ignore Python cache
+__pycache__/
+*.py[cod]
+*$py.class

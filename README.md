@@ -1,6 +1,43 @@
-# Workflow Overview
+# Overview
 
-This repository provides tools to analyze and visualize the training and feature space of machine learning models applied to crop data.
+This repository provides tools for analyzing and visualizing the training process and feature space of VISSL machine learning models.
+
+## Pretraining Analysis
+
+The repository includes scripts to evaluate self-supervised VISSL models and their feature representations:
+
+### `check_training`
+
+Utilities to inspect model training and convergence:
+
+* **`plot_training_loss.py`** – Plots training loss (and optionally learning rate) across iterations and epochs.
+* **`plot_loss_clustering_metrics_epochs.py`** – Visualizes clustering quality of features across epochs. Features should first be extracted at multiple epochs. Clustering metrics can be computed using `compute_cluster_metrics.py` in the `k_optimization` folder.
+* Shared helper functions are in **`utils/plot_utils/check_training_utils.py`**.
+
+### `k_optimization`
+
+Subfolder `clustering_metrics` for analyzing cluster quality:
+
+* **`compute_cluster_metrics_dim_red.py`** – Computes clustering metrics on dimensionally reduced features.
+* **`compute_clustering_metrics_full_feat.py`** – Computes metrics on the full high-dimensional feature space.
+* **`plot_clustering_metrics.py`** – Plots results from clustering metrics.
+* Utility functions are stored in **`utils/analysis_utils/utils_clustering.py`**.
+* *TODO:* Implement correlation analysis among features and class distribution distances for K optimization.
+
+### `dim_reduction`
+
+Scripts for reducing the dimensionality of feature vectors for visualization or further analysis.
+
+### `prepare_features`
+
+Scripts for organizing, cleaning, and merging features from training and inference:
+
+* **`merge_train_test_features.py`** – Loads and merges high-dimensional feature vectors from training and test datasets, annotates them with metadata (e.g., case-study labels, vector types), and outputs a structured DataFrame ready for downstream analysis or dimensionality reduction. Ensures only relevant samples are included and preserves index and feature information.
+
+---
+
+
+# Suggestion of a Workflow 
 
 ### 1. Check model convergence
 
