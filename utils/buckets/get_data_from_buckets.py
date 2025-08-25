@@ -1,10 +1,27 @@
-import pandas as pd
-import torch
-from glob import glob
-import numpy as np
-import os
+"""
+S3 Utility Functions for File Access and Management
+
+This module provides helper functions for interacting with S3-compatible storage,
+including reading files, initializing clients, and listing bucket contents.
+
+Functions
+---------
+read_file(s3, file_name, bucket)
+    Reads the contents of a file from a specified S3 bucket and returns it as bytes.
+
+Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
+    Initializes and returns a boto3 S3 client object for the specified endpoint and credentials.
+
+get_list_objects(s3, S3_BUCKET_NAME)
+    Lists all objects in the specified S3 bucket and prints their keys.
+
+Notes
+-----
+- The module uses boto3 and botocore for S3 interactions.
+- Proper AWS credentials or endpoint information must be provided for access.
+- Errors encountered during file reading are logged and return None.
+"""
 import boto3
-import io
 import logging
 from botocore.exceptions import ClientError
 

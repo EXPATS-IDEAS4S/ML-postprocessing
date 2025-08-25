@@ -1,4 +1,42 @@
 #!/bin/bash
+: '
+Rename EXPATS crop files to a standardized format.
+
+This script loops over all .tif files in a specified directory and
+renames them according to a standardized naming convention that encodes
+date, time, geographic coordinates, pixel size, image dimensions,
+brightness temperature scale, color scale, and CMA information.
+
+Original filename format (expected):
+    YYYYMMDD_HH:MM_EXPATS_<some_number>_<BT_SCALE>_<COLOR_SCALE>_CMA.tif
+
+New filename format:
+    YYYYMMDD-HH:MM_<UL_LAT>_<UL_LON>_<PIXEL_SIZE>_<X_PIXELS>x<Y_PIXELS>_<BT_SCALE>_<COLOR_SCALE>_<CMA_INFO>.tif
+
+Configuration / Parameters:
+---------------------------
+- DIR : directory containing the .tif files to rename.
+- UL_LAT, UL_LON : upper-left coordinates of the crop (assumed values, adjust if needed)
+- PIXEL_SIZE     : size of one pixel in degrees (assumed)
+- X_PIXELS, Y_PIXELS : dimensions of the crop in pixels
+- CMA_INFO       : fixed label for CMA processing information
+
+Behavior:
+---------
+- Only files matching the expected original filename pattern are renamed.
+- Files that do not match are skipped and a message is printed.
+- Renaming is done in-place using `mv`.
+- Progress is printed to the console.
+
+Usage:
+------
+Make the script executable:
+    chmod +x rename_crops.sh
+
+Run:
+    ./rename_crops.sh
+'
+
 
 # Define the directory containing the old filenames
 DIR="/data1/crops/dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA/1"

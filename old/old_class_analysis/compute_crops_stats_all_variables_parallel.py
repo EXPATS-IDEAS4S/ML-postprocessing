@@ -11,7 +11,7 @@ import boto3
 
 from aux_functions_from_buckets import extract_coordinates, extract_datetime, compute_categorical_values, extract_variable_values, filter_cma_values, extract_coord_from_nc, extract_datetime_from_nc
 from get_data_from_buckets import read_file, Initialize_s3_client
-from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
+from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))  
 from aux_functions import compute_percentile
 

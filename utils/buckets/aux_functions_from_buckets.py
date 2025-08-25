@@ -9,7 +9,7 @@ import cartopy.feature as cfeature
 import xarray as xr
 import io
 
-from get_data_from_buckets import read_file
+from utils.buckets.get_data_from_buckets import read_file
 
 
 def plot_cartopy_map(output_path, latmin, lonmin, latmax, lonmax, n_divs=5):

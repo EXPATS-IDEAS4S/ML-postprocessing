@@ -8,9 +8,9 @@ from joblib import Parallel, delayed
 import sys
 import boto3
 
-from aux_functions_from_buckets import extract_datetime, get_num_crop, compute_categorical_values, plot_cartopy_map, find_crops_in_range
-from get_data_from_buckets import read_file, Initialize_s3_client, get_list_objects
-from credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
+from utils.buckets.aux_functions_from_buckets import extract_datetime, get_num_crop, compute_categorical_values, plot_cartopy_map, find_crops_in_range
+from utils.buckets.get_data_from_buckets import read_file, Initialize_s3_client, get_list_objects
+from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))
 from aux_functions import compute_percentile
 

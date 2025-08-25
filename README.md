@@ -28,11 +28,51 @@ Subfolder `clustering_metrics` for analyzing cluster quality:
 
 Scripts for reducing the dimensionality of feature vectors for visualization or further analysis.
 
-### `prepare_features`
+* **compute_2d_embedding.py**: This script performs dimensionality reduction on high-dimensional feature data  to visualize it in a lower-dimensional space. It supports both Isomap and t-SNE.
 
-Scripts for organizing, cleaning, and merging features from training and inference:
+* **visualize_embedding.py**: Plot feature space for an image-based and video-based samples.
 
-* **`merge_train_test_features.py`** – Loads and merges high-dimensional feature vectors from training and test datasets, annotates them with metadata (e.g., case-study labels, vector types), and outputs a structured DataFrame ready for downstream analysis or dimensionality reduction. Ensures only relevant samples are included and preserves index and feature information.
+* **visualize_embedding_case_studies.py**: Plot the feature space including case studies.
+
+* **plot_embedding_utils.py**: Utils function for plotting the feature space
+
+* **features_utils.py**: TODO, Utils functions for preparing the feature space data before plotting
+
+
+
+## `prepare_features`
+
+These scripts handle **feature extraction, cleaning, and organization** from training and inference datasets, preparing them for downstream analysis or dimensionality reduction.
+
+* **`merge_train_test_features.py`** – Loads and merges high-dimensional feature vectors from training and test datasets. Annotates samples with metadata (e.g., case-study labels, vector types) and outputs a structured DataFrame ready for analysis. Ensures only relevant samples are included while preserving feature and index integrity.
+
+* **`adapt_random_crops_filename.py`** – Adjusts or standardizes filenames for random crops to ensure consistency across datasets.
+
+* **`create_crop_list_from_buckets.py`** – Selects and outputs a list of samples (crops) from cloud storage buckets for further processing.
+
+* **`create_df_var_tsne.py`** – Extends the crop list by adding corresponding components from dimensionality reduction (e.g., t-SNE embeddings) to each sample. Planned merge with `create_crop_list_from_buckets.py` to streamline the workflow.
+
+* **`compute_crops_statistics_new.py`** – Computes selected statistics (e.g., percentiles) for physical variables of interest for each sample, and appends them to the dataset.
+
+
+
+## `cluster_analysis`
+
+These scripts focus on **characterizing clusters/classes in the feature space** using ancillary datasets (e.g., physical variables, satellite data, orography).
+
+* **`histogram_overlaid_per_class.py`** – Generates overlaid histograms of selected variables per cluster/class to visualize distributions.
+
+* **`plot_class_var_cycle.py`** – Plots diurnal and seasonal cycles of physical variables per class to explore temporal patterns.
+
+* **`plot_feature_space_with_physical_var_new.py`** – Visualizes the feature space embedding (e.g., t-SNE, PCA) colored by physical variable values.
+
+* **`scatter_and_distribution_analysis.py`** – Performs scatter and distribution analyses for variables across classes or clusters.
+
+* **`visualize_crops_with_phys_vars.py`** – Maps or plots samples/crops with associated physical variable values for exploratory analysis.
+
+* **`percentile_maps`** – Computes spatial percentile maps for variables across grid cells and labels, and plots them using Cartopy for geospatial visualization. Includes optional parallel computation for efficiency.
+
+
 
 ---
 
