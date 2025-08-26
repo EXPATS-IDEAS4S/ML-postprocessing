@@ -4,20 +4,6 @@ import cv2
 from matplotlib import colors as mcolors 
 import seaborn as sns
 
-# Define the color names for each class
-colors_per_class1_names = {
-    '0': 'darkgray', 
-    '1': 'black',
-    '2': 'peru',
-    '3': 'darkorange',
-    '4': 'olivedrab',
-    '5': 'deepskyblue',
-    '6': 'purple',
-    '7': 'lightblue',
-    '8': 'green'
-}
-
-
 def name_to_rgb(color_name):
     """
     Convert a color name to its RGB representation scaled to 0-255.

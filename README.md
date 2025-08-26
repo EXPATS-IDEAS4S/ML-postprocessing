@@ -2,6 +2,10 @@
 
 This repository provides tools for analyzing and visualizing the training process and feature space of VISSL machine learning models.
 
+## configs
+
+All the configurabel parameters should be set in a yaml file to be placed inside this folder
+
 ## Pretraining Analysis
 
 The repository includes scripts to evaluate self-supervised VISSL models and their feature representations:

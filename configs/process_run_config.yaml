@@ -1,0 +1,64 @@
+# ==========================
+# Experiment Configuration
+# ==========================
+experiment:
+  run_names: #add mulitple names in case a comparison has to be done (like chacking loss)
+    - dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1
+    #- dcv2_ir108_ot_100x100_k9_35k_nc_vit
+  epoch: 800          # Epoch number for the main run
+  random_state: 3     # Random seed for reproducibility (tsne, sampling selection)
+  base_path: /data1
+  path_out: /data1/fig
+  from_crop_stats: false  # Use crop stats file instead of crop list file
+
+# ==========================
+# Data / Crops Configuration
+# ==========================
+data:
+  crops_name: clips_ir108_100x100_8frames_2013-2020 # name of the dataset
+  file_extension: nc   # Options: nc, tif
+  vars:                # Physical variables of interest
+    - cot
+    - cth
+    - cma
+    - cph
+    - precipitation
+
+# ==========================
+# Sampling Configuration
+# ==========================
+sampling:
+  type: all            # Options: random, closest, farthest, all
+  n_subsample: 70072   # Max samples per cluster
+
+# ==========================
+# Filtering Options
+# ==========================
+filters:
+  daytime: false          # Keep only 06–16 UTC
+  imerg_minutes: false    # Keep only timestamps at minutes 00 or 30
+
+# ==========================
+# Dimensionality Reduction
+# ==========================
+reduction:
+  method: tsne            # Options: tsne, umap, etc.
+  perplexity: 50
+
+# ==========================
+# Cloud Storage
+# ==========================
+buckets: #buckets name where ancillary data are stored
+  cmsaf: expats-cmsaf-cloud
+  imerg: expats-imerg-prec
+
+# ==========================
+# Statistics
+# ==========================
+statistics:
+  percentiles: [50, 99]   # Percentile values to compute
+  categ_vars:             # Categorical variables (which statistics is computed in a different way)
+    - cma
+    - cph
+  use_parallel: true      # Switch between parallel or serial processing
+  n_cores: 4              # Number of CPU cores to use for parallel processing

@@ -6,3 +6,5 @@ credentials_buckets.py
 __pycache__/
 *.py[cod]
 *$py.class
+
+old/

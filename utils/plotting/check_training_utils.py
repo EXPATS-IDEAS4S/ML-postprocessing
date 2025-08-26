@@ -55,13 +55,14 @@ def plot_metric_over_epochs(epochs, values, label, color, output_file, xlabel='E
     :param xlabel: X-axis label
     :param ylabel: Y-axis label
     """
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(epochs, values, label=label, color=color, linewidth=2)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel or label)
-    ax.set_title(f'{label} over {xlabel}s', fontsize=16)
+    ax.set_xlabel(xlabel, fontsize=14) 
+    ax.set_ylabel(ylabel or label, fontsize=14)
+    ax.set_title(f'{label} over {xlabel}s', fontsize=16, fontweight='bold')
+    ax.tick_params(axis='both', which='major', labelsize=14)
     ax.grid(True)
-    ax.legend()
+    #ax.legend()
     fig.savefig(output_file, bbox_inches='tight')
     plt.close()
 
