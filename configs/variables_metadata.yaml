@@ -1,0 +1,93 @@
+# ==========================
+# Variables Metadata
+# ==========================
+variables:
+  cot:
+    long_name: "cloud optical thickness"
+    unit: null
+    categorical: false
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 20
+    bucket_name: expats-cmsaf-cloud
+
+  cth:
+    long_name: "cloud top height"
+    unit: "km"
+    categorical: false
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 12
+    bucket_name: expats-cmsaf-cloud
+
+  cma:
+    long_name: "cloud cover"
+    unit: null
+    categorical: true
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 1
+    bucket_name: expats-cmsaf-cloud
+
+  cph:
+    long_name: "ice ratio"
+    unit: null
+    categorical: true
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 1
+    bucket_name: expats-cmsaf-cloud
+
+  precipitation:
+    long_name: "precipitation"
+    unit: "mm/h"
+    categorical: false
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 100
+    bucket_name: expats-imerg-prec
+
+  hour:
+    long_name: "hour"
+    unit: "UTC"
+    categorical: true
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 100
+    bucket_name: null
+
+  month:
+    long_name: "month"
+    unit: null
+    categorical: true
+    logscale: false
+    direction: "incr"
+    vmin: 4
+    vmax: 9
+    bucket_name: null
+
+  lat_mid:
+    long_name: "latitude middle point"
+    unit: "°N"
+    categorical: false
+    logscale: false
+    direction: "incr"
+    vmin: 42
+    vmax: 52
+    bucket_name: null
+
+  lon_mid:
+    long_name: "longitude middle point"
+    unit: "°E"
+    categorical: false
+    logscale: false
+    direction: "incr"
+    vmin: 5
+    vmax: 16
+    bucket_name: null

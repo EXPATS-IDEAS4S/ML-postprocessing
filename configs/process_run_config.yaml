@@ -6,59 +6,57 @@ experiment:
     - dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1
     #- dcv2_ir108_ot_100x100_k9_35k_nc_vit
   epoch: 800          # Epoch number for the main run
-  random_state: 3     # Random seed for reproducibility (tsne, sampling selection)
-  base_path: /data1
+  random_state: 3     # Random seed for reproducibility (tsne, sampling selection, training_run)
+  base_path: /data1/runs
   path_out: /data1/fig
   from_crop_stats: false  # Use crop stats file instead of crop list file
-
-# ==========================
-# Data / Crops Configuration
-# ==========================
-data:
-  crops_name: clips_ir108_100x100_8frames_2013-2020 # name of the dataset
-  file_extension: nc   # Options: nc, tif
-  vars:                # Physical variables of interest
-    - cot
-    - cth
-    - cma
-    - cph
-    - precipitation
-
-# ==========================
-# Sampling Configuration
-# ==========================
-sampling:
-  type: all            # Options: random, closest, farthest, all
-  n_subsample: 70072   # Max samples per cluster
-
-# ==========================
-# Filtering Options
-# ==========================
-filters:
-  daytime: false          # Keep only 06–16 UTC
-  imerg_minutes: false    # Keep only timestamps at minutes 00 or 30
+  
 
 # ==========================
 # Dimensionality Reduction
+# can be expanded, if many dim reduction method will be implemented, consider creating a separate config
 # ==========================
 reduction:
-  method: tsne            # Options: tsne, umap, etc.
+  method: tsne            # Options: tsne, umap, etc., 
   perplexity: 50
+
+
+# ==========================
+# Data / Crops Configuration / Sampling Configuration
+# ==========================
+data:
+  data_base_path: /data1/crops
+  crops_name: clips_ir108_100x100_8frames_2013-2020 # name of the dataset
+  file_extension: nc   # Options: nc, tif
+  nc_engine: netcdf4   #engine for xarray, choose between {"netcdf4", "scipy", "pydap", "h5netcdf", "zarr", None}
+  sampling_type: all   # Options: random, closest, farthest, all
+  n_subsample: 70072   # Max samples per cluster. TODO: if 'all', use all samples without specifying here
+  filter_daytime: false  # Keep only 06–16 UTC
+  filter_imerg: false    # Keep only timestamps at minutes 00 or 30, as IMERG product
+
 
 # ==========================
 # Cloud Storage
 # ==========================
-buckets: #buckets name where ancillary data are stored
-  cmsaf: expats-cmsaf-cloud
-  imerg: expats-imerg-prec
+# buckets: #buckets name where ancillary data are stored, this is defined in the variables_metadata
+#   cmsaf: expats-cmsaf-cloud
+#   imerg: expats-imerg-prec
 
 # ==========================
 # Statistics
 # ==========================
 statistics:
-  percentiles: [50, 99]   # Percentile values to compute
-  categ_vars:             # Categorical variables (which statistics is computed in a different way)
+  sel_vars:                # Physical variables of interest to select from the whole list (see config: variables_metadata.yaml)
+    - cot
+    - cth
     - cma
     - cph
-  use_parallel: true      # Switch between parallel or serial processing
+    - precipitation
+  # categ_vars:             # Categorical variables (which statistics is computed in a different way), defined in variables_metadata
+  #   - cma
+  #   - cph
+  percentiles: [50, 99]   # Percentile values to compute
+  time_dimension: true #Flag to include time dimension in the analysis
+  use_parallel: false      # Switch between parallel or serial processing
   n_cores: 4              # Number of CPU cores to use for parallel processing
+  
