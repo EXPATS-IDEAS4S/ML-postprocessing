@@ -1,3 +1,19 @@
+"""
+
+Utility functions for handling crop files, timestamps, clustering results,
+and dimensionality reduction outputs.
+
+This module provides:
+- Datetime parsing and validation from crop filenames.
+- Filters to check daytime crops and IMERG-compatible timestamps.
+- Loading cluster assignments, distances, and crop paths into DataFrames.
+- Loading and scaling T-SNE coordinates for feature-space visualization.
+- Counting the number of available crop files.
+
+Intended to support postprocessing and analysis of VISSL training runs.
+"""
+
+
 import os
 from datetime import datetime
 import numpy as np
@@ -62,3 +78,11 @@ def load_tsne_coordinates(output_path: str, filename: str) -> pd.DataFrame:
     tx = scale_to_01_range(tsne[:, 0])
     ty = scale_to_01_range(tsne[:, 1])
     return pd.DataFrame({"Component_1": tx, "Component_2": ty, "crop_index": np.arange(len(tsne))})
+
+
+def get_num_crop(basepath, run_name, extenion='tif'):
+    image_crops_path = f'{basepath}/{run_name}/1/'
+    list_image_crops = sorted(glob(image_crops_path + '*.' + extenion))
+    n_samples = len(list_image_crops)
+
+    return n_samples
