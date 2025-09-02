@@ -19,22 +19,8 @@ import pandas as pd
 import sys
 
 sys.path.append("/home/Daniele/codes/VISSL_postprocessing")
-from utils.processing.features_utils import load_dataframes, is_daytime, is_valid_imerg_minute
+from utils.processing.features_utils import load_dataframes, apply_filters, get_num_crop
 from utils.configs import load_config
-
-
-# === HELPER FUNCTIONS ===
-def apply_filters(df: pd.DataFrame, filter_daytime: bool, filter_imerg_minutes: bool) -> pd.DataFrame:
-    """Apply daytime and IMERG filters to the dataset."""
-    if filter_daytime:
-        df = df[df['path'].apply(is_daytime)]
-        print(f"After daytime filter: {len(df)} samples")
-
-    if filter_imerg_minutes:
-        df = df[df['path'].apply(is_valid_imerg_minute)]
-        print(f"After IMERG minute filter: {len(df)} samples")
-
-    return df.reset_index(drop=True)
 
 
 def sample_clusters(df: pd.DataFrame, sampling_type: str, n_subsample: int) -> pd.DataFrame:
@@ -111,17 +97,27 @@ def main(config_path: str = "config.yaml"):
     #exit()
     epoch = config["experiment"]["epoch"]
     crops_name = config["data"]["crops_name"]
+    data_base_path = config["data"]["data_base_path"]
     file_extension = config["data"]["file_extension"]
-    sampling_type = config["sampling"]["type"]
-    n_subsample = config["sampling"]["n_subsample"]
-    filter_daytime = config["filters"]["daytime"]
-    filter_imerg_minutes = config["filters"]["imerg_minutes"]
+    sampling_type = config["data"]["sampling_type"]
+    filter_daytime = config["data"]["filter_daytime"]
+    filter_imerg_minutes = config["data"]["filter_imerg"]
     output_root = config["experiment"]["path_out"]
     base_path = config["experiment"]["base_path"]
 
+    # Load crop list
+    image_crops_path = f"{data_base_path}/{crops_name}/{file_extension}/1/"
+    n_samples = get_num_crop(image_crops_path, extension=file_extension)
+    #list_image_crops = sorted(glob(image_crops_path + "*." + data_format))
+    #n_samples = len(list_image_crops)
+    print("n samples:", n_samples)
+
+    n_subsample = n_samples if sampling_type == "all" else config["sampling"]["n_subsample"]
+    print(n_subsample)
+
     for run_name in run_names:
-        df_all = load_dataframes(base_path, run_name, crops_name, file_extension, epoch)
-        df_all = apply_filters(df_all, filter_daytime, filter_imerg_minutes)
+        df_all = load_dataframes(base_path, data_base_path, run_name, crops_name, file_extension, epoch)
+        df_all = apply_filters(df_all, filter_daytime, filter_imerg_minutes, file_extension)
         df_labels = sample_clusters(df_all, sampling_type, n_subsample)
         print(f"Final number of samples: {len(df_labels)}")
         save_results(df_labels, output_root, run_name, epoch, sampling_type, n_subsample,

@@ -47,122 +47,118 @@ Notes:
 - Designed for large-scale analysis of satellite datasets stored on S3.
 - Parallel processing significantly speeds up computations but increases memory usage.
 """
-
-
-import pandas as pd
-import xarray as xr
-import numpy as np
 import os, sys, io
 from glob import glob
+import numpy as np
+import pandas as pd
+import xarray as xr
 from joblib import Parallel, delayed
 
-from aux_functions_from_buckets import (
-    extract_coordinates, extract_datetime,
-    compute_categorical_values, filter_cma_values,
-    extract_coord_from_nc, extract_datetime_from_nc
-)
-from get_data_from_buckets import read_file, Initialize_s3_client
-
-
-sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))  
-from aux_functions import compute_percentile
+sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
+from utils.processing.stats_utils import compute_percentile
 from utils.configs import load_config
 from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
+from utils.processing.coords_utils import extract_coordinates,  extract_coord_from_nc
+from utils.processing.datetime_utils import extract_datetime,  extract_datetime_from_nc
+from utils.processing.stats_utils import compute_categorical_values, filter_cma_values
+from utils.buckets.get_data_from_buckets import read_file, Initialize_s3_client
+from utils.processing.features_utils import get_num_crop
 
-# ---------------- CONFIG ---------------- #
-BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
-BUCKET_IMERG_NAME = 'expats-imerg-prec'
 
-run_name       = 'dcv2_ir108_ot_100x100_k9_35k_nc_vit'
-crops_name     = 'dcv2_ir108_OT_100x100_35k_nc'
-sampling_type  = 'all'
-epoch          = 500
-data_format    = 'nc'   # 'nc' or 'tif'
-vars           = ['cot','cth','cma','cph','precipitation']
-stats          = [50, 99]
-categ_vars     = ['cma','cph']
-use_parallel   = True   # <--- SWITCH between parallel or serial
-# ---------------------------------------- #
 
-# build table entries
-table_entries = [f"{var}-{num}" for var in vars if var not in categ_vars for num in stats]
-table_entries.extend(categ_vars)
-table_entries = [item if '-' in item else f"{item}-None" for item in table_entries]
-
-# input/output paths
-image_crops_path = f'/data1/crops/{crops_name}/{data_format}/1/'
-output_path = f'/data1/fig/{run_name}/epoch_{epoch}/{sampling_type}/'
-list_image_crops = sorted(glob(image_crops_path+'*.tif'))
-n_samples = len(list_image_crops)
-print('n samples:', n_samples)
-
-n_subsample = n_samples if sampling_type == 'all' else 1000
-
-# load crop list
-df_labels = pd.read_csv(f'{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}.csv')
-print(f"Loaded {len(df_labels)} rows from crop list.")
-
-# ------------------------------------------------ #
-# Core processing function (used in both modes)
-# ------------------------------------------------ #
-def process_row(row):
+def process_row(row, config, var_config, image_crops_path):
+    """Process a single crop row and compute statistics from bucket data."""
     s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
-    crop_filename = os.path.basename(row['path'])
+    crop_filename = os.path.basename(row["path"])
+    data_format = config["data"]["file_extension"]
+    vars = config["statistics"]["sel_vars"]
+    #stats = config["statistics"]["percentiles"]
+    nc_engine = config["data"]["nc_engine"]
+    #categ_vars = config["statistics"]["categ_vars"]
+    #BUCKET_CMSAF_NAME = config['buckets']['cmsaf']
+    #BUCKET_IMERG_NAME = config['buckets']['imerg']
+    #print(vars, stats)
 
-    # get lat/lon and datetime from filename
-    if data_format == 'nc':
-        coords = extract_coord_from_nc(crop_filename, image_crops_path)
-        datetime_info = extract_datetime_from_nc(crop_filename, image_crops_path)
+    # Get lat/lon and datetime22
+    if data_format == "nc":
+        coords = extract_coord_from_nc(crop_filename, image_crops_path, nc_engine)
+        datetime_info = extract_datetime_from_nc(crop_filename, image_crops_path, nc_engine)
     else:
         coords = extract_coordinates(crop_filename)
         datetime_info = extract_datetime(crop_filename)
 
-    lat_min, lat_max = coords['lat_min'], coords['lat_max']
-    lon_min, lon_max = coords['lon_min'], coords['lon_max']
+    lat_min, lat_max = coords["lat_min"], coords["lat_max"]
+    lon_min, lon_max = coords["lon_min"], coords["lon_max"]
     year, month, day, hour, minute = (
-        datetime_info[k] for k in ['year','month','day','hour','minute']
+        datetime_info[k] for k in ["year", "month", "day", "hour", "minute"]
     )
-    base_time = np.datetime64(f'{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00')
+    base_time = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00")
+    print(base_time)
+
 
     row_data = {}
     for var in vars:
-        for stat in stats if var not in categ_vars else ['None']:
+        #print(var)
+        #select variable metadata from config
+        var_meta = var_config['variables'][var]
+        #print(var_meta)
+        #define filename pattern of the bucket
+        bucket_filename = f"{var_meta['bucket_filename_prefix']}{year:04d}-{month:02d}-{day:02d}{var_meta['bucket_filename_suffix']}"
+        #print(bucket_filename)
+
+        #define statistics based on variable (continuous or categorical)
+        if var_meta['categorical']:
+            stats = ['None']
+        else:
+            stats = config["statistics"]["percentiles"]
+        
+        for stat in stats:
             entry = f"{var}-{stat}"
+            print(entry)
             try:
-                if var == 'precipitation':
-                    bucket_name = BUCKET_IMERG_NAME
-                    bucket_filename = f'IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc'
-                    time_to_use = [base_time]
+                #if var == "precipitation":
+                    #bucket_name = BUCKET_IMERG_NAME
+                    #bucket_filename = f"IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc"
+                    #time_to_use = [base_time]
+                #else:
+                    #bucket_name = BUCKET_CMSAF_NAME
+                    #bucket_filename = f"MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc"
+                    # time_to_use = (
+                    #     [base_time, base_time + np.timedelta64(15, "m")]
+                    #     if "precipitation" in vars else [base_time]
+                    # )
+                if config["data"]["filter_imerg"] and var != "precipitation":
+                    time_to_use = [base_time, base_time + np.timedelta64(15, "m")]
                 else:
-                    bucket_name = BUCKET_CMSAF_NAME
-                    bucket_filename = f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc'
-                    time_to_use = (
-                        [base_time, base_time + np.timedelta64(15,'m')]
-                        if 'precipitation' in vars else [base_time]
-                    )
-
-                my_obj = read_file(s3, bucket_filename, bucket_name)
+                    time_to_use = [base_time]
+                #print(time_to_use)
+                my_obj = read_file(s3, bucket_filename, var_meta['bucket_name'])
                 ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
+                #print(ds_day)
 
-                # also open CMA for masking
-                my_obj_cma = read_file(s3, f'MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc', BUCKET_CMSAF_NAME)
-                ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))['cma']
+                # CMA for masking
+                my_obj_cma = read_file(
+                    s3,
+                    f"MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc",
+                    "expats-cmsaf-cloud")
+                ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"]
 
+                # Normalize time index
                 if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
                     ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
                     ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
 
-                # spatial + temporal subsetting
-                ds_day = ds_day.sel(lat=slice(lat_min,lat_max), lon=slice(lon_min,lon_max))
+                # Subset space + time
+                ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
                 ds_subset = ds_day.sel(time=time_to_use)
-                ds_day_cma = ds_day_cma.sel(lat=slice(lat_min,lat_max), lon=slice(lon_min,lon_max))
+                ds_day_cma = ds_day_cma.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
                 ds_subset_cma = ds_day_cma.sel(time=time_to_use)
 
                 values = ds_subset.values.flatten()
                 values_cma = ds_subset_cma.values.flatten()
                 values = filter_cma_values(values, values_cma, var)
 
-                if stat == 'None':
+                if stat == "None":
                     result = compute_categorical_values(values, var)
                 else:
                     result = compute_percentile(values, int(stat))
@@ -173,35 +169,106 @@ def process_row(row):
 
             row_data[entry] = result
 
-    # add metadata
-    row_data.update({
-        'month': int(month),
-        'hour': int(hour),
-        'lat_mid': (lat_min + lat_max)/2,
-        'lon_mid': (lon_min + lon_max)/2
-    })
+    # Coords and Datetime Metadata
+    if config["statistics"]["include_geotime"]:
+        row_data.update(
+            {
+                "month": int(month),
+                "hour": int(hour),
+                "lat_mid": (lat_min + lat_max) / 2,
+            "lon_mid": (lon_min + lon_max) / 2,
+        }
+    )
     return row_data
 
-# ------------------------------------------------ #
-# Run serial or parallel depending on config
-# ------------------------------------------------ #
-if use_parallel:
-    num_cores = max(1, os.cpu_count()-5)
-    results = Parallel(n_jobs=num_cores)(delayed(process_row)(row) for _, row in df_labels.iterrows())
-else:
-    results = [process_row(row) for _, row in df_labels.iterrows()]
 
-# merge results with labels
-df_results = pd.DataFrame(results)
-df_labels = pd.concat([df_labels, df_results], axis=1)
+# === MAIN ===
+def main(config_path: str = "config.yaml", var_config_path: str = "variables_metadata.yaml"):
+    config = load_config(config_path)
+    var_config = load_config(var_config_path)
 
-# save per-crop stats
-df_labels.to_csv(f'{output_path}crops_stats_{run_name}_{sampling_type}_{n_subsample}.csv', index=False)
-print("Crop stats saved.")
+    run_name = config["experiment"]["run_names"][0]
+    #base_path = config["experiment"]["base_path"]
+    epoch = config["experiment"]["epoch"]
+    crops_name = config["data"]["crops_name"]
+    data_base_path = config["data"]["data_base_path"]
+    data_format = config["data"]["file_extension"]
+    sampling_type = config["data"]["sampling_type"]
+    use_parallel = config["statistics"]["use_parallel"]
+    n_cores = config["statistics"]["n_cores"]
+    output_root = config["experiment"]["path_out"]
+    filter_daytime = config["data"]["filter_daytime"]
+    filter_imerg_minutes = config["data"]["filter_imerg"]
 
-# compute overall stats
-continuous_stats = df_labels.groupby('label').agg(['mean','std'])
-continuous_stats.columns = ['_'.join(col).strip() for col in continuous_stats.columns.values]
-continuous_stats.reset_index(inplace=True)
-continuous_stats.to_csv(f'{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}.csv', index=False)
-print("Cluster-level stats saved.")
+    # Build paths
+    image_crops_path = f"{data_base_path}/{crops_name}/{data_format}/1/"
+    output_path = f"{output_root}/{run_name}/epoch_{epoch}/{sampling_type}/"
+
+    # Load crop list
+    n_samples = get_num_crop(image_crops_path, extension=data_format)
+    #list_image_crops = sorted(glob(image_crops_path + "*." + data_format))
+    #n_samples = len(list_image_crops)
+    print("n samples:", n_samples)
+
+    n_subsample = n_samples if sampling_type == "all" else config["sampling"]["n_subsample"]
+    print(n_subsample)
+
+    
+    # Construct filter tags for filename
+    filter_tags = []
+    if filter_daytime:
+        filter_tags.append("daytime")
+    if filter_imerg_minutes:
+        filter_tags.append("imergmin")
+    filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
+
+    csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
+    df_labels = pd.read_csv(csv_filename)
+    print(f"Loaded {len(df_labels)} rows from crop list.")
+
+    # Run processing
+    if use_parallel:
+        num_cores = min(n_cores, os.cpu_count() - 1) #check cpu count
+        results = Parallel(n_jobs=num_cores)(
+            delayed(process_row)(row, config, var_config, image_crops_path)
+            for _, row in df_labels.iterrows()
+        )
+    else:
+        results = [process_row(row, config, var_config, image_crops_path) for _, row in df_labels.iterrows()]
+
+    # Merge results
+    df_results = pd.DataFrame(results)
+    df_labels = pd.concat([df_labels, df_results], axis=1)
+
+    # Save per-crop stats
+    # TODO Collect stats and vars info for filename
+    stats_str = "-".join(map(str, config["statistics"]["percentiles"]))
+    vars_str = "-".join(config["statistics"]["sel_vars"])
+
+    # Flags for optional processing
+    time_flag = "timedim" if config["statistics"].get("time_dimension", False) else ""
+    geo_flag = "geotime" if config["statistics"].get("include_geotime", False) else ""
+    
+    df_labels.to_csv(
+        f"{output_path}crops_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv",
+        index=False,
+    )
+    print("Crop stats saved.")
+
+    # Save overall stats
+    continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
+    continuous_stats.columns = [
+        "_".join(col).strip() for col in continuous_stats.columns.values
+    ]
+    continuous_stats.reset_index(inplace=True)
+    continuous_stats.to_csv(
+        f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv",
+        index=False,
+    )
+    print("Cluster-level stats saved.")
+
+
+if __name__ == "__main__":
+    config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
+    var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
+    main(config_path, var_config_path)
