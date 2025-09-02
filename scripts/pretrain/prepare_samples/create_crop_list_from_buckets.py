@@ -107,8 +107,8 @@ def save_results(df: pd.DataFrame, path_out: str, run_name: str, epoch: int, sam
 def main(config_path: str = "config.yaml"):
     config = load_config(config_path)
     run_names = config["experiment"]["run_names"]
-    print(run_names)
-    exit()
+    #print(run_names)
+    #exit()
     epoch = config["experiment"]["epoch"]
     crops_name = config["data"]["crops_name"]
     file_extension = config["data"]["file_extension"]
