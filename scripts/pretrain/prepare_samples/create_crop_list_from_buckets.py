@@ -44,10 +44,10 @@ def sample_clusters(df: pd.DataFrame, sampling_type: str, n_subsample: int) -> p
 
         if sampling_type == 'random':
             selected = np.random.choice(cluster_indices, min(n_subsample, len(cluster_indices)), replace=False)
-        elif sampling_type == 'closest':
+        elif sampling_type == 'farthest':
             sorted_idx = np.argsort(cluster_distances)
             selected = cluster_indices[sorted_idx[:n_subsample]]
-        elif sampling_type == 'farthest':
+        elif sampling_type == 'closest':
             sorted_idx = np.argsort(cluster_distances)
             selected = cluster_indices[sorted_idx[-n_subsample:]]
         elif sampling_type == 'all':
@@ -112,7 +112,7 @@ def main(config_path: str = "config.yaml"):
     #n_samples = len(list_image_crops)
     print("n samples:", n_samples)
 
-    n_subsample = n_samples if sampling_type == "all" else config["sampling"]["n_subsample"]
+    n_subsample = n_samples if sampling_type == "all" else config["data"]["n_subsample"]
     print(n_subsample)
 
     for run_name in run_names:
@@ -120,6 +120,7 @@ def main(config_path: str = "config.yaml"):
         df_all = apply_filters(df_all, filter_daytime, filter_imerg_minutes, file_extension)
         df_labels = sample_clusters(df_all, sampling_type, n_subsample)
         print(f"Final number of samples: {len(df_labels)}")
+        #n_samples_final = len(df_labels)
         save_results(df_labels, output_root, run_name, epoch, sampling_type, n_subsample,
                      filter_daytime, filter_imerg_minutes)
 

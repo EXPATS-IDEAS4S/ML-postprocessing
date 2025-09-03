@@ -64,47 +64,92 @@ from utils.processing.stats_utils import compute_categorical_values, filter_cma_
 from utils.buckets.get_data_from_buckets import read_file, Initialize_s3_client
 from utils.processing.features_utils import get_num_crop
 
+import logging
 
 
-def process_row(row, config, var_config, image_crops_path):
+
+
+
+def get_time_windows(times, var=None):
+    """
+    Group a list of crop timestamps by day, with optional IMERG filtering.
+
+    Parameters
+    ----------
+    times : list of np.datetime64
+        List of timestamps (e.g., from crop file metadata).
+    filter_imerg : bool, optional
+        If True, apply IMERG-compatible filtering.
+        - For precipitation: keep only minutes 00 and 30.
+        - For other variables: add an extra +15 min timestamp.
+    var : str, optional
+        Variable name (used for IMERG filtering).
+
+    Returns
+    -------
+    dict
+        Mapping {day (str YYYY-MM-DD) -> list of timestamps}.
+    """
+    # Ensure chronological order
+    times = sorted(times)
+
+    # Optional IMERG filtering
+    if var == "precipitation":
+        times = [
+            t for t in times
+            if np.datetime64(t, "m").astype(object).minute in (0, 30)
+        ]
+
+    if len(times) == 0:
+        return {}
+    else:
+        # Group by day (bucket files are daily)
+        times_by_day = {}
+        for t in times:
+            day_key = str(np.datetime64(t, "D"))
+            times_by_day.setdefault(day_key, []).append(t)
+
+        return times_by_day
+
+
+
+def process_row(row, config, var_config, image_crops_path, logger):
     """Process a single crop row and compute statistics from bucket data."""
     s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
     crop_filename = os.path.basename(row["path"])
     data_format = config["data"]["file_extension"]
     vars = config["statistics"]["sel_vars"]
-    #stats = config["statistics"]["percentiles"]
     nc_engine = config["data"]["nc_engine"]
-    #categ_vars = config["statistics"]["categ_vars"]
-    #BUCKET_CMSAF_NAME = config['buckets']['cmsaf']
-    #BUCKET_IMERG_NAME = config['buckets']['imerg']
-    #print(vars, stats)
+    n_frames = config["data"].get("n_frames", 1)
+
+    logger.info(f"Processing crop: {crop_filename} with {n_frames} frames")
 
     # Get lat/lon and datetime22
     if data_format == "nc":
         coords = extract_coord_from_nc(crop_filename, image_crops_path, nc_engine)
-        datetime_info = extract_datetime_from_nc(crop_filename, image_crops_path, nc_engine)
+        times = extract_datetime_from_nc(crop_filename, image_crops_path, nc_engine)
     else:
         coords = extract_coordinates(crop_filename)
         datetime_info = extract_datetime(crop_filename)
+        year, month, day, hour, minute = (  datetime_info[k] for k in ["year", "month", "day", "hour", "minute"])
+        times = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00")
 
     lat_min, lat_max = coords["lat_min"], coords["lat_max"]
     lon_min, lon_max = coords["lon_min"], coords["lon_max"]
-    year, month, day, hour, minute = (
-        datetime_info[k] for k in ["year", "month", "day", "hour", "minute"]
-    )
-    base_time = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00")
-    print(base_time)
-
-
+   
     row_data = {}
     for var in vars:
         #print(var)
         #select variable metadata from config
         var_meta = var_config['variables'][var]
-        #print(var_meta)
-        #define filename pattern of the bucket
-        bucket_filename = f"{var_meta['bucket_filename_prefix']}{year:04d}-{month:02d}-{day:02d}{var_meta['bucket_filename_suffix']}"
-        #print(bucket_filename)
+  
+        # Get time windows (possibly spanning multiple days)
+        times_by_day = get_time_windows(
+            times, 
+            var=var
+        )
+        if not times_by_day:
+            continue
 
         #define statistics based on variable (continuous or categorical)
         if var_meta['categorical']:
@@ -112,26 +157,15 @@ def process_row(row, config, var_config, image_crops_path):
         else:
             stats = config["statistics"]["percentiles"]
         
-        for stat in stats:
-            entry = f"{var}-{stat}"
-            print(entry)
+        
+        values_append = []
+        for day_key, times in times_by_day.items():
             try:
-                #if var == "precipitation":
-                    #bucket_name = BUCKET_IMERG_NAME
-                    #bucket_filename = f"IMERG_daily_{year:04d}-{month:02d}-{day:02d}.nc"
-                    #time_to_use = [base_time]
-                #else:
-                    #bucket_name = BUCKET_CMSAF_NAME
-                    #bucket_filename = f"MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc"
-                    # time_to_use = (
-                    #     [base_time, base_time + np.timedelta64(15, "m")]
-                    #     if "precipitation" in vars else [base_time]
-                    # )
-                if config["data"]["filter_imerg"] and var != "precipitation":
-                    time_to_use = [base_time, base_time + np.timedelta64(15, "m")]
-                else:
-                    time_to_use = [base_time]
-                #print(time_to_use)
+                y, m, d = map(int, day_key.split("-")) 
+                #define filename pattern of the bucket
+                bucket_filename = (
+                f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
+                )
                 my_obj = read_file(s3, bucket_filename, var_meta['bucket_name'])
                 ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
                 #print(ds_day)
@@ -139,7 +173,7 @@ def process_row(row, config, var_config, image_crops_path):
                 # CMA for masking
                 my_obj_cma = read_file(
                     s3,
-                    f"MCP_{year:04d}-{month:02d}-{day:02d}_regrid.nc",
+                    f"MCP_{y:04d}-{m:02d}-{d:02d}_regrid.nc",
                     "expats-cmsaf-cloud")
                 ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"]
 
@@ -150,33 +184,47 @@ def process_row(row, config, var_config, image_crops_path):
 
                 # Subset space + time
                 ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-                ds_subset = ds_day.sel(time=time_to_use)
+                ds_subset = ds_day.sel(time=times)
                 ds_day_cma = ds_day_cma.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-                ds_subset_cma = ds_day_cma.sel(time=time_to_use)
+                ds_subset_cma = ds_day_cma.sel(time=times)
 
                 values = ds_subset.values.flatten()
                 values_cma = ds_subset_cma.values.flatten()
                 values = filter_cma_values(values, values_cma, var)
-
-                if stat == "None":
-                    result = compute_categorical_values(values, var)
-                else:
-                    result = compute_percentile(values, int(stat))
+                values_append.append(values)
 
             except Exception as e:
-                print(f"Error processing {entry} for {row['path']}: {e}")
-                result = np.nan
+                logger.error(f"Error processing variable '{var}' for crop {row['path']}", exc_info=True)
+                values_append.append(np.nan)
 
-            row_data[entry] = result
+            
+            for stat in stats:
+                entry = f"{var}-{stat}"
+                #print(entry)
+                logger.debug(f"Processing stat: {entry}")
 
+                try: 
+                    if stat == "None":
+                        result = compute_categorical_values(values_append, var)
+                    else:
+                        result = compute_percentile(values_append, int(stat))
+                except:
+                    logger.error(f"Error computing statistic '{entry}'", exc_info=True)
+                    result = np.nan
+
+                row_data[entry] = result
+
+    #from list of times extract hours and months of the first and last timestamp
+    month_init, month_end = (np.datetime64(t, 'M').astype(object).month for t in (times[0], times[-1]))
+    hour_init, hour_end = (np.datetime64(t, 'h').astype(object).hour for t in (times[0], times[-1]))
     # Coords and Datetime Metadata
     if config["statistics"]["include_geotime"]:
         row_data.update(
             {
-                "month": int(month),
-                "hour": int(hour),
+                "month": int(month_end),
+                "hour": int(hour_end),
                 "lat_mid": (lat_min + lat_max) / 2,
-            "lon_mid": (lon_min + lon_max) / 2,
+                "lon_mid": (lon_min + lon_max) / 2,
         }
     )
     return row_data
@@ -186,6 +234,18 @@ def process_row(row, config, var_config, image_crops_path):
 def main(config_path: str = "config.yaml", var_config_path: str = "variables_metadata.yaml"):
     config = load_config(config_path)
     var_config = load_config(var_config_path)
+
+    # Configure logging
+    level = config["logging"]["log_level"]
+    logging.basicConfig(
+        level=level,  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(),                       # Print to console
+            logging.FileHandler(f"{config['logging']['logs_path']}/processing_crops_stats.log", mode="w")  # Save to file
+        ]
+    )
+    logger = logging.getLogger(__name__)
 
     run_name = config["experiment"]["run_names"][0]
     #base_path = config["experiment"]["base_path"]
@@ -199,6 +259,7 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     output_root = config["experiment"]["path_out"]
     filter_daytime = config["data"]["filter_daytime"]
     filter_imerg_minutes = config["data"]["filter_imerg"]
+    n_frames = config["data"]["n_frames"]
 
     # Build paths
     image_crops_path = f"{data_base_path}/{crops_name}/{data_format}/1/"
@@ -208,12 +269,12 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     n_samples = get_num_crop(image_crops_path, extension=data_format)
     #list_image_crops = sorted(glob(image_crops_path + "*." + data_format))
     #n_samples = len(list_image_crops)
-    print("n samples:", n_samples)
+    #print("n samples:", n_samples)
 
     n_subsample = n_samples if sampling_type == "all" else config["sampling"]["n_subsample"]
-    print(n_subsample)
+    #print(n_subsample)
+    logger.info(f"Number of subsamples: {n_subsample} over total samples {n_samples}")
 
-    
     # Construct filter tags for filename
     filter_tags = []
     if filter_daytime:
@@ -224,36 +285,48 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
 
     csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
     df_labels = pd.read_csv(csv_filename)
-    print(f"Loaded {len(df_labels)} rows from crop list.")
+    #print(f"Loaded {len(df_labels)} rows from crop list.")
+    logger.info(f"Loaded {len(df_labels)} rows from crop list.")
 
     # Run processing
     if use_parallel:
         num_cores = min(n_cores, os.cpu_count() - 1) #check cpu count
         results = Parallel(n_jobs=num_cores)(
-            delayed(process_row)(row, config, var_config, image_crops_path)
+            delayed(process_row)(row, config, var_config, image_crops_path, logger)
             for _, row in df_labels.iterrows()
         )
     else:
-        results = [process_row(row, config, var_config, image_crops_path) for _, row in df_labels.iterrows()]
+        results = [process_row(row, config, var_config, image_crops_path, logger) for _, row in df_labels.iterrows()]
 
     # Merge results
     df_results = pd.DataFrame(results)
     df_labels = pd.concat([df_labels, df_results], axis=1)
 
-    # Save per-crop stats
-    # TODO Collect stats and vars info for filename
+    # Collect stats and vars info for filename
     stats_str = "-".join(map(str, config["statistics"]["percentiles"]))
     vars_str = "-".join(config["statistics"]["sel_vars"])
 
     # Flags for optional processing
-    time_flag = "timedim" if config["statistics"].get("time_dimension", False) else ""
-    geo_flag = "geotime" if config["statistics"].get("include_geotime", False) else ""
-    
-    df_labels.to_csv(
-        f"{output_path}crops_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv",
-        index=False,
-    )
-    print("Crop stats saved.")
+    time_flag = "timedim" if config["statistics"].get("time_dimension", False) else None
+    geo_flag = "coords-datetime" if config["statistics"].get("include_geotime", False) else None
+
+    # Assemble filename parts (skip None/empty)
+    parts = [
+        "crops_stats",
+        f"vars-{vars_str}",
+        f"stats-{stats_str}",
+        f"frames-{n_frames}",
+        time_flag,
+        geo_flag,
+        run_name,
+        sampling_type,
+        str(n_subsample) + filter_suffix,
+    ]
+    filename = "_".join([p for p in parts if p]) + ".csv"
+
+    # Save
+    df_labels.to_csv(os.path.join(output_path, filename), index=False)
+    logger.info(f"Crop stats for {filename} saved successfully in {output_path}.")
 
     # Save overall stats
     continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
@@ -265,10 +338,12 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
         f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv",
         index=False,
     )
-    print("Cluster-level stats saved.")
+    logger.info("Cluster-level stats saved successfully.")
+
 
 
 if __name__ == "__main__":
     config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
     var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
+    # nohup 3175748
