@@ -9,7 +9,7 @@ import xarray as xr
 import numpy as np
 from glob import glob
 
-from aux_functions import concatenate_values, extend_labels
+from utils.processing.aux_functions import concatenate_values, extend_labels
 
 run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 

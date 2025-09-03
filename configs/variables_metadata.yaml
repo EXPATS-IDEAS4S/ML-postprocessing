@@ -9,8 +9,10 @@ variables:
     logscale: false
     direction: "incr"
     vmin: 0
-    vmax: 20
+    vmax: 50
     bucket_name: expats-cmsaf-cloud
+    bucket_filename_prefix: MCP_
+    bucket_filename_suffix: _regrid.nc
 
   cth:
     long_name: "cloud top height"
@@ -21,6 +23,8 @@ variables:
     vmin: 0
     vmax: 12
     bucket_name: expats-cmsaf-cloud
+    bucket_filename_prefix: MCP_
+    bucket_filename_suffix: _regrid.nc
 
   cma:
     long_name: "cloud cover"
@@ -31,6 +35,8 @@ variables:
     vmin: 0
     vmax: 1
     bucket_name: expats-cmsaf-cloud
+    bucket_filename_prefix: MCP_
+    bucket_filename_suffix: _regrid.nc
 
   cph:
     long_name: "ice ratio"
@@ -41,16 +47,20 @@ variables:
     vmin: 0
     vmax: 1
     bucket_name: expats-cmsaf-cloud
+    bucket_filename_prefix: MCP_
+    bucket_filename_suffix: _regrid.nc
 
   precipitation:
-    long_name: "precipitation"
+    long_name: "rain rate"
     unit: "mm/h"
     categorical: false
     logscale: false
     direction: "incr"
     vmin: 0
-    vmax: 100
+    vmax: 20
     bucket_name: expats-imerg-prec
+    bucket_filename_prefix: IMERG_daily_
+    bucket_filename_suffix: .nc
 
   hour:
     long_name: "hour"
@@ -59,7 +69,7 @@ variables:
     logscale: false
     direction: "incr"
     vmin: 0
-    vmax: 100
+    vmax: 23
     bucket_name: null
 
   month:

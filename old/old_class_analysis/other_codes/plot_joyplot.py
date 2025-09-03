@@ -3,7 +3,7 @@ import xarray as xr
 import numpy as np
 from glob import glob
 
-from aux_functions import pick_variable, plot_joyplot
+from utils.processing.aux_functions import pick_variable, plot_joyplot
 
 
 run_names = ['10th-90th_CMA', '10th-90th']

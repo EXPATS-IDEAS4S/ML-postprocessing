@@ -7,7 +7,7 @@ import xarray as xr
 import numpy as np
 from glob import glob
 
-from aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds, plot_joyplot
+from utils.processing.aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds, plot_joyplot
 
 run_names = ['dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA']
 

@@ -1,5 +1,5 @@
 import pandas as pd
-from aux_functions import pick_variable
+from utils.processing.aux_functions import pick_variable
 from glob import glob
 
 run_name = 'dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA' #['10th-90th', '10th-90th_CMA']

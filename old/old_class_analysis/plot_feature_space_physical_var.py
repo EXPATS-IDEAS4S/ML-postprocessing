@@ -10,7 +10,7 @@ import cmcrameri.cm as cmc
 
 from utils.plotting.feature_space_plot_functions import name_to_rgb, scale_to_01_range
 from utils.plotting.feature_space_plot_functions import colors_per_class1_names
-from aux_functions import get_variable_info
+from utils.processing.aux_functions import get_variable_info
 
 reduction_method = 'tsne' #'tsne
 variable = 'cma'

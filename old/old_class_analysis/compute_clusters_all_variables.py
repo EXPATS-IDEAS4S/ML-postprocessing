@@ -14,7 +14,7 @@ from aux_functions_from_buckets import extract_coordinates, extract_datetime, co
 from get_data_from_buckets import read_file, Initialize_s3_client, get_list_objects
 from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 sys.path.append(os.path.abspath("/home/Daniele/codes/visualization/cluster_analysis"))  
-from aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds, plot_joyplot
+from utils.processing.aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, pick_variable, find_latlon_boundaries_from_ds, get_time_from_ds, select_ds, plot_joyplot
 
 BUCKET_CMSAF_NAME = 'expats-cmsaf-cloud'
 BUCKET_IMERG_NAME = 'expats-imerg-prec'

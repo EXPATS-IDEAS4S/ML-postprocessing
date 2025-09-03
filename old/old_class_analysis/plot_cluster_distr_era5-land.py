@@ -2,7 +2,7 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 
-from aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, find_latlon_boundaries_from_ds
+from utils.processing.aux_functions import compute_percentile, concatenate_values, extend_labels, plot_single_vars, find_latlon_boundaries_from_ds
 
 run_names = ['10th-90th', '10th-90th_CMA']
 

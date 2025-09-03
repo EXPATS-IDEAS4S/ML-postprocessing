@@ -9,6 +9,7 @@ Provides functions to extract date and time information from NetCDF files and fi
 import pandas as pd
 import os 
 import xarray as xr
+import numpy as np
 
 
 
@@ -45,9 +46,42 @@ def get_time_from_ds(ds):
 
 
 
+def extract_datetime_from_nc(filename, dir_path, engine="netcdf4"):
+    """
+    Extract all timestamps from the 'time' variable of a NetCDF file.
+
+    Parameters
+    ----------
+    filename : str
+        NetCDF file name.
+    dir_path : str
+        Directory where the file is located.
+    engine : str, optional
+        Engine used by xarray to open the dataset (default: 'netcdf4').
+
+    Returns
+    -------
+    list of np.datetime64
+        List of all timestamps found in the file.
+    """
+    filepath = os.path.join(dir_path, filename)
+
+    try:
+        with xr.open_dataset(filepath, engine=engine) as ds:
+            time_var = ds["time"].values
+
+        # Ensure numpy datetime64 type
+        times = [np.datetime64(t) for t in time_var]
+        return times
+
+    except Exception as e:
+        print(f"Error reading {filename}: {e}")
+        return []
 
 
-def extract_datetime_from_nc(filename, dir_path):
+
+
+def extract_datetime_from_nc_old(filename, dir_path, engine='netcdf4'):
     """
     Extracts year, month, day, hour, and minute from a NetCDF filename.
 
@@ -61,11 +95,12 @@ def extract_datetime_from_nc(filename, dir_path):
     filepath = os.path.join(dir_path, filename)
     
     try:
-        ds = xr.open_dataset(filepath, engine='h5netcdf')
+        ds = xr.open_dataset(filepath, engine=engine)
         time_var = ds['time']
+        print(time_var)
         
         # Assuming time is in datetime64 format
-        time_value = time_var.values[0]  # Get the first time value
+        time_value = time_var.values  # Get the first time value
         dt = np.datetime64(time_value)
 
         return {
@@ -80,6 +115,8 @@ def extract_datetime_from_nc(filename, dir_path):
         print(f"Error reading {filename}: {e}")
         return None
     
+
+
 
 def extract_datetime(filename):
     """

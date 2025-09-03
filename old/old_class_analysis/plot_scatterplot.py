@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from aux_functions import pick_variable
+from utils.processing.aux_functions import pick_variable
 
 run_names = ['10th-90th', '10th-90th_CMA']
 

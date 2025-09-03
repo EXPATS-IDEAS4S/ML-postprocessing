@@ -11,10 +11,13 @@ experiment:
   path_out: /data1/fig
   from_crop_stats: false  # Use crop stats file instead of crop list file
   
+logging:  
+  logs_path: /home/Daniele/codes/VISSL_postprocessing/logs
+  log_level: INFO
 
 # ==========================
 # Dimensionality Reduction
-# can be expanded, if many dim reduction method will be implemented, consider creating a separate config
+# can be expanded, if many dim reduction methods will be implemented, consider creating a separate config for it
 # ==========================
 reduction:
   method: tsne            # Options: tsne, umap, etc., 
@@ -26,21 +29,16 @@ reduction:
 # ==========================
 data:
   data_base_path: /data1/crops
-  crops_name: clips_ir108_100x100_8frames_2013-2020 # name of the dataset
+  crops_name: clips_ir108_100x100_8frames_2013-2020 # name of the dataset, TODO implement the case with more runs
   file_extension: nc   # Options: nc, tif
   nc_engine: netcdf4   #engine for xarray, choose between {"netcdf4", "scipy", "pydap", "h5netcdf", "zarr", None}
   sampling_type: all   # Options: random, closest, farthest, all
-  n_subsample: 70072   # Max samples per cluster. TODO: if 'all', use all samples without specifying here
+  n_subsample: None #70072   # Max samples per cluster. TODO: if 'all', use all samples without specifying here
   filter_daytime: false  # Keep only 06–16 UTC
-  filter_imerg: false    # Keep only timestamps at minutes 00 or 30, as IMERG product
+  filter_imerg: false    # Keep only timestamps at minutes 00 or 30, as IMERG product (set to true only if precipitation is used and n_frames==1)
+  n_frames: 8 # Number of frames to consider for each crop
 
 
-# ==========================
-# Cloud Storage
-# ==========================
-# buckets: #buckets name where ancillary data are stored, this is defined in the variables_metadata
-#   cmsaf: expats-cmsaf-cloud
-#   imerg: expats-imerg-prec
 
 # ==========================
 # Statistics
@@ -52,11 +50,9 @@ statistics:
     - cma
     - cph
     - precipitation
-  # categ_vars:             # Categorical variables (which statistics is computed in a different way), defined in variables_metadata
-  #   - cma
-  #   - cph
   percentiles: [50, 99]   # Percentile values to compute
-  time_dimension: true #Flag to include time dimension in the analysis
-  use_parallel: false      # Switch between parallel or serial processing
+  include_geotime: true # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
+  time_dimension: false  #Flag to include time dimension in the analysis TODO include which type of time stat to compute??
+  use_parallel: true      # Switch between parallel or serial processing, with parallel, logging doesn't work
   n_cores: 4              # Number of CPU cores to use for parallel processing
   

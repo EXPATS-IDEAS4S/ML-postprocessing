@@ -203,11 +203,14 @@ def process_row(row, config, var_config, image_crops_path, logger):
                 #print(entry)
                 logger.debug(f"Processing stat: {entry}")
 
+                #flatten values
+                all_values = np.concatenate(values_append) if values_append else np.array([np.nan])
+
                 try: 
                     if stat == "None":
-                        result = compute_categorical_values(values_append, var)
+                        result = compute_categorical_values(all_values, var)
                     else:
-                        result = compute_percentile(values_append, int(stat))
+                        result = compute_percentile(all_values, int(stat))
                 except:
                     logger.error(f"Error computing statistic '{entry}'", exc_info=True)
                     result = np.nan
@@ -346,4 +349,4 @@ if __name__ == "__main__":
     config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
     var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
-    # nohup 3175748
+    # nohup 3180294
