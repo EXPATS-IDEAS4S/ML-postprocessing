@@ -2,9 +2,28 @@
 
 This repository provides tools for analyzing and visualizing the training process and feature space of VISSL machine learning models.
 
-## configs
 
-All the configurabel parameters should be set in a yaml file to be placed inside this folder
+## Configs
+
+All configurable parameters are defined in **YAML files**:
+
+* **`process_run_config.yaml`**
+  Main runtime configuration (paths, variables to process, statistics options).
+  ⚠️ Remember to update the path to this file in the main function of each script.
+  *TODO*: allow passing the config path via command-line arguments.
+
+* **`variables_metadata.yaml`**
+  Contains the full list of variables from ancillary datasets, along with their metadata for computation and plotting.
+  This makes it easy to extend it as new data sources are added.
+
+### Planned Improvements
+
+* Add a dedicated config file for **metric computation** (spatial & temporal).
+* Create a separate config for **plotting/visualization**, decoupled from computation.
+* Support multiple **dimensionality reduction methods** via a dedicated config.
+
+
+
 
 ## Pretraining Analysis
 
@@ -110,7 +129,7 @@ These scripts focus on **characterizing clusters/classes in the feature space** 
 * If images are available, visualize the feature space with **image crops overlaid**.
 * For videos, additional preprocessing steps are required.
 
-### 6. Compute sample statistics (optional)
+### 6. Compute sample statistics 
 
 * Enrich the analysis with **ancillary data** to compute sample-level statistics.
 
