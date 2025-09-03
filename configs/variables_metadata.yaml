@@ -50,8 +50,8 @@ variables:
     bucket_filename_prefix: MCP_
     bucket_filename_suffix: _regrid.nc
 
-  precipitation:
-    long_name: "rain rate"
+  sat_prec:
+    long_name: "IMERG rain rate"
     unit: "mm/h"
     categorical: false
     logscale: false
@@ -60,6 +60,30 @@ variables:
     vmax: 20
     bucket_name: expats-imerg-prec
     bucket_filename_prefix: IMERG_daily_
+    bucket_filename_suffix: .nc
+
+  radar_prec:
+    long_name: "RADAR rain rate"
+    unit: "mm/h"
+    categorical: false
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 20
+    bucket_name: expats-radar-germany
+    bucket_filename_prefix: 
+    bucket_filename_suffix: _RR_15min_msg_res.nc.gz
+
+  lightning:
+    long_name: "EUCLID total lightning"
+    unit: null
+    categorical: false
+    logscale: 
+    direction: "incr"
+    vmin: 
+    vmax: 
+    bucket_name: expats-euclid
+    bucket_filename_prefix: EUCLID_total_lightning_
     bucket_filename_suffix: .nc
 
   hour:

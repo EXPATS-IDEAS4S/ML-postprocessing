@@ -44,15 +44,37 @@ data:
 # Statistics
 # ==========================
 statistics:
-  sel_vars:                # Physical variables of interest to select from the whole list (see config: variables_metadata.yaml)
-    - cot
-    - cth
-    - cma
-    - cph
-    - precipitation
-  percentiles: [50, 99]   # Percentile values to compute
-  include_geotime: true # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
-  time_dimension: false  #Flag to include time dimension in the analysis TODO include which type of time stat to compute??
-  use_parallel: true      # Switch between parallel or serial processing, with parallel, logging doesn't work
-  n_cores: 4              # Number of CPU cores to use for parallel processing
-  
+  spatial:
+    sel_vars:
+      - cot
+      - cth
+      - cma
+      - cph
+      - sat_prec
+    percentiles: [50, 99]
+    deviations: [std, iqr]
+    categorical: true
+    
+    # NEW: control whether spatial metrics are per-frame or aggregated
+    mode: 
+      - per_frame      # compute metrics at each timestep separately
+      - aggregated     # collapse all frames into one distribution
+
+
+  # Time-development statistics (multi-frame evolution across time dimension)
+  temporal:
+    enabled: true
+    metrics:
+      - cloud_cover_change   # ΔCC / Δt, relative CC change
+      - vertical_growth      # ΔCTH / Δt, max/mean option handled in code
+      - horizontal_motion    # displacement & velocity
+      - motion_direction     # azimuth angle of displacement vector
+    options:
+      normalize_by_duration: true   # normalize Δ by total time length
+      convective_ref: "max_cth"     # how to define "cloud center" (max_cth, centroid, mask_com)
+
+  # General flags
+  include_geotime: true      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
+  time_dimension: true       # Global flag: whether time metrics should be computed at all
+  use_parallel: false        # Parallelization (logging issue with joblib)
+  n_cores: 4                 # Number of CPU cores

@@ -120,9 +120,9 @@ def process_row(row, config, var_config, image_crops_path, logger):
     data_format = config["data"]["file_extension"]
     vars = config["statistics"]["sel_vars"]
     nc_engine = config["data"]["nc_engine"]
-    n_frames = config["data"].get("n_frames", 1)
+    #n_frames = config["data"].get("n_frames", 1)
 
-    logger.info(f"Processing crop: {crop_filename} with {n_frames} frames")
+    logger.info(f"Processing crop: {crop_filename}")
 
     # Get lat/lon and datetime22
     if data_format == "nc":
@@ -159,25 +159,30 @@ def process_row(row, config, var_config, image_crops_path, logger):
         
         
         values_append = []
+
+        logger.info(f"Processing variable '{var}' for crop {row['path']}")
+
         for day_key, times in times_by_day.items():
             try:
-                y, m, d = map(int, day_key.split("-")) 
-                #define filename pattern of the bucket
+                y, m, d = map(int, day_key.split("-"))
                 bucket_filename = (
-                f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
+                    f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
                 )
                 my_obj = read_file(s3, bucket_filename, var_meta['bucket_name'])
-                ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
-                #print(ds_day)
+                if my_obj is None:
+                    logger.warning(f"File not found in bucket: {bucket_filename}")
+                    continue
 
-                # CMA for masking
+                # Open datasets
+                ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
                 my_obj_cma = read_file(
                     s3,
                     f"MCP_{y:04d}-{m:02d}-{d:02d}_regrid.nc",
-                    "expats-cmsaf-cloud")
+                    "expats-cmsaf-cloud",
+                )
                 ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"]
 
-                # Normalize time index
+                # Normalize time index if needed
                 if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
                     ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
                     ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
@@ -188,34 +193,42 @@ def process_row(row, config, var_config, image_crops_path, logger):
                 ds_day_cma = ds_day_cma.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
                 ds_subset_cma = ds_day_cma.sel(time=times)
 
+                # Extract values and apply CMA mask
                 values = ds_subset.values.flatten()
                 values_cma = ds_subset_cma.values.flatten()
                 values = filter_cma_values(values, values_cma, var)
+
                 values_append.append(values)
 
             except Exception as e:
-                logger.error(f"Error processing variable '{var}' for crop {row['path']}", exc_info=True)
-                values_append.append(np.nan)
+                logger.error(
+                    f"Error processing day {day_key} for variable '{var}' (crop {row['path']})",
+                    exc_info=True,
+                )
+                # Keep shape consistency
+                values_append.append(np.array([np.nan]))
 
-            
+        # === Compute statistics once for all collected values ===
+        if values_append:
+            all_values = np.concatenate([np.atleast_1d(v) for v in values_append])
             for stat in stats:
                 entry = f"{var}-{stat}"
-                #print(entry)
-                logger.debug(f"Processing stat: {entry}")
-
-                #flatten values
-                all_values = np.concatenate(values_append) if values_append else np.array([np.nan])
-
-                try: 
+                logger.debug(f"Computing statistic: {entry}")
+                try:
                     if stat == "None":
                         result = compute_categorical_values(all_values, var)
                     else:
                         result = compute_percentile(all_values, int(stat))
-                except:
+                except Exception:
                     logger.error(f"Error computing statistic '{entry}'", exc_info=True)
                     result = np.nan
 
                 row_data[entry] = result
+        else:
+            for stat in stats:
+                entry = f"{var}-{stat}"
+                row_data[entry] = np.nan
+
 
     #from list of times extract hours and months of the first and last timestamp
     month_init, month_end = (np.datetime64(t, 'M').astype(object).month for t in (times[0], times[-1]))
@@ -349,4 +362,4 @@ if __name__ == "__main__":
     config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
     var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
-    # nohup 3180294
+    # nohup  3205645
