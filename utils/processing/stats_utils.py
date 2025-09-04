@@ -97,6 +97,10 @@ def filter_cma_values(values, cma_values, var_name, cma_filter=True):
     if not cma_filter:
         return values
 
+    #if the variable to be filtered is the cloud mask itself, return all the variables, since clear sky pixels are still needed to compute cloud cover
+    if var_name == 'cma':
+        return values
+
     if var_name == 'precipitation':
         if len(values) == 0:
             return [np.nan]

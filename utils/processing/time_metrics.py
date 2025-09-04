@@ -33,9 +33,11 @@ import numpy as np
 from scipy.ndimage import center_of_mass
 
 
-def change_in_cloud_cover(cloud_mask, times, pixel_area_km2=25.0):
+import numpy as np
+
+def change_in_cloud_cover(cloud_mask, times, relative_change=False, rate=False, pixel_area_km2=None):
     """
-    Compute change in cloud cover area over time.
+    Compute change in cloud cover over time, with optional normalization and unit conversion.
     
     Parameters
     ----------
@@ -43,30 +45,49 @@ def change_in_cloud_cover(cloud_mask, times, pixel_area_km2=25.0):
         Binary mask (1 = cloudy, 0 = clear).
     times : list of np.datetime64
         Time steps corresponding to cloud_mask.
-    pixel_area_km2 : float
-        Area of one grid cell in km² (default 5km x 5km = 25 km²).
+    relative_change : bool, optional
+        If True, compute relative change (ΔCC / CC_init).
+    rate : bool, optional
+        If True, compute rate of change (ΔCC / Δt).
+    pixel_area_km2 : float or None, optional
+        Area of one grid cell in km². If None, results are in pixel counts.
     
     Returns
     -------
-    rate : float
-        Normalized rate of CC change per hour (km²/hour).
-    total_change : float
-        Relative CC change (ΔCC / CC_init).
+    results : dict
+        Dictionary containing requested metrics:
+        - "absolute_change": ΔCC (km² or pixels)
+        - "relative_change": ΔCC / CC_init (if requested)
+        - "rate": ΔCC / Δt (km²/hour or pixels/hour, if requested)
     """
+    results = {}
+
+    # Duration in minutes
     t0, t1 = times[0], times[-1]
-    duration_h = (t1 - t0).astype("timedelta64[m]").astype(float) / 60.0
-    
-    cc_init = cloud_mask[0].sum() * pixel_area_km2
-    cc_final = cloud_mask[-1].sum() * pixel_area_km2
+    duration = (t1 - t0).astype("timedelta64[m]").astype(float)
+
+    # Initial and final cloud cover
+    cc_init = cloud_mask[0].sum()
+    cc_final = cloud_mask[-1].sum()
+
+    # Convert to km² if requested
+    if pixel_area_km2 is not None:
+        cc_init *= pixel_area_km2
+        cc_final *= pixel_area_km2
+
     delta_cc = cc_final - cc_init
-    
-    if cc_init == 0:
-        relative_change = np.nan
-    else:
-        relative_change = delta_cc / cc_init
-    
-    rate = delta_cc / duration_h if duration_h > 0 else np.nan
-    return rate, relative_change
+    results["absolute_change"] = delta_cc
+
+    # Relative change
+    if relative_change:
+        results["relative_change"] = np.nan if cc_init == 0 else delta_cc / cc_init
+
+    # Rate of change
+    if rate:
+        results["rate"] = delta_cc / duration if duration > 0 else np.nan
+
+    return results
+
 
 
 

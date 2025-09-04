@@ -75,13 +75,12 @@ These scripts handle **feature extraction, cleaning, and organization** from tra
 
 * **`create_df_var_tsne.py`** – Extends the crop list by adding corresponding components from dimensionality reduction (e.g., t-SNE embeddings) to each sample. Planned merge with `create_crop_list_from_buckets.py` to streamline the workflow.
 
-* **`compute_crops_statistics_new.py`** – Computes selected statistics (e.g., percentiles) for physical variables of interest for each sample, and appends them to the dataset.
-
-
 
 ## `cluster_analysis`
 
 These scripts focus on **characterizing clusters/classes in the feature space** using ancillary datasets (e.g., physical variables, satellite data, orography).
+
+* **`compute_crops_statistics_new.py`** – Computes selected statistics (e.g., percentiles) for physical variables of interest for each sample, and appends them to the dataset.
 
 * **`histogram_overlaid_per_class.py`** – Generates overlaid histograms of selected variables per cluster/class to visualize distributions.
 
