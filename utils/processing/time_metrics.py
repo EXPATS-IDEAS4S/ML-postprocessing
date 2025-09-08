@@ -186,3 +186,29 @@ def motion_direction(vector):
     angle_rad = np.arctan2(dy, dx)  # atan2(y, x)
     angle_deg = np.degrees(angle_rad) % 360
     return angle_deg
+
+
+import pandas as pd
+
+def compute_mean_curves(df: pd.DataFrame, stat="p50"):
+    """
+    Compute mean evolution across frames for each variable and label.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Tidy dataframe with columns: ['label', 'var', 'frame', stat].
+    stat : str, default="p50"
+        Which statistic column to use (e.g. "p50", "25", "75", "None").
+    
+    Returns
+    -------
+    pd.DataFrame
+        Multi-index dataframe with index (label, var, frame) and mean values.
+    """
+    curves = (
+        df.groupby(["label", "var", "frame"])[stat]
+        .mean()
+        .reset_index()
+    )
+    return curves

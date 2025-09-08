@@ -1,0 +1,1 @@
+2025-09-08 16:51:27,906 [INFO] Loaded dataframe from /data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000.csv with shape (288000, 15)

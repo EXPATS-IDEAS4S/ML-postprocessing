@@ -57,7 +57,7 @@ statistics:
 
     # NEW: control whether spatial metrics are per-frame or aggregated
     mode: per_frame      # compute metrics at each timestep separately (then this can be also used to check the change in time of the spatial metrics)
-      #- aggregated     # collapse all frames into one distribution
+      #- aggregated    # collapse all frames into one distribution
 
 
   # Time-development statistics (multi-frame evolution across time dimension)
