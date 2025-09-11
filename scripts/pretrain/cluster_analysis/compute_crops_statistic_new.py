@@ -46,6 +46,10 @@ Notes:
 ------
 - Designed for large-scale analysis of satellite datasets stored on S3.
 - Parallel processing significantly speeds up computations but increases memory usage.
+
+#TODO:  
+Check why the labels are not included in the output csv
+CHeck frame index in the case of day change! Now it does restart from zero!!!!
 """
 import os, sys, io
 from glob import glob
@@ -208,7 +212,7 @@ def process_row_old(row, config, var_config, image_crops_path, logger):
                         values_append.append(
                             {
                                 "time": np.datetime64(t).astype("datetime64[s]").item(),  # or str(t)
-                                "frame": t_idx,
+                                # "frame": t_idx,
                                 "values": frame_values,
                                 "crop_index": row['crop_index']
                             }
@@ -410,7 +414,7 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
 
                 per_frame_list.append({
                     "time": np.datetime64(t).astype("datetime64[s]").item(),
-                    "frame": t_idx,
+                    #"frame": t_idx, TODO error here, when change of day, frame restart from zero!!
                     "values": frame_values,
                 })
             return per_frame_list
@@ -436,7 +440,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
             row = {
                 "crop": crop_filename,
                 "var": var,
-                "frame": None,
+                #"frame": None,
                 "time": None,
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,
@@ -449,7 +453,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
                 row = {
                     "crop": crop_filename,
                     "var": var,
-                    "frame": frame_idx,
+                    #"frame": frame_idx,
                     "time": str(np.datetime64(t).astype("datetime64[s]").item()),
                     "lat_mid": lat_mid,
                     "lon_mid": lon_mid,
@@ -464,7 +468,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
         row = {
             "crop": crop_filename,
             "var": var,
-            "frame": None,
+            #"frame": None,
             "time": None,
             "lat_mid": lat_mid,
             "lon_mid": lon_mid,
@@ -478,7 +482,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
             row = {
                 "crop": crop_filename,
                 "var": var,
-                "frame": frame_dict["frame"],
+                #"frame": frame_dict["frame"],
                 "time": str(frame_dict["time"]),
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,

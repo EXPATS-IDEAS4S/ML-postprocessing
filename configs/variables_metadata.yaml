@@ -50,7 +50,7 @@ variables:
     bucket_filename_prefix: MCP_
     bucket_filename_suffix: _regrid.nc
 
-  sat_prec:
+  precipitation:
     long_name: "IMERG rain rate"
     unit: "mm/h"
     categorical: false

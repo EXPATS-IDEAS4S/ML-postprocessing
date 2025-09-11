@@ -163,10 +163,10 @@ output_file = os.path.join(output_path, filename)
 csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
 df_labels = pd.read_csv(csv_filename)
 #print(df_labels)
-df_labels["crop"] = df_labels["path"].apply(os.path.basename)
-print(df_labels)
-
-
+# import xarray as xr
+# ds = xr.open_dataset("/sat_data/crops/2006-2023_4-9_areathresh30_res15min_5frames_gap15min_cropsize75_min5pix_IR108-cm/val/hail/20130519_0530_res15min_5frames_cropsize75_2_hail_initiation_graupel.nc", engine="h5netcdf")
+# print(ds)
+# exit()
 
 # --- Open dataframe ---
 try:
@@ -182,8 +182,8 @@ except FileNotFoundError:
 
 
 
-#curves = compute_mean_curves(df, stat="50")
-#print(curves)
+curves = compute_mean_curves(df, stat="50")
+print(curves)
 
 
 #plot_mean_curves(curves, stat="p50")
