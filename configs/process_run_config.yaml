@@ -50,8 +50,9 @@ statistics:
       - cma
       - cot
       - cph
-      #- sat_prec
-      #- lightning
+      - sat_prec
+      - lightning
+      - radar_prec
     percentiles: [50, 99, 25, 75]  # percentiles to compute (IQR can be derived from 25 and 75)
     #TODO implement something to evalaute the cloud organization (Iorg, spectral analysis, aspect_ratio, aggregation...)
 
