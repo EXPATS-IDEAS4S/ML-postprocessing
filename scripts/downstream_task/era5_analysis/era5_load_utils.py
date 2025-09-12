@@ -47,17 +47,17 @@ def load_era5(
 
             if start is not None:
                 if (int(year) < start_year) or (int(year) == start_year and int(month) < start_month):
-                    print(f"Skipping {year}-{month}, before start date {start}")
+                    # print(f"Skipping {year}-{month}, before start date {start}")
                     continue
             if end is not None:
                 if (int(year) > end_year) or (int(year) == end_year and int(month) > end_month):
-                    print(f"Skipping {year}-{month}, after end date {end}")
+                    # print(f"Skipping {year}-{month}, after end date {end}")
 
                     if filtered_datasets:
                         combined_ds = xr.concat(filtered_datasets, dim="valid_time")
                         return combined_ds
                     else:
-                        print("No data matched the criteria.")
+                        # print("No data matched the criteria.")
                         return None
 
             for day in sorted(os.listdir(month_dir)):
@@ -65,18 +65,18 @@ def load_era5(
                 if not os.path.isdir(day_dir): continue
 
                 date = f"{year}-{month}-{day}"
-                print(f"Processing date: {date}")
+                # print(f"Processing date: {date}")
                 # skip data out the range, if given
                      
                 # Find .nc files
                 if single_level_type and era_type == "single_level":
-                    print(f"Looking for single level type: {single_level_type}")
+                    # print(f"Looking for single level type: {single_level_type}")
                     files = glob.glob(os.path.join(day_dir, f"*{single_level_type}.nc"))
                 else:
                     files = glob.glob(os.path.join(day_dir, "*.nc"))
                 
                 for f in files:
-                    print(f"Processing {f}...")
+                    # print(f"Processing {f}...")
                     try:
                         ds = xr.open_dataset(f, engine="h5netcdf")
                         
@@ -84,7 +84,7 @@ def load_era5(
                         if variables is not None:
                             missing_vars = [var for var in variables if var not in ds.variables]
                             if missing_vars:
-                                print(f"Skipping {f}, missing variables: {missing_vars}")
+                                # print(f"Skipping {f}, missing variables: {missing_vars}")
                                 continue
                             ds = ds[variables]
 
@@ -107,16 +107,17 @@ def load_era5(
                             # Select only matching timestamps
                             filtered_ds = ds.sel(valid_time=ds["valid_time"][mask])
                             filtered_datasets.append(filtered_ds)
-                            print(f"Included {f}, {mask.sum()} timestamps matched")
+                            # print(f"Included {f}, {mask.sum()} timestamps matched")
                         else:
-                            print(f"Skipped {f}, no timestamps matched")
+                            # print(f"Skipped {f}, no timestamps matched")
+                            pass
                             
                     except Exception as e:
                         print(f"Error reading {f}: {e}")
 
                 # merge all selected datasets
                 if filtered_datasets:
-                    combined_ds = xr.concat(filtered_datasets, dim="valid_time")
+                    combined_ds = xr.concat(filtered_datasets, dim="valid_time", join="outer")
                     #print(combined_ds)
     
                     return combined_ds

@@ -1,16 +1,20 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def plot_distribution(data, var_cfg, title="Distribution"):
+def plot_distribution(data, var_cfg, title="Distribution", output_path=None, log_scale=False, color="skyblue"):
     """Plot a flat distribution (histogram + boxplot) for one variable."""
     unit = var_cfg["unit"]
     vmin = var_cfg["vmin"]
     vmax = var_cfg["vmax"]
 
+    # flatten data if it's multi-dimensional
+    if len(data.shape) > 1:
+        data = data.flatten()
+
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
     # Histogram
-    axes[0].hist(data, bins=30, range=(vmin, vmax), color="skyblue", edgecolor="black")
+    axes[0].hist(data, bins=30, range=(vmin, vmax), color=color, edgecolor="black", log=log_scale)
     axes[0].set_title(f"{title} - Histogram")
     axes[0].set_xlabel(f"{var_cfg['long_name']} [{unit}]")
     axes[0].set_ylabel("Frequency")
@@ -22,7 +26,13 @@ def plot_distribution(data, var_cfg, title="Distribution"):
     axes[1].set_ylim(vmin, vmax)
 
     plt.tight_layout()
-    plt.show()
+
+    if output_path:
+        plt.savefig(output_path, bbox_inches='tight', dpi=300, transparent=True)
+        plt.close()
+        print(f"Saved plot to {output_path}")
+    else:
+        plt.show()
 
 
 def plot_grouped_distribution(data, var_cfg, n_frame=8, title="Grouped Distribution"):

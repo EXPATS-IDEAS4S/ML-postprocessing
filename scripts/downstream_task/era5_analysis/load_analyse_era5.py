@@ -1,3 +1,4 @@
+# %%
 import os
 import xarray as xr
 import pandas as pd
@@ -5,8 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import yaml
 import sys
-
-sys.path.append("/home/Daniele/codes/VISSL_postprocessing")
+dir_path = os.path.dirname(os.path.realpath(__file__))
+post_proc_path = f"{dir_path}/../../.."
+if post_proc_path not in sys.path:
+    sys.path.append(post_proc_path)
 from scripts.downstream_task.era5_analysis.era5_load_utils import load_era5
 from scripts.downstream_task.era5_analysis.era5_plot_utils import (
     plot_distribution,
@@ -14,6 +17,7 @@ from scripts.downstream_task.era5_analysis.era5_plot_utils import (
     plot_vertical_profile,
 )
 
+# %%
 # ====================
 # Example usage
 # ====================
@@ -21,7 +25,7 @@ if __name__ == "__main__":
     base_dir = "/sat_data/era5"
     output_dir = "/data1/fig/supervised_ir108-cm_75x75_5frames_12k_nc_r2dplus1/era5_analysis"
     os.makedirs(output_dir, exist_ok=True)
-    config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/era5_vars.yaml"
+    config_path = f"{post_proc_path}/configs/era5_vars.yaml"
 
     flatten = False  # if True → flatten variable arrays before analysis
     per_frame_mode = False  # if True → group distributions by frames
@@ -29,58 +33,61 @@ if __name__ == "__main__":
     n_frame = 8
     ml_mode = "supervised"
     dataset = "val"
-    variable_to_analyze = "cape"  
+    single_level_variables = ['u10', 'v10', 'd2m', 't2m', 'tcw', 'tcwv', 'cape', 'cin', 'kx', 'msl', 'tcc', 'tp', 'cp']
+    # pressure level variables: ['q', 'r', 'u', 'v', 'w', 't', 'pv', 'd']
 
-    # --------------------
-    # Load variable config
-    # --------------------
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+    color = "lightpink"  # color for histogram bars
+    lat_lon_tolerance = 0.039
 
-    var_cfg = config["era5_vars"].get(variable_to_analyze)
-    if var_cfg is None:
-        raise ValueError(f"Variable {variable_to_analyze} not found in config.")
+    for variable_to_analyze in single_level_variables:
+        # --------------------
+        # Load variable config
+        # --------------------
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
 
-    era_type = var_cfg.get("era5_type")
-    single_level_type = var_cfg.get("single_level_type", None)
-    print(
-        f"Variable {variable_to_analyze} → era_type={era_type}, single_level_type={single_level_type}, "
-        f"unit={var_cfg['unit']}, vmin={var_cfg['vmin']}, vmax={var_cfg['vmax']}"
-    )
+        var_cfg = config["era5_vars"].get(variable_to_analyze)
+        if var_cfg is None:
+            raise ValueError(f"Variable {variable_to_analyze} not found in config.")
 
-    # --------------------
-    # Load predictions CSV
-    # --------------------
-    pred_csv_path = "/data1/runs/supervised_ir108-cm_75x75_5frames_12k_nc_r2dplus1/features/epoch_50"
-    filename = "val_filepaths_true_predicted_labels_features.csv"
-    df = pd.read_csv(os.path.join(pred_csv_path, filename))
-    df = df.rename(
-        columns={
-            "true_label (0=hail; 1=no_hail)": "true_label",
-            "predicted_label (0=hail; 1=no_hail)": "predicted_label",
-        }
-    )
+        era_type = var_cfg.get("era5_type")
+        single_level_type = var_cfg.get("single_level_type", None)
+        print(
+            f"\nVariable {variable_to_analyze} → era_type={era_type}, single_level_type={single_level_type}, "
+            f"unit={var_cfg['unit']}, vmin={var_cfg['vmin']}, vmax={var_cfg['vmax']}", flush=True
+        )
 
-    # Split into categories
-    df_true0_pred0 = df[(df["true_label"] == 0) & (df["predicted_label"] == 0)]
-    df_true1_pred1 = df[(df["true_label"] == 1) & (df["predicted_label"] == 1)]
-    df_true0_pred1 = df[(df["true_label"] == 0) & (df["predicted_label"] == 1)]
-    df_true1_pred0 = df[(df["true_label"] == 1) & (df["predicted_label"] == 0)]
+        # --------------------
+        # Load predictions CSV
+        # --------------------
+        pred_csv_path = "/data1/runs/supervised_ir108-cm_75x75_5frames_12k_nc_r2dplus1/features/epoch_50"
+        filename = "val_filepaths_true_predicted_labels_features.csv"
+        df = pd.read_csv(os.path.join(pred_csv_path, filename))
+        df = df.rename(
+            columns={
+                "true_label (0=hail; 1=no_hail)": "true_label",
+                "predicted_label (0=hail; 1=no_hail)": "predicted_label",
+            }
+        )
 
-    df_list = [df_true0_pred0, df_true1_pred1, df_true0_pred1, df_true1_pred0]
-    category_names = [
-        "True Positive (hail)",
-        "True Negative (no_hail)",
-        "False Negative (missed hail)",
-        "False Positive (false alarm)",
-    ]
+        # Split into categories
+        df_true0_pred0 = df[(df["true_label"] == 0) & (df["predicted_label"] == 0)]
+        df_true1_pred1 = df[(df["true_label"] == 1) & (df["predicted_label"] == 1)]
+        df_true0_pred1 = df[(df["true_label"] == 0) & (df["predicted_label"] == 1)]
+        df_true1_pred0 = df[(df["true_label"] == 1) & (df["predicted_label"] == 0)]
 
-    # --------------------
-    # Loop over categories
-    # --------------------
-    for df_cat, cat_name in zip(df_list, category_names):
-        if cat_name == "False Negative (missed hail)":
-            print(f"Analyzing {cat_name}...")
+        df_list = [df_true0_pred0, df_true1_pred1, df_true0_pred1, df_true1_pred0]
+        category_names = [
+            "True Positive (hail)",
+            "True Negative (no_hail)",
+            "False Negative (missed hail)",
+            "False Positive (false alarm)",
+        ]
+        # --------------------
+        # Loop over categories
+        # --------------------
+        for df_cat, cat_name in zip(df_list, category_names):
+            print(f"Analyzing {cat_name}...", flush=True)
 
             extracted_vars = []
 
@@ -89,8 +96,8 @@ if __name__ == "__main__":
                 times = pd.to_datetime(ds["time"].values)
                 start_date = times.min().strftime("%Y-%m-%d")
                 end_date = (times.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
-                extend = [ds["lat"].values.min(), ds["lat"].values.max(),
-                        ds["lon"].values.min(), ds["lon"].values.max()]
+                extend = [ds["lat"].values.min(), ds["lat"].values.max() + lat_lon_tolerance,
+                        ds["lon"].values.min(), ds["lon"].values.max() + lat_lon_tolerance]
 
                 ds = load_era5(
                     base_dir,
@@ -102,6 +109,8 @@ if __name__ == "__main__":
                     variables=[variable_to_analyze],
                     extend=extend,
                 )
+
+
                 if ds is None:
                     continue
 
@@ -111,15 +120,13 @@ if __name__ == "__main__":
                         extracted_vars.append(values)
                 else:
                     extracted_vars.append(ds[variable_to_analyze].values)
-
+            
             if not extracted_vars:
                 print(f"No data extracted for {cat_name}. Skipping.")
                 continue
 
             all_values = np.concatenate(extracted_vars)
-            print(all_values)
-            exit()
-            print(f"Total {len(all_values)} values for {variable_to_analyze} in {cat_name}")
+            print(f"Total {len(all_values)} values for {variable_to_analyze} in {cat_name}", flush=True)
 
             # --------------------
             # Flexible plotting
@@ -147,11 +154,15 @@ if __name__ == "__main__":
                 plt.savefig(plt_path_pf)
 
             else:
-                plot_distribution(all_values, var_cfg, title=f"{cat_name} - {variable_to_analyze}")
+                #add to filename to save the flatten flag
+                plt_path_flat = plt_path.replace(".png", "_flatten_log.png")
+                plot_distribution(all_values, var_cfg, title=f"{cat_name} - {variable_to_analyze}", 
+                                    output_path=plt_path_flat, log_scale=True, color=color)
+
                 #add to filename to save the flatten flag
                 plt_path_flat = plt_path.replace(".png", "_flatten.png")
-                plt.savefig(plt_path_flat)
+                plot_distribution(all_values, var_cfg, title=f"{cat_name} - {variable_to_analyze}", 
+                                    output_path=plt_path_flat, log_scale=False, color=color)
 
-            plt.close()
-            print(f"Saved plot to {plt_path}")
 
+# %%
