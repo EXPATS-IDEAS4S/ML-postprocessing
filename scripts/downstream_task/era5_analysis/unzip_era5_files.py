@@ -6,7 +6,7 @@ import pandas as pd
 # ===============================
 # Paths
 # ===============================
-csv_file = "/home/Daniele/codes/VISSL_postprocessing/scripts/downstream_task/val_unique_hours.csv"
+csv_file = "/home/Daniele/codes/VISSL_postprocessing/scripts/downstream_task/era5_analysis/val_unique_hours.csv"
 era5_base_dir = "/sat_data/era5/"
 era5_types = ["pressure_levels", "single_level"]
 check_contents = False  # If True, open each extracted file and check times
