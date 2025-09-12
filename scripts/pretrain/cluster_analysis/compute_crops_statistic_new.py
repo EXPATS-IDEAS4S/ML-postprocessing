@@ -569,7 +569,7 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
         sampling_type,
         str(n_subsample) + filter_suffix,
     ]
-    filename = "_".join([p for p in parts if p]) + ".csv"
+    filename = "_".join([p for p in parts if p]) + "CA.csv"
 
     # Save
     df_labels.to_csv(os.path.join(output_path, filename), index=False)
@@ -582,7 +582,7 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     ]
     continuous_stats.reset_index(inplace=True)
     continuous_stats.to_csv(
-        f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv",
+        f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}CA.csv",
         index=False,
     )
     logger.info("Cluster-level stats saved successfully.")
