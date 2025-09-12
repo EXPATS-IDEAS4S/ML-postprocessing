@@ -77,6 +77,14 @@ def compute_categorical_values(values, var):
     else:
         raise ValueError('Wrong variable names!')
 
+    if var == 'lightning':
+        # calculate total number of lightning in the frame by summing them up
+        values = np.nansum(values) # total number of lightning in the frame
+
+    if var == 'radar_prec':
+        # calculate total number of radar_prec in the frame by summing  it up 
+        values = np.nansum(values) # total mm/h in the frame
+
     return values
 
 
