@@ -54,7 +54,9 @@ import pandas as pd
 import xarray as xr
 from joblib import Parallel, delayed
 
-sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
+#sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
+sys.path.append(os.path.abspath("/home/claudia/codes/ML_postprocessing"))
+
 from utils.processing.stats_utils import compute_percentile
 from utils.configs import load_config
 from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
