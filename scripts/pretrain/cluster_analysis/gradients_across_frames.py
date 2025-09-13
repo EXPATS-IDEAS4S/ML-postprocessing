@@ -14,10 +14,15 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 import pdb
+import sys
 from array import array
+sys.path.append(os.path.abspath("/Users/claudia/Documents/ML-postprocessing"))
+from utils.plotting.class_colors import colors_per_class1_names, class_groups
+
+
 
 # csv file with 2D+1 output
-csv_file = '/Users/claudia/Documents/data_ml_spacetime/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000.csv'
+csv_file = '/Users/claudia/Documents/data_ml_spacetime/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
 output_dir = '/Users/claudia/Documents/data_ml_spacetime/figs/'
 
 def main():
@@ -44,9 +49,7 @@ def main():
     plt.figure(figsize=(10, 8))
 
     # one subplot for each percentile
-    # colors based on class
-    colors = ['darkgray', 'darkslategrey', 'peru', 'orangered', 'lightcoral',
-              'gold', 'yellowgreen', 'limegreen', 'deepskyblue', 'navy']
+    colors = list(colors_per_class1_names.values())
     markers = ['o', 's', '^', 'D', 'v', 'P', '*', 'X', '<', '>']
     for i, perc in enumerate(percentiles):
         plt.subplot(2, 2, i + 1)
@@ -57,18 +60,41 @@ def main():
                          marker=markers[j % len(markers)],
                          label=f'Class {j}',
                            s=100)
-        plt.title(f'Percentile {perc}')
+        plt.title(f'Percentile {perc}th', fontsize=16)
         plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
 
         plt.axhline(0, color='gray', linestyle='--')
         plt.axvline(0, color='gray', linestyle='--')
-        plt.xlabel('Mean Gradient of COT')
-        plt.ylabel('Mean Gradient of CTH')
-    plt.suptitle('Mean Gradients of COT vs CTH for all Classes')
+        plt.xlabel('Mean Gradient of COT', fontsize=16)
+        plt.ylabel('Mean Gradient of CTH', fontsize=16)
+        # remove upper and right spines
+        plt.gca().spines['top'].set_visible(False)
+        plt.gca().spines['right'].set_visible(False)
+        # enlarge fonts of all texts
+        plt.rcParams.update({'font.size': 16})
+    plt.suptitle('Mean Gradients of COT vs CTH for all Classes', fontsize=20)
     plt.legend(frameon=False, bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout(rect=[0, 0, 0.85, 0.95])
-    plt.savefig(os.path.join(output_dir, 'mean_gradients_cot_vs_cth.png'))
+    plt.savefig(os.path.join(output_dir, 'mean_gradients_cot_vs_cth.png'), transparent=True)
     plt.close()
+
+    # plot scatter plot of 50th and 75th percentiles for group of classes (Convection, Overcast, Broken Clouds)
+    plt.figure(figsize=(10, 8))
+    for j in range(mean_grad_class_cot.shape[0]):
+        # plot colors for class groups from class_colors.py
+        plt.scatter(mean_grad_class_cot[j, 1],
+                    mean_grad_class_cth[j, 1],
+                    color=colors[j % len(colors)],
+                    marker=markers[j % len(markers)],
+                    label=f'Class {j}',
+                    s=100)
+    plt.title(f'Percentile {perc}th', fontsize=16)
+    plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
+
+    plt.axhline(0, color='gray', linestyle='--')
+    plt.axvline(0, color='gray', linestyle='--')
+    plt.xlabel('Mean Gradient of COT', fontsize=16)
+    plt.ylabel('Mean Gradient of CTH', fontsize=16)
 
 def read_gradient_files(file_path):
 
