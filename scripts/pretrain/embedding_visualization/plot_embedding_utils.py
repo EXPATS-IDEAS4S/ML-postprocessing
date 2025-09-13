@@ -643,12 +643,18 @@ def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closes
 
         for j, (_, row) in enumerate(subset.iterrows()):
             img_path = row['path']
-            img = Image.open(img_path).convert('L')  # Convert to grayscale
-            
-            ax = axes[i, j] if num_labels > 1 else axes[j]  # Select subplot
-            ax.imshow(img, cmap='gray')
-            ax.axis('off')
 
+            if img_path is not None and os.path.exists(img_path):
+                img = Image.open(img_path).convert('L')  # Convert to grayscale
+            
+                ax = axes[i, j] if num_labels > 1 else axes[j]  # Select subplot
+                ax.imshow(img, cmap='gray')
+                ax.axis('off')
+            else:
+                print(f"Image not found: {img_path}")
+                axes[i, j].axis('off')
+                print(f"Skipping missing image: {img_path}")
+                
             # Row label (on the left)
             if j == 0:
                 ax.set_ylabel(f"Label {label}", fontsize=12, fontweight='bold', rotation=0, labelpad=30, va='center')

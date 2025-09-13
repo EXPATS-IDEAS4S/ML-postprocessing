@@ -46,6 +46,10 @@ Notes:
 ------
 - Designed for large-scale analysis of satellite datasets stored on S3.
 - Parallel processing significantly speeds up computations but increases memory usage.
+
+#TODO:  
+Check why the labels are not included in the output csv
+CHeck frame index in the case of day change! Now it does restart from zero!!!!
 """
 import os, sys, io
 from glob import glob
@@ -54,7 +58,9 @@ import pandas as pd
 import xarray as xr
 from joblib import Parallel, delayed
 
-sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
+#sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
+sys.path.append(os.path.abspath("/home/claudia/codes/ML_postprocessing"))
+
 from utils.processing.stats_utils import compute_percentile
 from utils.configs import load_config
 from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
@@ -163,6 +169,7 @@ def process_row_old(row, config, var_config, image_crops_path, logger):
         for day_key, times in times_by_day.items():
             try:
                 y, m, d = map(int, day_key.split("-"))
+                # insert here var if and then set path * filename
                 bucket_filename = (
                     f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
                 )
@@ -208,7 +215,7 @@ def process_row_old(row, config, var_config, image_crops_path, logger):
                         values_append.append(
                             {
                                 "time": np.datetime64(t).astype("datetime64[s]").item(),  # or str(t)
-                                "frame": t_idx,
+                                # "frame": t_idx,
                                 "values": frame_values,
                                 "crop_index": row['crop_index']
                             }
@@ -336,10 +343,9 @@ def process_variable(var, times, lat_min, lat_max, lon_min, lon_max,
 
     values_append = []
     for day_key, times_for_day in get_time_windows(times, var=var).items():
-        values = load_and_mask_data(
-            day_key, var, var_meta, lat_min, lat_max, lon_min, lon_max,
-            times_for_day, logger, mode
-        )
+        print('processing day:', day_key, 'var:', var)
+        values = load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_max, times_for_day, logger, mode)
+
         if mode == "aggregated":
             values_append.append(values)
         elif mode == "per_frame":
@@ -407,10 +413,11 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
                 frame_values = ds_subset.sel(time=t).values.flatten()
                 frame_values_cma = ds_subset_cma.sel(time=t).values.flatten()
                 frame_values = filter_cma_values(frame_values, frame_values_cma, var)
+                print('frame values:', frame_values)
 
                 per_frame_list.append({
                     "time": np.datetime64(t).astype("datetime64[s]").item(),
-                    "frame": t_idx,
+                    #"frame": t_idx, TODO error here, when change of day, frame restart from zero!!
                     "values": frame_values,
                 })
             return per_frame_list
@@ -436,7 +443,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
             row = {
                 "crop": crop_filename,
                 "var": var,
-                "frame": None,
+                #"frame": None,
                 "time": None,
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,
@@ -449,7 +456,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
                 row = {
                     "crop": crop_filename,
                     "var": var,
-                    "frame": frame_idx,
+                    #"frame": frame_idx,
                     "time": str(np.datetime64(t).astype("datetime64[s]").item()),
                     "lat_mid": lat_mid,
                     "lon_mid": lon_mid,
@@ -464,7 +471,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
         row = {
             "crop": crop_filename,
             "var": var,
-            "frame": None,
+            #"frame": None,
             "time": None,
             "lat_mid": lat_mid,
             "lon_mid": lon_mid,
@@ -478,7 +485,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
             row = {
                 "crop": crop_filename,
                 "var": var,
-                "frame": frame_dict["frame"],
+                #"frame": frame_dict["frame"],
                 "time": str(frame_dict["time"]),
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,
@@ -533,6 +540,7 @@ def extract_geotime_metadata(coords, times):
 
 # === MAIN ===
 def main(config_path: str = "config.yaml", var_config_path: str = "variables_metadata.yaml"):
+    
     config = load_config(config_path)
     var_config = load_config(var_config_path)
 
@@ -626,29 +634,30 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
         sampling_type,
         str(n_subsample) + filter_suffix,
     ]
-    filename = "_".join([p for p in parts if p]) + ".csv"
+    filename = "_".join([p for p in parts if p]) + "CA.csv"
 
     # Save
     df_results.to_csv(os.path.join(output_path, filename), index=False)
     logger.info(f"Crop stats for {filename} saved successfully in {output_path}.")
 
-    #TODO check this part if it works
-    #  # Save overall stats
-    # continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
-    # continuous_stats.columns = [
-    #     "_".join(col).strip() for col in continuous_stats.columns.values
-    # ]
-    # continuous_stats.reset_index(inplace=True)
-    # continuous_stats.to_csv(
-    #     f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv",
-    #     index=False,
-    # )
-    # logger.info("Cluster-level stats saved successfully.")
+    # Save overall stats
+    continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
+    continuous_stats.columns = [
+        "_".join(col).strip() for col in continuous_stats.columns.values
+    ]
+    continuous_stats.reset_index(inplace=True)
+    continuous_stats.to_csv(
+        f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}CA.csv",
+        index=False,
+    )
+    logger.info("Cluster-level stats saved successfully.")
 
 
 
 if __name__ == "__main__":
-    config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
-    var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
+    #config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
+    config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_config.yaml"
+   #var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
+    var_config_path = "/home/claudia/codes/ML_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
     # nohup  3939169

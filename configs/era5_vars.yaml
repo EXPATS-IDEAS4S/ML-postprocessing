@@ -1,0 +1,143 @@
+era5_vars:
+  u10:
+    long_name: "10m_u_component_of_wind"
+    unit: "m/s"
+    vmin: -40
+    vmax: 40
+    era5_type: "single_level"
+    single_level_type: "instant"
+  v10:
+    long_name: "10m_v_component_of_wind"
+    unit: "m/s"
+    vmin: -40
+    vmax: 40
+    era5_type: "single_level"
+    single_level_type: "instant"
+  d2m:
+    long_name: "2m_dewpoint_temperature"
+    unit: "K"
+    vmin: 180
+    vmax: 320
+    era5_type: "single_level"
+    single_level_type: "instant"
+  t2m:
+    long_name: "2m_temperature"
+    unit: "K"
+    vmin: 180
+    vmax: 330
+    era5_type: "single_level"
+    single_level_type: "instant"
+  tcw:
+    long_name: "total_column_water"
+    unit: "kg/m²"
+    vmin: 0
+    vmax: 80
+    era5_type: "single_level"
+    single_level_type: "instant"
+  tcwv:
+    long_name: "total_column_water_vapour"
+    unit: "kg/m²"
+    vmin: 0
+    vmax: 80
+    era5_type: "single_level"
+    single_level_type: "instant"
+  cape:
+    long_name: "convective_available_potential_energy"
+    unit: "J/kg"
+    vmin: 0
+    vmax: 5000
+    era5_type: "single_level"
+    single_level_type: "instant"
+  cin:
+    long_name: "convective_inhibition"
+    unit: "J/kg"
+    vmin: -500
+    vmax: 0
+    era5_type: "single_level"
+    single_level_type: "instant"
+  kx:
+    long_name: "k_index"
+    unit: "K"
+    vmin: -20
+    vmax: 60
+    era5_type: "single_level"
+    single_level_type: "instant"
+  msl:
+    long_name: "mean_sea_level_pressure"
+    unit: "Pa"
+    vmin: 90000
+    vmax: 110000
+    era5_type: "single_level"
+    single_level_type: "instant"
+  tcc:
+    long_name: "total_cloud_cover"
+    unit: "%"
+    vmin: 0
+    vmax: 100
+    era5_type: "single_level"
+    single_level_type: "instant"
+
+  tp:
+    long_name: "total_precipitation"
+    unit: "m"
+    vmin: 0
+    vmax: 0.5
+    era5_type: "single_level"
+    single_level_type: "accum"
+  cp:
+    long_name: "convective_precipitation"
+    unit: "m"
+    vmin: 0
+    vmax: 0.5
+    era5_type: "single_level"
+    single_level_type: "accum"
+  q:
+    long_name: "specific_humidity"
+    unit: "kg/kg"
+    vmin: 0
+    vmax: 0.03
+    era5_type: "pressure_levels"
+  r:
+    long_name: "relative_humidity"
+    unit: "%"
+    vmin: 0
+    vmax: 100
+    era5_type: "pressure_levels"
+  u:
+    long_name: "u_wind_component"
+    unit: "m/s"
+    vmin: -80
+    vmax: 80
+    era5_type: "pressure_levels"
+  v:
+    long_name: "v_wind_component"
+    unit: "m/s"
+    vmin: -80
+    vmax: 80
+    era5_type: "pressure_levels"
+  w:
+    long_name: "vertical_velocity"
+    unit: "Pa/s"
+    vmin: -2
+    vmax: 2
+    era5_type: "pressure_levels"
+  t:
+    long_name: "temperature"
+    unit: "K"
+    vmin: 180
+    vmax: 330
+    era5_type: "pressure_levels"
+  pv:
+    long_name: "potential_vorticity"
+    unit: "PVU"
+    vmin: -5
+    vmax: 5
+    era5_type: "pressure_levels"
+  d:
+    long_name: "divergence"
+    unit: "s⁻¹"
+    vmin: -0.0001
+    vmax: 0.0001
+    era5_type: "pressure_levels"
+
+pressure_levels: [300, 400, 500, 550, 600, 650, 700, 750, 800, 825, 850, 875, 900, 925, 950, 975, 1000]

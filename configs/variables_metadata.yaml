@@ -50,10 +50,10 @@ variables:
     bucket_filename_prefix: MCP_
     bucket_filename_suffix: _regrid.nc
 
-  sat_prec:
+  precipitation:
     long_name: "IMERG rain rate"
     unit: "mm/h"
-    categorical: false
+    categorical: true
     logscale: false
     direction: "incr"
     vmin: 0
@@ -65,7 +65,7 @@ variables:
   radar_prec:
     long_name: "RADAR rain rate"
     unit: "mm/h"
-    categorical: false
+    categorical: true
     logscale: false
     direction: "incr"
     vmin: 0
@@ -77,7 +77,7 @@ variables:
   lightning:
     long_name: "EUCLID total lightning"
     unit: null
-    categorical: false
+    categorical: true
     logscale: 
     direction: "incr"
     vmin: 
