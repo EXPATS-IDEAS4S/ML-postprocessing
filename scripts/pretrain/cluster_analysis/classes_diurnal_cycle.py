@@ -18,12 +18,15 @@ import pandas as pd
 import pdb
 from array import array
 
-sys.path.append(os.path.abspath("/Users/claudia/Documents/ML-postprocessing/scripts/pretrain"))
-from cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
+sys.path.append(os.path.abspath("/Users/claudia/Documents/ML-postprocessing"))
+
+from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
+
+from utils.plotting.class_colors import colors_per_class1_names, class_groups
 
 
 # csv file with 2D+1 output
-csv_file = '/Users/claudia/Documents/data_ml_spacetime/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000.csv'
+csv_file = '/Users/claudia/Documents/data_ml_spacetime/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
 output_dir = '/Users/claudia/Documents/data_ml_spacetime/figs/'
 
 def main():
@@ -42,14 +45,13 @@ def main():
 
     # loop on crop indeces and calculate mean time for each video
     times, labels = derive_time_class(df8, crop_indices)
-    pdb.set_trace()
     print("Times shape:", times.shape)
     print("Labels shape:", labels.shape)
 
     print("Number of videos with 8 frames:", len(times))
     print("First 5 times:", times[:5])
     print("First 5 labels:", labels[:5])
-    pdb.set_trace()
+
 
     # create a new dataframe with times and labels
     df_times = pd.DataFrame({'time': times, 'label': labels})
@@ -68,16 +70,64 @@ def main():
     # plot occurrence of each class across the day
     plt.figure(figsize=(10, 6))
     for label in df_grouped.columns:
-        plt.plot(df_grouped.index, df_grouped[label], marker='o', markersize=10, label=f'Class {label}')
-    plt.xlabel('Hour of the day')
-    plt.ylabel('Occurrence')
-    plt.title('Occurrence of each class across the day')
-    plt.xticks(range(0, 24))
+        plt.plot(df_grouped.index, 
+                 df_grouped[label],
+                 linewidth=3,
+                label=f'Class {label}')
+        
+    plt.xlabel('Hour of the day', fontsize=16)
+    plt.ylabel('Occurrence', fontsize=16)
+    plt.title('Occurrence of each class across the day', fontsize=16)
+    plt.xticks(range(0, 24, 2), fontsize=14)
     plt.legend()
     plt.grid()
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, 'class_occurrence_diurnal_cycle.png'))
     plt.close()
+
+    # plot of diurnal cycles for class groups
+
+    # read class groups from utils/plotting/class_colors.py
+    for group_name, group_labels in class_groups.items():
+        print(group_name, group_labels)
+
+
+        # plot diurnal cycle for each element of the group
+        plt.figure(figsize=(10, 6))
+        for label in group_labels:
+            # plot class using the color defined in utils/plotting/class_colors.py
+            if str(label) in colors_per_class1_names:
+                plt.plot(df_grouped.index, 
+                         df_grouped[label], 
+                         label=f'Class {label}', 
+                         linewidth=4,
+                         color=colors_per_class1_names[str(label)])
+            else:
+                plt.plot(df_grouped.index, 
+                         df_grouped[label], 
+                         marker='o', 
+                         markersize=10, 
+                         label=f'Class {label}')
+
+        plt.xlabel('Hour of the day', fontsize=20)
+        plt.ylabel('Occurrence', fontsize=20)
+        plt.title('Occurrence of class groups across the day', fontsize=20)
+        plt.xticks(range(0, 24), fontsize=16)
+        plt.legend(fontsize=16)
+        plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
+        # enlarge fonts of all texts
+        plt.rcParams.update({'font.size': 20})
+        # enlarge xticks and yticks fonts
+        plt.xticks(fontsize=18)
+        plt.yticks(fontsize=18)
+        plt.tight_layout()
+        # remove upper and right spines
+        plt.gca().spines['top'].set_visible(False)
+        plt.gca().spines['right'].set_visible(False)
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir,
+                                 f'{group_name}_class_groups_occurrence_diurnal_cycle.png'), 
+                                 transparent=True)
 
 
     # plot single diurnal cycle for each class
@@ -106,8 +156,9 @@ def main():
         plt.gca().tick_params(width=1.5, length=7, labelsize=12)
         
         plt.savefig(os.path.join(output_dir, f'class_{label}_diurnal_cycle.png'), transparent=True)
-        plt.show()
         plt.close()
+
+    
 
 
 
