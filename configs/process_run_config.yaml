@@ -58,7 +58,7 @@ statistics:
 
     # NEW: control whether spatial metrics are per-frame or aggregated
     mode: per_frame      # compute metrics at each timestep separately (then this can be also used to check the change in time of the spatial metrics)
-      #- aggregated     # collapse all frames into one distribution
+      #- aggregated    # collapse all frames into one distribution
 
 
   # Time-development statistics (multi-frame evolution across time dimension)
@@ -74,7 +74,7 @@ statistics:
       convective_ref: "max_cth"     # how to define "cloud center" (max_cth, center_of_mass, ...)
 
   # General flags
-  include_geotime: true      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
+  include_geotime: false      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
   time_dimension: true       # Global flag: whether time metrics should be computed at all
   use_parallel: false        # Parallelization (logging issue with joblib)
   n_cores: 4                 # Number of CPU cores

@@ -46,6 +46,10 @@ Notes:
 ------
 - Designed for large-scale analysis of satellite datasets stored on S3.
 - Parallel processing significantly speeds up computations but increases memory usage.
+
+#TODO:  
+Check why the labels are not included in the output csv
+CHeck frame index in the case of day change! Now it does restart from zero!!!!
 """
 import os, sys, io
 from glob import glob
@@ -211,7 +215,7 @@ def process_row_old(row, config, var_config, image_crops_path, logger):
                         values_append.append(
                             {
                                 "time": np.datetime64(t).astype("datetime64[s]").item(),  # or str(t)
-                                "frame": t_idx,
+                                # "frame": t_idx,
                                 "values": frame_values,
                                 "crop_index": row['crop_index']
                             }
@@ -294,11 +298,10 @@ def process_row_old(row, config, var_config, image_crops_path, logger):
     )
     return row_data
 
-
 def process_row(row, config, var_config, image_crops_path, logger):
     """
     Process a single crop row: load data, mask with CMA, and compute statistics.
-    Returns a structured dict of results.
+    Returns a list of flat dicts (rows), ready for CSV export.
     """
     crop_filename = os.path.basename(row["path"])
     data_format = config["data"]["file_extension"]
@@ -308,35 +311,34 @@ def process_row(row, config, var_config, image_crops_path, logger):
         coords = extract_coord_from_nc(crop_filename, image_crops_path, nc_engine)
         times = extract_datetime_from_nc(crop_filename, image_crops_path, nc_engine)
     else:
-        #This should work if images are processed (so only one timeframe)
         coords = extract_coordinates(crop_filename)
         datetime_info = extract_datetime(crop_filename)
-        year, month, day, hour, minute = (  datetime_info[k] for k in ["year", "month", "day", "hour", "minute"])
-        times = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00")
+        year, month, day, hour, minute = (
+            datetime_info[k] for k in ["year", "month", "day", "hour", "minute"]
+        )
+        times = np.datetime64(
+            f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00"
+        )
 
     lat_min, lat_max = coords["lat_min"], coords["lat_max"]
     lon_min, lon_max = coords["lon_min"], coords["lon_max"]
 
-    row_data = {"crop": crop_filename, "results": {}}
+    all_rows = []
 
-    for var in config["statistics"]['spatial']["sel_vars"]:
-        var_results = process_variable(
-            var, times, lat_min, lat_max, lon_min, lon_max, 
-            config, var_config, logger
+    for var in config["statistics"]["spatial"]["sel_vars"]:
+        var_rows = process_variable(
+            var, times, lat_min, lat_max, lon_min, lon_max,
+            config, var_config, logger, crop_filename, coords
         )
-        row_data["results"][var] = var_results
-
-    # Add geo-time metadata
-    if config["statistics"]["include_geotime"]:
-        row_data.update(extract_geotime_metadata(coords, times))
-
-    return row_data
+        all_rows.extend(var_rows)
+    return all_rows
 
 
-def process_variable(var, times, lat_min, lat_max, lon_min, lon_max, config, var_config, logger):
+def process_variable(var, times, lat_min, lat_max, lon_min, lon_max,
+                     config, var_config, logger, crop_filename, coords):
     """Process one variable across time windows."""
     var_meta = var_config['variables'][var]
-    stats = ['None'] if var_meta['categorical'] else config["statistics"]['spatial']["percentiles"]
+    stats = ['None'] if var_meta['categorical'] else config["statistics"]["spatial"]["percentiles"]
     mode = config["statistics"]["spatial"].get("mode", "aggregated")
 
     values_append = []
@@ -349,28 +351,48 @@ def process_variable(var, times, lat_min, lat_max, lon_min, lon_max, config, var
         elif mode == "per_frame":
             values_append.extend(values)  # flatten all frames across days
 
-    return compute_statistics(values_append, stats, var, mode, times)
+    return compute_statistics(values_append, stats, var, mode, times, crop_filename, coords)
+
 
 
 def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_max, times, logger, mode):
-    """Load daily dataset from S3, subset, and apply CMA mask."""
+    """
+    Load daily dataset from S3, subset by coords/times, apply CMA mask.
+
+    Returns
+    -------
+    - if mode == "aggregated": np.ndarray of values
+    - if mode == "per_frame": list of dicts with keys {"time", "frame", "values"}
+    """
     try:
         y, m, d = map(int, day_key.split("-"))
-        bucket_filename = f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
+        bucket_filename = (
+            f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}"
+            f"{var_meta['bucket_filename_suffix']}"
+        )
         s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
 
         # Load variable and CMA
         my_obj = read_file(s3, bucket_filename, var_meta['bucket_name'])
         if my_obj is None:
             logger.warning(f"File not found: {bucket_filename}")
-            return np.array([np.nan])
-        my_obj_cma = read_file(s3, f"MCP_{y:04d}-{m:02d}-{d:02d}_regrid.nc", "expats-cmsaf-cloud")
+            return np.array([np.nan]) if mode == "aggregated" else []
+
+        cma_filename = f"MCP_{y:04d}-{m:02d}-{d:02d}_regrid.nc"
+        my_obj_cma = read_file(s3, cma_filename, "expats-cmsaf-cloud")
         if my_obj_cma is None:
             logger.warning(f"CMA file not found for day: {day_key}")
-            return np.array([np.nan])
-        
-        ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"].sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-        ds_day = xr.open_dataset(io.BytesIO(my_obj))[var].sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
+            return np.array([np.nan]) if mode == "aggregated" else []
+
+        # Open datasets
+        ds_day = xr.open_dataset(io.BytesIO(my_obj))[var].sel(
+            lat=slice(lat_min, lat_max),
+            lon=slice(lon_min, lon_max)
+        )
+        ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"].sel(
+            lat=slice(lat_min, lat_max),
+            lon=slice(lon_min, lon_max)
+        )
 
         # Normalize time index if needed
         if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
@@ -380,7 +402,6 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
         ds_subset = ds_day.sel(time=times)
         ds_subset_cma = ds_day_cma.sel(time=times)
 
-        # Extract values and apply CMA mask
         if mode == "aggregated":
             values = ds_subset.values.flatten()
             values_cma = ds_subset_cma.values.flatten()
@@ -396,44 +417,84 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
 
                 per_frame_list.append({
                     "time": np.datetime64(t).astype("datetime64[s]").item(),
-                    "frame": t_idx,
+                    #"frame": t_idx, TODO error here, when change of day, frame restart from zero!!
                     "values": frame_values,
                 })
             return per_frame_list
 
-    except Exception as e:
+    except Exception:
         logger.error(f"Error processing {day_key}, var {var}", exc_info=True)
-        return np.array([np.nan])
+        return np.array([np.nan]) if mode == "aggregated" else []
 
 
 
-def compute_statistics(values_append, stats, var, mode, times):
+def compute_statistics(values_append, stats, var, mode, times, crop_filename, coords):
     """
     Compute stats either aggregated across frames or per-frame.
-    Returns a flat dict for easy CSV export.
+    Returns a list of flat dicts (rows).
     """
-    results = {}
+    rows = []
+
+    lat_mid = (coords["lat_min"] + coords["lat_max"]) / 2
+    lon_mid = (coords["lon_min"] + coords["lon_max"]) / 2
 
     if not values_append:
-        for stat in stats:
-            results[f"{var}-{stat}"] = np.nan
-        return results
+        if mode == "aggregated":
+            row = {
+                "crop": crop_filename,
+                "var": var,
+                #"frame": None,
+                "time": None,
+                "lat_mid": lat_mid,
+                "lon_mid": lon_mid,
+            }
+            for stat in stats:
+                row[stat] = np.nan
+            rows.append(row)
+        elif mode == "per_frame":
+            for frame_idx, t in enumerate(times):
+                row = {
+                    "crop": crop_filename,
+                    "var": var,
+                    #"frame": frame_idx,
+                    "time": str(np.datetime64(t).astype("datetime64[s]").item()),
+                    "lat_mid": lat_mid,
+                    "lon_mid": lon_mid,
+                }
+                for stat in stats:
+                    row[stat] = np.nan
+                rows.append(row)
+        return rows
 
     if mode == "aggregated":
         all_values = np.concatenate([np.atleast_1d(v) for v in values_append])
+        row = {
+            "crop": crop_filename,
+            "var": var,
+            #"frame": None,
+            "time": None,
+            "lat_mid": lat_mid,
+            "lon_mid": lon_mid,
+        }
         for stat in stats:
-            results[f"{var}-{stat}"] = compute_single_stat(all_values, stat, var)
+            row[stat] = compute_single_stat(all_values, stat, var)
+        rows.append(row)
 
     elif mode == "per_frame":
         for frame_dict in values_append:
-            timestamp = frame_dict["time"]
-            frame_idx = frame_dict["frame"]
-            frame_values = frame_dict["values"]
+            row = {
+                "crop": crop_filename,
+                "var": var,
+                #"frame": frame_dict["frame"],
+                "time": str(frame_dict["time"]),
+                "lat_mid": lat_mid,
+                "lon_mid": lon_mid,
+            }
             for stat in stats:
-                results[f"{var}-{stat}-frame{frame_idx}-{timestamp}"] = compute_single_stat(frame_values, stat, var)
+                row[stat] = compute_single_stat(frame_dict["values"], stat, var)
+            rows.append(row)
 
-
-    return results
+    return rows
 
 
 def compute_single_stat(values, stat, var):
@@ -490,7 +551,7 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.StreamHandler(),                       # Print to console
-            logging.FileHandler(f"{config['logging']['logs_path']}/processing_crops_stats.log", mode="w")  # Save to file
+            logging.FileHandler(f"{config['logging']['logs_path']}/processing_crops_stats_per_frame.log", mode="w")  # Save to file
         ]
     )
     logger = logging.getLogger(__name__)
@@ -547,13 +608,15 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     else:
         results = [process_row(row, config, var_config, image_crops_path, logger) for _, row in df_labels.iterrows()]
 
-    # Merge results
-    df_results = pd.DataFrame(results)
-    df_labels = pd.concat([df_labels, df_results], axis=1)
+    # Flatten list of lists into one list of dicts
+    flat_results = [r for crop_rows in results for r in crop_rows]
+
+    # Build long-format DataFrame
+    df_results = pd.DataFrame(flat_results)
 
     # Collect stats and vars info for filename
-    stats_str = "-".join(map(str, config["statistics"]["percentiles"]))
-    vars_str = "-".join(config["statistics"]["sel_vars"])
+    stats_str = "-".join(map(str, config["statistics"]["spatial"]["percentiles"]))
+    vars_str = "-".join(config["statistics"]["spatial"]["sel_vars"])
 
     # Flags for optional processing
     time_flag = "timedim" if config["statistics"].get("time_dimension", False) else None
@@ -574,7 +637,7 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     filename = "_".join([p for p in parts if p]) + "CA.csv"
 
     # Save
-    df_labels.to_csv(os.path.join(output_path, filename), index=False)
+    df_results.to_csv(os.path.join(output_path, filename), index=False)
     logger.info(f"Crop stats for {filename} saved successfully in {output_path}.")
 
     # Save overall stats
@@ -597,4 +660,4 @@ if __name__ == "__main__":
    #var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
     var_config_path = "/home/claudia/codes/ML_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
-    # nohup  3205645
+    # nohup  3939169
