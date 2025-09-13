@@ -85,6 +85,10 @@ def compute_categorical_values(values, var):
         # calculate total number of radar_prec in the frame by summing  it up 
         values = np.nansum(values) # total mm/h in the frame
 
+    if var == 'precipitation':
+        # calculate total number of precipitation in the frame by summing  it up 
+        values = np.nansum(values) # total mm/h in the frame
+        
     return values
 
 

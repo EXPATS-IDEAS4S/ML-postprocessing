@@ -12,7 +12,7 @@ experiment:
   from_crop_stats: false  # Use crop stats file instead of crop list file
   
 logging:  
-  logs_path: /home/Daniele/codes/VISSL_postprocessing/logs
+  logs_path: /home/claudia/codes/ML_postprocessing/logs
   log_level: INFO
 
 # ==========================
@@ -46,11 +46,11 @@ data:
 statistics:
   spatial:
     sel_vars:
-      - cth
-      - cma
-      - cot
-      - cph
-      - sat_prec
+      #- cth
+      #- cma
+      #- cot
+      #- cph
+      - precipitation
       - lightning
       - radar_prec
     percentiles: [50, 99, 25, 75]  # percentiles to compute (IQR can be derived from 25 and 75)

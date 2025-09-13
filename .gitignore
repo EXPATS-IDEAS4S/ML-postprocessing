@@ -1,6 +1,6 @@
 nohup.out
 
-credentials_buckets.py
+utils/buckets/credentials_buckets.py
 
 # Ignore Python cache
 __pycache__/
@@ -8,3 +8,4 @@ __pycache__/
 *$py.class
 
 old/
+/home/claudia/codes/.venv

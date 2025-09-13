@@ -165,6 +165,7 @@ def process_row_old(row, config, var_config, image_crops_path, logger):
         for day_key, times in times_by_day.items():
             try:
                 y, m, d = map(int, day_key.split("-"))
+                # insert here var if and then set path * filename
                 bucket_filename = (
                     f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
                 )
@@ -342,8 +343,7 @@ def process_variable(var, times, lat_min, lat_max, lon_min, lon_max, config, var
     for day_key, times_for_day in get_time_windows(times, var=var).items():
         print('processing day:', day_key, 'var:', var)
         values = load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_max, times_for_day, logger, mode)
-        print(values)
-        exit()
+
         if mode == "aggregated":
             values_append.append(values)
         elif mode == "per_frame":
@@ -393,7 +393,6 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
                 frame_values_cma = ds_subset_cma.sel(time=t).values.flatten()
                 frame_values = filter_cma_values(frame_values, frame_values_cma, var)
                 print('frame values:', frame_values)
-                exit()
 
                 per_frame_list.append({
                     "time": np.datetime64(t).astype("datetime64[s]").item(),
@@ -480,6 +479,7 @@ def extract_geotime_metadata(coords, times):
 
 # === MAIN ===
 def main(config_path: str = "config.yaml", var_config_path: str = "variables_metadata.yaml"):
+    
     config = load_config(config_path)
     var_config = load_config(var_config_path)
 
@@ -592,7 +592,9 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
 
 
 if __name__ == "__main__":
-    config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
-    var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
+    #config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
+    config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_config.yaml"
+   #var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
+    var_config_path = "/home/claudia/codes/ML_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
     # nohup  3205645
