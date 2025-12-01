@@ -22,11 +22,14 @@ import seaborn as sns
 import cmcrameri.cm as cmc
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+import sys
 
+sys.path.append('/home/Daniele/codes/VISSL_postprocessing/')  # Adjust
 from utils.buckets.aux_functions_from_buckets import (
-    extract_variable_values, compute_categorical_values,
-    filter_cma_values, extract_datetime
+    extract_variable_values, extract_datetime
 )
+from utils.processing.datetime_utils import extract_datetime_from_nc
+from utils.processing.stats_utils import compute_categorical_values, filter_cma_values
 from utils.buckets.get_data_from_buckets import Initialize_s3_client
 from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 
@@ -39,21 +42,24 @@ CONFIG = {
         'imerg': 'expats-imerg-prec',
         'crop': 'expats-msg-training'
     },
-    "run_name": "dcv2_ir108_128x128_k9_expats_70k_200-300K_CMA",
-    "sample_type": "all",
-    "n_subsamples": 33729,
+    "run_name": "dcv2_vit_k10_ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc",
+    "sample_type": "closest",
+    "n_subsamples": 1000,
     "use_heatmap": False,
     "apply_cma_filter": True,
     "n_samples": None,
     "plot_classes_together": False,
     "filter_daytime": False,
-    "filter_imerg_minutes": True,
-    "var_x": "cot",
+    "filter_imerg_minutes": False,
+    "var_x": "cma",
     "var_y": "cth",
     "var_color": "precipitation",
     "percentiles": [50],
     "colormap": cmc.bamako,
-    "use_cached": True
+    "use_cached": True,
+    "epoch": 800,
+    "nc": True,
+    "crop_dir": "/data1/crops/ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc/nc/1"
 }
 
 VARIABLE_INFO = {
@@ -88,9 +94,11 @@ def load_dataset(n_samples=None):
         filter_tags.append("imergmin")
     filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
-    path = f'/data1/fig/{CONFIG["run_name"]}/{CONFIG["sample_type"]}/crop_list_{CONFIG["run_name"]}_{CONFIG["n_subsamples"]}_{CONFIG["sample_type"]}{filter_suffix}.csv'
+    path = f'/data1/fig/{CONFIG["run_name"]}/epoch_{CONFIG["epoch"]}/{CONFIG["sample_type"]}/crop_list_{CONFIG["run_name"]}_{CONFIG["n_subsamples"]}_{CONFIG["sample_type"]}{filter_suffix}.csv'
     df = pd.read_csv(path)
     df = df[df['label'] != -100]
+    print(df.columns)
+    print(df.head())
 
     if n_samples is not None:
         df = df.sample(n=n_samples, random_state=42)
@@ -119,15 +127,27 @@ def aggregate(values, var, percentile):
         return compute_categorical_values(values, var)
     return np.nanpercentile(values, percentile) if len(values) > 0 else np.nan
 
-def is_night(path: str) -> bool:
+def is_night(path: str, nc: bool, crop_dir: str) -> bool:
     """Check if timestamp is during night (18:00–04:00)."""
-    ts = extract_datetime(path)
-    return ts['hour'] >= 18 or ts['hour'] < 4
+    if nc:
+        ts = extract_datetime_from_nc(path, crop_dir)
+        ts = pd.to_datetime(ts[0])
+        hour = ts.hour
+        return hour >= 18 or hour < 4
+    else:
+        ts = extract_datetime(path)
+        return ts['hour'] >= 18 or ts['hour'] < 4
 
-def should_skip_precip_minute(path: str) -> bool:
+def should_skip_precip_minute(path: str, nc: bool, crop_dir: str) -> bool:
     """Skip IMERG timestamps at :15 or :45."""
-    ts = extract_datetime(path)
-    return ts['minute'] in [15, 45]
+    if nc:
+        ts = extract_datetime_from_nc(path, crop_dir)[0]
+        #extract minute
+        minute = pd.to_datetime(ts).minute
+        return minute in [15, 45]
+    else:
+        ts = extract_datetime(path)
+        return ts['minute'] in [15, 45]
 
 def get_color_norm(var_color):
     """Return normalization object for color mapping."""
@@ -174,7 +194,7 @@ def plot_data(x, y, color, label, percentile):
     if VARIABLE_INFO[CONFIG['var_y']]['dir']=='decr': ax.invert_yaxis()
 
     # Save figure
-    out_dir = f'/data1/fig/{CONFIG["run_name"]}/{CONFIG["sample_type"]}/scatterplots/'
+    out_dir = f'/data1/fig/{CONFIG["run_name"]}/epoch_{CONFIG["epoch"]}/{CONFIG["sample_type"]}/scatterplots/'
     os.makedirs(out_dir, exist_ok=True)
     suffix = 'heatmap' if CONFIG["use_heatmap"] else 'scatter'
     fname = f"{CONFIG['var_x']}_{CONFIG['var_y']}_perc_{percentile}_3rd-var_{CONFIG['var_color']}_label{label}_{CONFIG['run_name']}_{CONFIG['sample_type']}_{suffix}.png"
@@ -189,20 +209,27 @@ def main():
     df = load_dataset(CONFIG["n_samples"])
 
     for percentile in CONFIG["percentiles"]:
-        cache_file = f'/data1/fig/{CONFIG["run_name"]}/{CONFIG["sample_type"]}/crops_stats_{CONFIG["run_name"]}_{CONFIG["sample_type"]}_{CONFIG["n_subsamples"]}.csv'
-        if CONFIG["use_cached"] and os.path.exists(cache_file):
+        cache_file = f'/data1/fig/{CONFIG["run_name"]}/epoch_{CONFIG["epoch"]}/{CONFIG["sample_type"]}/crops_stats_dcv2_vit_k10_ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc_closest_1000.csv'
+        print(cache_file)
+        if True: # CONFIG["use_cached"] and os.path.exists(cache_file):
             cached_df = pd.read_csv(cache_file)
+            print(f"Loaded cached data from {cache_file}")
+            print(cached_df.columns)
+            print(cached_df.head())
+            exit()
         else:
             enriched_rows = []
             for label in sorted(df['label'].unique()):
                 df_label = df[df['label']==label]
                 for _, row in df_label.iterrows():
                     path = row['path'].split('/')[-1]
-                    if 'cot' in [CONFIG['var_x'], CONFIG['var_y']] and is_night(path):
+                    if 'cot' in [CONFIG['var_x'], CONFIG['var_y']] and is_night(path, CONFIG["nc"], CONFIG["crop_dir"]):
                         continue
-                    if CONFIG['var_color']=='precipitation' and should_skip_precip_minute(path):
+                    if CONFIG['var_color']=='precipitation' and should_skip_precip_minute(path, CONFIG["nc"], CONFIG["crop_dir"]):
                         continue
                     vx, vy, vc = process_row(row, CONFIG['var_x'], CONFIG['var_y'], CONFIG['var_color'], s3_client)
+                    print(vx, vy, vc)
+                    exit()
                     if len(vc)==0 or np.all(np.isnan(vc)):
                         continue
                     row_data = row.copy()
@@ -215,7 +242,7 @@ def main():
             cached_df.to_csv(cache_file, index=False)
 
         # Convert VAR_Y to km
-        cached_df[f'{CONFIG["var_y"]}-{percentile}'] = cached_df[f'{CONFIG["var_y"]}_val'] / 1000
+        #cached_df[f'{CONFIG["var_y"]}-{percentile}'] = cached_df[f'{CONFIG["var_y"]}_val'] / 1000
 
         if CONFIG["plot_classes_together"]:
             # TODO: Implement combined scatter plot

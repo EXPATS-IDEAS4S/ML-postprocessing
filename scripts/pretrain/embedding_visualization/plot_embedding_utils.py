@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-import cv2
+#import cv2
 from matplotlib.colors import CSS4_COLORS
 from matplotlib import colors as mcolors  # Correct import for colors
 import re
@@ -118,11 +118,11 @@ def add_trajectory_case_study(df_subset, ax, fig, cmap, colorbar=False):
 
 
 
-def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filename, df_subset2=None):
+def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filename, comp_name1, comp_name2, df_subset2=None):
 
     # Plot
     fig, ax = plt.subplots(figsize=(10, 10))
-    scatter = ax.scatter(df_subset1['Component_1'], df_subset1['Component_2'],
+    scatter = ax.scatter(df_subset1[comp_name1], df_subset1[comp_name2],
                         c=df_subset1['color'].tolist(), alpha=0.5, s=20)
 
     if df_subset2 is not None:
@@ -256,6 +256,8 @@ def plot_embedding_dots_iterative_case_study(df_subset1, colors_per_class1_norm,
         fig.savefig(step_filename, bbox_inches='tight')
         plt.close(fig)
 
+
+
 def plot_embedding_dots_iterative_test_msg_icon(
     df_subset1, colors_per_class1_norm, output_path, filename, df_subset2, legend=False
 ):
@@ -284,16 +286,17 @@ def plot_embedding_dots_iterative_test_msg_icon(
 
     # Plot base embedding
     for i in range(max_steps):
-        fig, ax = plt.subplots(figsize=(14, 12))
+        fig, ax = plt.subplots(figsize=(15, 12))
 
         #extract time 
-        time = df_case_study_msg.iloc[i]['location'].split('/')[-1].split('_')[4]
-        print(time)
-
+        date = df_case_study_msg.iloc[i]['location'].split('/')[-1].split('_')[0]
+        time = df_case_study_msg.iloc[i]['location'].split('/')[-1].split('_')[1]
+        print(date, time)
+        
         # Scatter the full embedding space
         ax.scatter(
-            df_subset1['Component_1'], 
-            df_subset1['Component_2'],
+            df_subset1['comp_1'], 
+            df_subset1['comp_2'],
             c=df_subset1['color'].tolist(), 
             alpha=0.1, 
             s=5
@@ -303,20 +306,20 @@ def plot_embedding_dots_iterative_test_msg_icon(
         if i < len(df_case_study_msg):
             current_msg = df_case_study_msg.iloc[:i+1]
             ax.scatter(
-                current_msg['Component_1'], 
-                current_msg['Component_2'], 
-                c= "red", #current_msg['color'],  # Follow the same color coding as the background
+                current_msg['comp_1'], 
+                current_msg['comp_2'], 
+                c= "blue", #current_msg['color'],  # Follow the same color coding as the background
                 s=120, 
-                edgecolor="red", 
+                edgecolor="blue", 
                 linewidth=2, 
                 zorder=5, 
                 label='MSG Trajectory Points' if i == 0 else ""
             )
             if len(current_msg) > 1:
                 ax.plot(
-                    current_msg['Component_1'], 
-                    current_msg['Component_2'], 
-                    color="red", 
+                    current_msg['comp_1'], 
+                    current_msg['comp_2'], 
+                    color="blue", 
                     linewidth=2, 
                     alpha=0.8, 
                     label='MSG Trajectory' if i == 0 else ""
@@ -326,20 +329,20 @@ def plot_embedding_dots_iterative_test_msg_icon(
         if i < len(df_case_study_icon):
             current_icon = df_case_study_icon.iloc[:i+1]
             ax.scatter(
-                current_icon['Component_1'], 
-                current_icon['Component_2'], 
-                c= 'blue', #current_icon['color'],  # Follow the same color coding as the background
+                current_icon['comp_1'], 
+                current_icon['comp_2'], 
+                c= 'orange', #current_icon['color'],  # Follow the same color coding as the background
                 s=120, 
-                edgecolor="blue", 
+                edgecolor="orange", 
                 linewidth=2, 
                 zorder=5, 
                 label='ICON Trajectory Points' if i == 0 else ""
             )
             if len(current_icon) > 1:
                 ax.plot(
-                    current_icon['Component_1'], 
-                    current_icon['Component_2'], 
-                    color="blue", 
+                    current_icon['comp_1'], 
+                    current_icon['comp_2'], 
+                    color="orange", 
                     linewidth=2, 
                     alpha=0.8, 
                     label='ICON Trajectory' if i == 0 else ""
@@ -349,65 +352,100 @@ def plot_embedding_dots_iterative_test_msg_icon(
 
         if i < len(df_case_study_msg):
             # get image path and filename
-            folder_msg_images = df_case_study_msg.iloc[i]['msg_image_path']
-            msg_image_filename = df_case_study_msg.iloc[i]['location'].split('/')[-1]
-            msg_image = Image.open(folder_msg_images + msg_image_filename)
-            msg_offset_image = OffsetImage(msg_image, zoom=0.4)
+            #folder_msg_images = df_case_study_msg.iloc[i]['msg_image_path']
+            msg_image_filename = df_case_study_msg.iloc[i]['location']#.split('/')[-1]
+            msg_image = Image.open(msg_image_filename)
+            msg_offset_image = OffsetImage(msg_image, zoom=1.4)
             msg_ab = AnnotationBbox(
                 msg_offset_image, 
                 (0.2, 0.05),  # Upper-left corner
-                frameon=False, 
+                frameon=True, #add color frame
+                #facecolor='white',  # Set the face color to white
+                bboxprops={"edgecolor": 'blue', "linewidth": 2},
                 xycoords='axes fraction'
             )
             ax.add_artist(msg_ab)
             # Add 'MSG' label above the image
+            # Add MSG label above image
+            ax.text(
+                0.2, 0.05 + 0.15,  # slightly above the image (adjust 0.12 if needed)
+                "MSG",
+                color="blue",
+                fontsize=14,
+                fontweight="bold",
+                ha="center",
+                va="bottom",
+                transform=ax.transAxes
+            )
          
 
         # Add ICON crop image in the lower-left corner
         if i < len(df_case_study_icon):
-            folder_icon_images = df_case_study_icon.iloc[i]['icon_image_path']
-            icon_image_filename = df_case_study_icon.iloc[i]['location'].split('/')[-1]
-            icon_image = Image.open(folder_icon_images + icon_image_filename)
-            icon_offset_image = OffsetImage(icon_image, zoom=0.4)
+            #folder_icon_images = df_case_study_icon.iloc[i]['icon_image_path']
+            icon_image_filename = df_case_study_icon.iloc[i]['location']#.split('/')[-1]
+            icon_image = Image.open(icon_image_filename)
+            icon_offset_image = OffsetImage(icon_image, zoom=1.4)
             icon_ab = AnnotationBbox(
                 icon_offset_image, 
                 (0.8, 0.05),  # Lower-left corner
-                frameon=False, 
+                frameon=True,
+                bboxprops={"edgecolor": 'orange', "linewidth": 2},
                 xycoords='axes fraction'
             )
             ax.add_artist(icon_ab)
             # Add 'ICON' label above the image
+            # Add ICON label above image
+            ax.text(
+                0.8, 0.05 + 0.15,  # slightly above the image
+                "ICON",
+                color="orange",
+                fontsize=14,
+                fontweight="bold",
+                ha="center",
+                va="bottom",
+                transform=ax.transAxes
+            )
 
-        # Add legend
-        if legend:
-            handles = [
-                plt.Line2D([0], [0], color="red", label="MSG Trajectory"),
-                plt.Line2D([0], [0], color="blue", label="ICON Trajectory"),
-            ]
-            ax.legend(handles=handles, title="", fontsize=14, loc="upper right")
+        # # Add legend
+        # if legend:
+        #     handles = [
+        #         plt.Line2D([0], [0], color="blue", label="MSG Trajectory"),
+        #         plt.Line2D([0], [0], color="orange", label="ICON Trajectory"),
+        #     ]
+        #     ax.legend(handles=handles, title="", fontsize=14, loc="upper right")
             
 
-
         # Set title and remove axes spines
-        ax.set_title(f"Marche Flood 15.09.22 - {time}", fontsize=20, fontweight='bold')
+        ax.set_title(f"{date} - {time}", fontsize=20, fontweight='bold')
         ax.title.set_position([0.5, 1.2]) 
         ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
         for spine in ['top', 'right', 'bottom', 'left']:
             ax.spines[spine].set_visible(False)
 
         # Set limits
-        # Set limits
-        padding = 0.03
-        extra_bottom_space = 0.4  # Proportion of extra space to add at the bottom
-        x_min, x_max = np.min(df_subset2['Component_1']), np.max(df_subset2['Component_1'])
-        y_min, y_max = np.min(df_subset2['Component_2']), np.max(df_subset2['Component_2'])
+        padding = 0.01
+        extra_bottom_space = -0.15  # amount to shift feature space upward
+        x_min, x_max = np.min(df_subset2['comp_1']), np.max(df_subset2['comp_1'])
+        y_min, y_max = np.min(df_subset2['comp_2']), np.max(df_subset2['comp_2'])
 
-        ax.set_xlim([x_min - padding, x_max + padding])
-        ax.set_ylim([y_min - padding - (y_max - y_min) * extra_bottom_space, y_max + padding])
+        # shrink factor for feature space
+        shrink_factor = 1.4  # >1 zooms out, <1 zooms in
+        x_center = (x_max + x_min) / 2
+        y_center = (y_max + y_min) / 2
+        x_half_range = (x_max - x_min) / 2 * shrink_factor
+        y_half_range = (y_max - y_min) / 2 * shrink_factor
+
+        # shift y-axis up by extra_bottom_space proportion of height
+        y_shift = (y_max - y_min) * extra_bottom_space
+
+        ax.set_xlim([x_center - x_half_range, x_center + x_half_range])
+        ax.set_ylim([y_center - y_half_range + y_shift, y_center + y_half_range + y_shift])
 
 
-        # Save the figure
-        step_filename = f"{output_path}{filename.split('.')[0]}_trajectory_step_{i+1}.png"
+
+
+        # Save the figure, the i should have 2 figures (01,02, ...,10)
+        step_filename = f"{output_path}{filename.split('.')[0]}_trajectory_step_{date}-{time}_{i+1:02d}.png"
         fig.savefig(step_filename, bbox_inches='tight')
         plt.close(fig)
         
@@ -606,6 +644,73 @@ def plot_embedding_crops_binned_grid(df, output_path, filename, grid_size=10, zo
     print("Saved:", save_path)
 
 
+def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, selection="closest", random_seed=None):
+    """
+    Plots crops in a table format where each column corresponds to a label,
+    and 'n' images (rows) are selected based on the specified selection method.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing image paths, labels, and distances.
+        output_path (str): Path to save the output plot.
+        filename (str): Name of the output file.
+        n (int): Number of crops to display per label.
+        selection (str): Method of selection - "closest", "farthest", or "random".
+    """
+    labels = sorted(df['label'].unique())
+    num_labels = len(labels)
+    
+    fig, axes = plt.subplots(n, num_labels, figsize=(num_labels * 2, n * 2))
+    fig.suptitle(f"Crops Sorted by {selection.capitalize()} Distance from Centroid", 
+                 fontsize=14, fontweight="bold")
+
+    # Ensure axes is always 2D
+    if n == 1:
+        axes = np.expand_dims(axes, axis=0)
+    if num_labels == 1:
+        axes = np.expand_dims(axes, axis=1)
+
+    for j, label in enumerate(labels):
+        subset = df[df['label'] == label].sort_values(by='distance', ascending=True)
+
+        # Select crops based on the specified method
+        if selection == "closest":
+            subset = subset.tail(n)
+        elif selection == "farthest":
+            subset = subset.head(n)
+        elif selection == "random":
+            subset = subset.sample(n=min(n, len(subset)), random_state=random_seed)
+        else:
+            raise ValueError("Invalid selection method. Choose 'closest', 'farthest', or 'random'.")
+
+        subset = subset.reset_index(drop=True)
+
+        for i in range(n):
+            ax = axes[i, j]
+            if i < len(subset):
+                img_path = subset.loc[i, 'path']
+                if img_path and os.path.exists(img_path):
+                    img = Image.open(img_path).convert('L')
+                    ax.imshow(img, cmap='gray')
+                else:
+                    print(f"Missing image: {img_path}")
+                    ax.imshow(np.zeros((10, 10)), cmap='gray')  # Placeholder
+            ax.axis('off')
+
+            # Add row number on the left of first column
+            if j == 0:
+                ax.set_ylabel(f"{i+1}", fontsize=10, fontweight="bold", rotation=0, labelpad=20, va='center')
+
+        # Add label name on top of each column
+        axes[0, j].set_title(f"Label {label}", fontsize=12, fontweight="bold")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    output_file = os.path.join(output_path, f"{filename.split('.')[0]}_{n}_{selection}_crops_table_transposed_rs-{random_seed}.png")
+    plt.savefig(output_file, bbox_inches='tight', dpi=300)
+    plt.close()
+
+    print(f"✅ Saved plot: {output_file}")
+
+
 def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closest"):
     """
     Plots crops in a table format where each row corresponds to a label, 
@@ -633,9 +738,9 @@ def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closes
 
         # Select crops based on the specified method
         if selection == "closest":
-            subset = subset.head(n)
-        elif selection == "farthest":
             subset = subset.tail(n)
+        elif selection == "farthest":
+            subset = subset.head(n)
         elif selection == "random":
             subset = subset.sample(n=min(n, len(subset)), random_state=42)  # Ensure at least `n` samples
         else:
