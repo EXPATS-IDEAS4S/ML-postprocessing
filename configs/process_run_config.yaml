@@ -51,8 +51,8 @@ statistics:
       #- cot
       #- cph
       - precipitation
-      - lightning
-      - radar_prec
+      - euclid_msg_grid
+      - RR
     percentiles: [50, 99, 25, 75]  # percentiles to compute (IQR can be derived from 25 and 75)
     #TODO implement something to evalaute the cloud organization (Iorg, spectral analysis, aspect_ratio, aggregation...)
 
