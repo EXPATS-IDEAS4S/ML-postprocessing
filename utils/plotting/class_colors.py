@@ -15,3 +15,9 @@ colors_per_class1_names = {
     '13': 'olive',
     '14': 'crimson'
 }
+
+class_groups = {
+        'Convection': [2, 3, 4],
+        'Overcast': [5, 6, 7],
+        'Broken Clouds': [0, 1, 8],
+    }

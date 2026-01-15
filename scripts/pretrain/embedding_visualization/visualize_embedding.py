@@ -12,10 +12,13 @@ import os
 from glob import glob
 import pandas as pd
 import numpy as np
+import sys
 
-from scripts.pretrain.dim_reduction.plot_embedding_utils import (
+sys.path.append('/home/Daniele/codes/VISSL_postprocessing/')
+from scripts.pretrain.embedding_visualization.plot_embedding_utils import (
     plot_average_crop_shapes,
     plot_embedding_crops_table,
+    plot_embedding_crops_table_transposed,
     plot_embedding_crops_new,
     plot_embedding_dots_iterative_test_msg_icon,
     scale_to_01_range,
@@ -35,26 +38,27 @@ from scripts.pretrain.dim_reduction.plot_embedding_utils import (
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-RUN_NAME = "dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1"
-CROPS_NAME = "clips_ir108_100x100_8frames_2013-2020"
+RUN_NAME = "dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"
+CROPS_NAME = "ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc"
 RANDOM_STATE = 3
 SAMPLING_TYPE = "all"            # Options: "all", "subsample"
 REDUCTION_METHOD = "tsne"        # Options: "tsne", "isomap"
 EPOCH = 800
 FILE_EXTENSION = "png"
 SUBSTITUTE_PATH = True
-VARIABLE_TYPE = "IR_108_cm"      # e.g. "WV_062-IR_108"
+VARIABLE_TYPE = "IR_108"      # e.g. "WV_062-IR_108"
 VIDEO = True
-N_FRAMES = 8
+N_FRAMES = 1
+RANDOM_SEEDS = [0, 8, 16, 23, 42]  # For random selection in tables
 
 # Visualization settings
 VMIN, CENTER, VMAX = -60, 0, 5
-CMAP = "gray"  # or create_WV_IR_diff_colormap(VMIN, CENTER, VMAX)
+CMAP = "gray_r"  # or create_WV_IR_diff_colormap(VMIN, CENTER, VMAX)
 OUTPUT_PATH = f"/data1/fig/{RUN_NAME}/epoch_{EPOCH}/{SAMPLING_TYPE}/"
 FILENAME = f"{REDUCTION_METHOD}_pca_cosine_perp-50_{RUN_NAME}_{RANDOM_STATE}_epoch_{EPOCH}.npy"
 
 # Input data
-IMAGE_CROPS_PATH = f"/data1/crops/{CROPS_NAME}/img/{VARIABLE_TYPE}/1/"
+IMAGE_CROPS_PATH = f"/data1/crops/{CROPS_NAME}/img/{VARIABLE_TYPE}/"
 LIST_IMAGE_CROPS = sorted(glob(IMAGE_CROPS_PATH + "*." + FILE_EXTENSION))
 
 # Class color mapping
@@ -85,6 +89,10 @@ def load_labels() -> pd.DataFrame:
     csv_path = f"{OUTPUT_PATH}merged_tsne_crop_list_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}.csv"
     df = pd.read_csv(csv_path)
     df = df.loc[:, ~df.columns.str.contains("^color")]  # drop pre-existing color cols
+    #print how many rows per label are there
+    print("Label distribution:")
+    print(df["label"].value_counts())
+    #exit()
     return df
 
 
@@ -97,7 +105,10 @@ def prepare_colors(df: pd.DataFrame) -> pd.DataFrame:
 
 def plot_main_embeddings(df: pd.DataFrame):
     """Generate main embedding visualizations."""
-    plot_embedding_dots(df, COLORS_PER_CLASS, OUTPUT_PATH, FILENAME)
+    plot_embedding_dots(df, COLORS_PER_CLASS, OUTPUT_PATH, FILENAME, 'Component_1', 'Component_2')
+    #plot_embedding_crops_table(df, OUTPUT_PATH, FILENAME, n=5, selection="closest")
+    #print(df['path'].iloc[0])
+    #plot_embedding_crops_new(df, OUTPUT_PATH, FILENAME)
     # Example alternatives:
     # plot_embedding_filled(df, COLORS_PER_CLASS, OUTPUT_PATH, FILENAME, df)
     # plot_classwise_grids(df, OUTPUT_PATH, FILENAME, CMAP, n=100, selection="closest")
@@ -113,19 +124,28 @@ def plot_video_frames(df_labels: pd.DataFrame):
     if os.path.exists(expanded_csv):
         df_expanded = pd.read_csv(expanded_csv)
         df_expanded = df_expanded[df_expanded["label"] != -100]
-
+        print(df_expanded)
+        
         for frame_idx in range(N_FRAMES):
             df_frame = df_expanded[df_expanded["frame_idx"] == frame_idx]
             if not df_frame.empty:
-                plot_embedding_crops_grid(
-                    df_frame,
-                    OUTPUT_PATH,
-                    filename=f"{os.path.splitext(FILENAME)[0]}_frame{frame_idx}.png",
-                    variable_type=VARIABLE_TYPE,
-                    cmap=CMAP,
-                    grid_size=20,
-                    zoom=0.33,
-                )
+                # plot_embedding_crops_grid(
+                #     df_frame,
+                #     OUTPUT_PATH,
+                #     filename=f"{os.path.splitext(FILENAME)[0]}_frame{frame_idx}.png",
+                #     variable_type=VARIABLE_TYPE,
+                #     cmap=CMAP,
+                #     grid_size=20,
+                #     zoom=0.33,
+                # )
+                for random_seed in RANDOM_SEEDS:
+                    plot_embedding_crops_table_transposed(df_frame, 
+                                            OUTPUT_PATH, 
+                                            f"{os.path.splitext(FILENAME)[0]}_frame{frame_idx}.png", 
+                                            n=10, 
+                                            selection="random",
+                                            random_seed=random_seed
+                                            )
     else:
         substitute_paths_and_plot(df_labels)
 
@@ -149,6 +169,13 @@ def substitute_paths_and_plot(df_labels: pd.DataFrame):
             df_frame = pd.DataFrame(frame_rows)
             df_frame = df_frame[df_frame["label"] != -100]
 
+            #save expanded dataframe
+            expanded_csv = os.path.join(
+                os.path.dirname(OUTPUT_PATH),
+                f"merged_tsne_crop_list_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}_expanded.csv"
+            )
+            df_frame.to_csv(expanded_csv, index=False)
+
             if not df_frame.empty:
                 plot_embedding_crops_grid(
                     df_frame,
@@ -159,6 +186,11 @@ def substitute_paths_and_plot(df_labels: pd.DataFrame):
                     grid_size=20,
                     zoom=0.33,
                 )
+                plot_embedding_crops_table(df_frame, 
+                                           OUTPUT_PATH, 
+                                           f"{os.path.splitext(FILENAME)[0]}_frame{frame_idx}.png", 
+                                           n=10, 
+                                           selection="closest")
     else:
         if SUBSTITUTE_PATH:
             df_labels["path"] = df_labels["crop_index"].apply(
@@ -186,7 +218,7 @@ def main():
     df_labels = load_labels()
     df_prepared = prepare_colors(df_labels)
 
-    plot_main_embeddings(df_prepared)
+    #plot_main_embeddings(df_prepared)
     if VIDEO:
         plot_video_frames(df_labels)
 

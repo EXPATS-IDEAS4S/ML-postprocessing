@@ -345,7 +345,7 @@ def process_variable(var, times, lat_min, lat_max, lon_min, lon_max,
     for day_key, times_for_day in get_time_windows(times, var=var).items():
         print('processing day:', day_key, 'var:', var)
         values = load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_max, times_for_day, logger, mode)
-
+        #print(values)
         if mode == "aggregated":
             values_append.append(values)
         elif mode == "per_frame":
@@ -409,12 +409,13 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
         if my_obj_cma is None:
             logger.warning(f"CMA file not found for day: {day_key}")
             return np.array([np.nan]) if mode == "aggregated" else []
-
+        #print(xr.open_dataset(io.BytesIO(my_obj)))
         # Open datasets
         ds_day = xr.open_dataset(io.BytesIO(my_obj))[var].sel(
             lat=slice(lat_min, lat_max),
             lon=slice(lon_min, lon_max)
         )
+        
         ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"].sel(
             lat=slice(lat_min, lat_max),
             lon=slice(lon_min, lon_max)
@@ -470,7 +471,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
                 "crop": crop_filename,
                 "var": var,
                 #"frame": None,
-                "time": None,
+                "time": times[0],
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,
             }
@@ -498,7 +499,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
             "crop": crop_filename,
             "var": var,
             #"frame": None,
-            "time": None,
+            "time": times[0],
             "lat_mid": lat_mid,
             "lon_mid": lon_mid,
         }
@@ -620,7 +621,8 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
 
     csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
     df_labels = pd.read_csv(csv_filename)
-    #print(df_labels)
+    print(df_labels)
+    
     #print(f"Loaded {len(df_labels)} rows from crop list.")
     logger.info(f"Loaded {len(df_labels)} rows from crop list.")
 
@@ -666,24 +668,24 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     df_results.to_csv(os.path.join(output_path, filename), index=False)
     logger.info(f"Crop stats for {filename} saved successfully in {output_path}.")
 
-    # Save overall stats
-    continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
-    continuous_stats.columns = [
-        "_".join(col).strip() for col in continuous_stats.columns.values
-    ]
-    continuous_stats.reset_index(inplace=True)
-    continuous_stats.to_csv(
-        f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}CA.csv",
-        index=False,
-    )
-    logger.info("Cluster-level stats saved successfully.")
+    # # Save overall stats
+    # continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
+    # continuous_stats.columns = [
+    #     "_".join(col).strip() for col in continuous_stats.columns.values
+    # ]
+    # continuous_stats.reset_index(inplace=True)
+    # continuous_stats.to_csv(
+    #     f"{output_path}clusters_stats_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}CA.csv",
+    #     index=False,
+    # )
+    # logger.info("Cluster-level stats saved successfully.")
 
 
 
 if __name__ == "__main__":
-    #config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
-    config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_config.yaml"
-   #var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
-    var_config_path = "/home/claudia/codes/ML_postprocessing/configs/variables_metadata.yaml"
+    config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
+    #config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_config.yaml"
+    var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
+    #var_config_path = "/home/claudia/codes/ML_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
-    # nohup  3939169
+    # nohup  855373

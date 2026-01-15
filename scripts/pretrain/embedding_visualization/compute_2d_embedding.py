@@ -52,12 +52,15 @@ import openTSNE
 
 # ---------------- CONFIG ---------------- #
 CONFIG = {
-    "scales": ["dcv2_ir108_200x200_k9_expats_70k_200-300K_closed-CMA"],
-    "epochs": [500, 800],
-    "random_states": [0, 3, 16, 23, 57],
-    "n_crops": 70094,
+    "scales": ["dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"],
+    "epochs": [800],
+    "feature_folder": "/data1/runs/dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective/test_features/epoch_800/HAIL", 
+    "output_path": "/data1/fig/dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective/test",
+    "filename_suffix": "HAIL",
+    "random_states": [3],#[0, 3, 16, 23, 57],
+    "n_crops": 75002,
     "sampling_type": "all",  # Options: 'random', 'closest', 'farthest', 'all'
-    "methods": ["isomap", "tsne_sklearn", "tsne_opentsne"],
+    "methods": ["tsne_opentsne"],#["isomap", "tsne_sklearn", "tsne_opentsne"],
     # Parameters for Isomap
     "isomap": {
         "n_neighbors": 10,
@@ -81,8 +84,8 @@ CONFIG = {
 # ---------------- UTILS ---------------- #
 def load_features(scale: str, epoch: int, n_crops: int) -> np.ndarray:
     """Load and reshape feature data for a given scale and epoch."""
-    feature_file = os.path.join(
-        f"/data1/runs/{scale}/features/epoch_{epoch}/",
+    feature_file = os.path.join( CONFIG["feature_folder"]
+        ,
         "rank0_chunk0_train_heads_features.npy"
     )
     data = np.load(feature_file)
@@ -91,10 +94,10 @@ def load_features(scale: str, epoch: int, n_crops: int) -> np.ndarray:
 
 def save_embedding(embedding, scale: str, epoch: int, method: str, random_state: int, extra_tag: str = ""):
     """Save embedding results as .npy file."""
-    output_path = f"/data1/fig/{scale}/epoch_{epoch}/{CONFIG['sampling_type']}/"
-    os.makedirs(output_path, exist_ok=True)
-    filename = f"{method}{extra_tag}_{scale}_{random_state}_epoch_{epoch}.npy"
-    np.save(os.path.join(output_path, filename), embedding)
+    
+    os.makedirs(CONFIG["output_path"], exist_ok=True)
+    filename = f"{method}{extra_tag}_{scale}_{random_state}_epoch_{epoch}_{CONFIG['filename_suffix']}.npy"
+    np.save(os.path.join(CONFIG["output_path"], filename), embedding)
     print(f"✅ Saved: {filename}")
 
 

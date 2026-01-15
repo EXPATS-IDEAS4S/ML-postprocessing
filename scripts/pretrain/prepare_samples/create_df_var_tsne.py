@@ -80,12 +80,12 @@ def save_output(df: pd.DataFrame, output_path: str, run_name: str, sampling_type
 def main(config_path: str):
     config = load_config(config_path)
     run_names = config["experiment"]["run_names"]
-    base_path = config["experiment"]["base_path"]
+    data_base_path = config["data"]["data_base_path"]
     output_path = config["experiment"]["path_out"]
     crop_name = config["data"]["crops_name"]
     file_extension = config["data"]["file_extension"]
-    sampling_type = config["sampling"]["type"]
-    n_subsample = config["sampling"]["n_subsample"]
+    sampling_type = config["data"]["sampling_type"]
+    n_subsample = config["data"]["n_subsample"]
     epoch = config["experiment"]["epoch"]
     random_state = config["experiment"]["random_state"]
     from_crop_stats = config["experiment"]["from_crop_stats"]
@@ -94,9 +94,11 @@ def main(config_path: str):
 
     # Get number of samples
     if sampling_type == "all":
-        image_path = f"{base_path}/crops/{crop_name}/{file_extension}/1/"
+        image_path = f"{data_base_path}/{crop_name}/{file_extension}/1/"
+        print(image_path)
         crop_path_list = sorted(glob(image_path + "*." + file_extension))
         n_samples = len(crop_path_list)
+        print(n_samples)
     else:
         n_samples = n_subsample  # default per-cluster sample size
 
@@ -105,7 +107,7 @@ def main(config_path: str):
         # Define paths
         output_path = f"{output_path}/{run_name}/epoch_{epoch}/{sampling_type}/"
         os.makedirs(output_path, exist_ok=True)
-        filename = f"{reduction_method}_pca_cosine_perp-{perplexity}_{run_name}_{random_state}_epoch_{epoch}.npy"
+        filename = f"{reduction_method}_opentsne_{run_name}_{random_state}_epoch_{epoch}.npy"
 
         # Load data
         tsne_df = load_tsne_coordinates(output_path, filename)

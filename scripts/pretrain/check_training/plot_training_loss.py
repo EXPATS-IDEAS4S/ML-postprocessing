@@ -45,7 +45,7 @@ def main(config_path: str = "config.yaml"):
     for run_name in run_names:
         print(f"Processing run: {run_name}")
 
-        file_path = os.path.join(base_path, f'runs/{run_name}', "checkpoints", "stdout.json")
+        file_path = os.path.join(base_path, f'{run_name}', "checkpoints", "stdout.json")
         output_dir = os.path.join(output_root, run_name)
         os.makedirs(output_dir, exist_ok=True)
 
