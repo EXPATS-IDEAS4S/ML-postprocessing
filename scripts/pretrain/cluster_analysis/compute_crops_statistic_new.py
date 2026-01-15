@@ -366,18 +366,44 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
     """
     try:
         y, m, d = map(int, day_key.split("-"))
-        bucket_filename = (
-            f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}"
-            f"{var_meta['bucket_filename_suffix']}"
-        )
+
+        if var == 'RR':
+            bucket_filename = (
+                f"{var_meta['bucket_filename_prefix']}{y:04d}{m:02d}{d:02d}"
+                f"{var_meta['bucket_filename_suffix']}"
+            )
+
+        elif var == 'euclid_msg_grid':
+            bucket_filename = (
+                f"{y:04d}/{m:02d}/{var_meta['bucket_filename_prefix']}{y:04d}{m:02d}{d:02d}"
+                f"{var_meta['bucket_filename_suffix']}"
+            )
+        
+        else:
+            bucket_filename = (
+                f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}"
+                f"{var_meta['bucket_filename_suffix']}"
+            )
+
+        # initialize bucket with variable specific bucket name
         s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
+
 
         # Load variable and CMA
         my_obj = read_file(s3, bucket_filename, var_meta['bucket_name'])
+
         if my_obj is None:
             logger.warning(f"File not found: {bucket_filename}")
             return np.array([np.nan]) if mode == "aggregated" else []
 
+        # if variable is RR, the file is .gz and needs to be unzipped
+        if var == 'RR':
+            # unzip my_obj file .gz
+            import gzip
+            with gzip.GzipFile(fileobj=io.BytesIO(my_obj)) as f:
+                my_obj = f.read()
+
+        # Load CMA file
         cma_filename = f"MCP_{y:04d}-{m:02d}-{d:02d}_regrid.nc"
         my_obj_cma = read_file(s3, cma_filename, "expats-cmsaf-cloud")
         if my_obj_cma is None:
@@ -413,7 +439,7 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
                 frame_values = ds_subset.sel(time=t).values.flatten()
                 frame_values_cma = ds_subset_cma.sel(time=t).values.flatten()
                 frame_values = filter_cma_values(frame_values, frame_values_cma, var)
-                print('frame values:', frame_values)
+                #print('frame values:', frame_values)
 
                 per_frame_list.append({
                     "time": np.datetime64(t).astype("datetime64[s]").item(),
