@@ -64,6 +64,7 @@ def compute_categorical_values(values, var):
         cloud_pixels = np.sum(values == 1)
         fraction_cloudy = cloud_pixels / total_pixels if total_pixels > 0 else 0
         values = fraction_cloudy
+
     elif var == 'cph':
         # Compute the fraction of liquid clouds (value == 1) over cloudy pixels (value 1 or 2)
         cloudy_pixels = np.sum((values == 1) | (values == 2))  # pixels with value 1 or 2
@@ -74,21 +75,24 @@ def compute_categorical_values(values, var):
         else:
             fraction_ice = 0  # If no cloudy pixels, set the fraction to 0
         values = fraction_ice
-    else:
-        raise ValueError('Wrong variable names!')
 
-    if var == 'lightning':
+
+    elif var == 'euclid_msg_grid':
         # calculate total number of lightning in the frame by summing them up
         values = np.nansum(values) # total number of lightning in the frame
 
-    if var == 'radar_prec':
+    elif var == 'RR':
         # calculate total number of radar_prec in the frame by summing  it up 
         values = np.nansum(values) # total mm/h in the frame
 
-    if var == 'precipitation':
+    elif var == 'precipitation':
         # calculate total number of precipitation in the frame by summing  it up 
         values = np.nansum(values) # total mm/h in the frame
-        
+    
+    else:
+        raise ValueError('Wrong variable names!')
+
+
     return values
 
 
@@ -118,6 +122,17 @@ def filter_cma_values(values, cma_values, var_name, cma_filter=True):
             return [np.nan]
         else:
             filtered = values[values > 0.1]
+    elif var_name == 'euclid_msg_grid':
+        if len(values) == 0:
+            return [0]
+        else:
+            filtered = values[values > 0]
+    elif var_name == 'RR':
+        if len(values) == 0:
+            return [0]
+        else:
+            filtered = values[values > 0]
+            
     else:
         if len(values) != len(cma_values):
             raise ValueError("Length mismatch: 'values' and 'cma_values' must be the same.")
