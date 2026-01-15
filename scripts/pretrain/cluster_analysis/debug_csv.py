@@ -21,8 +21,11 @@ sys.path.append('/home/claudia/codes/ML_postprocessing')
 def main():
 
     # csv file with 2D+1 output
-    csv_file = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000.csv'
-    output_csv_file = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
+    #csv_file = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000.csv'
+    
+    #output_csv_file = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
+    csv_file = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-precipitation_stats-50-99-25-75_frames-8_timedim_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000.csv'
+    output_csv_file = '/data1/fig/dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1/epoch_800/closest/crops_stats_vars-precipitation_stats-50-99-25-75_frames-8_timedim_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
     path_img = '/data1/crops/clips_ir108_100x100_8frames_2013-2020/img/IR_108_cm/1/'
     path_netcdf = '/data1/crops/clips_ir108_100x100_8frames_2013-2020/nc/IR_108_cm/1/'
 
@@ -35,7 +38,8 @@ def main():
     for index, row in df.iterrows():
 
         # get the ncdf file path for the crop
-        nc_filename = row['path']
+        nc_filename = row['crop']
+        # nc_filename = row['path']  # if the path column contains the full path to the nc file
 
         # get the time stamp for the crop
         timestamp_crop = row['time']
@@ -50,25 +54,27 @@ def main():
         time_part = parts[3]  # '2330'
         starting_time_str = f"{date_part} {time_part[:2]}:{time_part[2:]}"
         starting_time = datetime.strptime(starting_time_str, '%Y-%m-%d %H:%M')  
-        #print('Starting time:', starting_time)
-        #print('Timestamp crop:', timestamp_crop)
+        print('Starting time:', starting_time)
+        print('Timestamp crop:', timestamp_crop)
 
         # convert timestamp_crop to datetime object
         timestamp_crop = pd.to_datetime(timestamp_crop)
 
         # calculate time difference in minutes
         time_diff = (timestamp_crop - starting_time).total_seconds() / 60.0
-        #print('Time difference (minutes):', time_diff)
+        print('Time difference (minutes):', time_diff)
 
         # calculate frame number
         frame_number = int(time_diff / 15)  # assuming each frame is 15 minutes apart
-        #print('Calculated frame number:', frame_number) 
+        print('Calculated frame number:', frame_number) 
         corrected_frames.append(frame_number)
+        print('---')
+
 
     # add the corrected frame number to the dataframe for all rows and all variables
     df = df.copy()  # to avoid SettingWithCopyWarning
     df['frame'] = corrected_frames
-    print(df[['path', 'time', 'frame']].head(20))
+    print(df[['crop', 'time', 'frame']].head(20))
 
      # store a new csv file with the corrected frame number and the other columns from the original dataframe
     df.to_csv(output_csv_file, index=False)
