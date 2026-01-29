@@ -6,7 +6,7 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator, LogLocator
 
 # === CONFIG ===
-RUN_NAME = "dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"
+RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
 path_to_dir = f"/data1/fig/{RUN_NAME}/epoch_800/closest/"
 merged_path = os.path.join(path_to_dir, "merged_crops_stats_cvc_imergtime_closest_1000.csv")
 
@@ -27,13 +27,14 @@ COLORS_PER_CLASS = {
 
 # === VARIABLES === TODO: add offset and mult factor to adjust units
 VARIABLES = {
-    "cth": {"label": "Cloud Top Height (km)", "vmin": 8.5, "vmax": 12.5, "logscale": False, "offset": 0, "mult": 0.001},
+    "cth": {"label": "Cloud Top Height (km)", "vmin": 3.5, "vmax": 9.5, "logscale": False, "offset": 0, "mult": 0.001},
+    #"cth": {"label": "Cloud Top Height (km)", "vmin": 3, "vmax": 10, "logscale": False, "offset": 0, "mult": 0.001},
     "cot": {"label": "Cloud Optical Thickness", "vmin": 1, "vmax": 150, "logscale": True, "offset": 0, "mult": 1},
-    "cma": {"label": "Cloud Cover (%)", "vmin": 10, "vmax": 100, "logscale": False, "offset": 0, "mult": 100},
-    "ccv": {"label": "Convective Cloud Cover (%)", "vmin": 0.5, "vmax": 70, "logscale": True, "offset": 0, "mult": 1},
+    "cma": {"label": "Cloud Cover (%)", "vmin": 0, "vmax": 100, "logscale": False, "offset": 0, "mult": 100},
+    "ccv": {"label": "Convective Cloud Cover (%)", "vmin": 0.1, "vmax": 70, "logscale": True, "offset": 0, "mult": 1},
     #"precipitation": {"label": "Total Precipitation (mm)", "vmin": 5, "vmax": 5000, "logscale": True, "offset": 0, "mult": 0.5},
-    "precipitation": {"label": "Rain Rate (mm/h)", "vmin": 2, "vmax": 12, "logscale": True, "offset": 0, "mult": 1},
-    "euclid_msg_grid": {"label": "Total Lightning Count", "vmin": 2, "vmax": 160, "logscale": True, "offset": 0, "mult": 1},
+    "precipitation": {"label": "Rain Rate (mm/h)", "vmin": 0.4, "vmax": 15, "logscale": True, "offset": 0, "mult": 1},
+    "euclid_msg_grid": {"label": "Total Lightning Count", "vmin": 0.08, "vmax": 100, "logscale": True, "offset": 0, "mult": 1},
 }
 
 PERCENTILE_VARS = ["cth", "cot", "precipitation"]
@@ -42,8 +43,8 @@ PERCENTILE_COLS =  ["99"] #["25", "50", "75", "99"]
 CATEGORICAL_COL = "None"
 
 # === VARIABLES TO COMPARE ===
-VAR_X = "ccv"  # categorical
-VAR_Y = "cth"  # percentile variable
+VAR_X = "euclid_msg_grid"  # categorical
+VAR_Y = "precipitation"  # percentile variable
 
 #subdir for output plots based on variables
 subdir = f"scatter_{VAR_X}_vs_{VAR_Y}"
@@ -81,7 +82,7 @@ mean_x = extract_per_label(df, VAR_X)
 mean_y = extract_per_label(df, VAR_Y)
 print(f"Extracted mean data for VAR_X='{VAR_X}' and VAR_Y='{VAR_Y}'")
 print(f"Mean X shape: {mean_x.shape}, Mean Y shape: {mean_y.shape}")
-
+print(mean_x,  mean_y)
 
 # === PLOT FUNCTION ===
 def plot_scatter(mean_x, mean_y, var_x, var_y, output_path, separate_label=None, transparent=False):

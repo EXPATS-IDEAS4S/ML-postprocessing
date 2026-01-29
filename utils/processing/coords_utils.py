@@ -34,7 +34,7 @@ def find_latlon_boundaries_from_ds(ds_crops):
     return lat_min, lat_max, lon_min, lon_max
 
 
-def extract_coord_from_nc(filename, dir_path, engine='netcdf4'):
+def extract_coord_from_nc(filepath, engine='netcdf4'):
     """
     Extracts latitude and longitude boundaries from a NetCDF file.
 
@@ -46,7 +46,7 @@ def extract_coord_from_nc(filename, dir_path, engine='netcdf4'):
     Returns:
     dict: A dictionary containing lat_min, lat_max, lon_min, lon_max.
     """
-    filepath = os.path.join(dir_path, filename)
+    #filepath = os.path.join(dir_path, filename)
     
     try:
         ds = xr.open_dataset(filepath, engine=engine)
@@ -63,7 +63,7 @@ def extract_coord_from_nc(filename, dir_path, engine='netcdf4'):
         }
     
     except Exception as e:
-        print(f"Error reading {filename}: {e}")
+        print(f"Error reading {filepath}: {e}")
         return None
                           
 

@@ -12,6 +12,7 @@ and cloud phase (CPH).
 
 
 import numpy as np
+from scipy.ndimage import binary_closing
 
 def compute_percentile(values,stat):
     """
@@ -74,21 +75,19 @@ def compute_categorical_values(values, var):
         else:
             fraction_ice = 0  # If no cloudy pixels, set the fraction to 0
         values = fraction_ice
-    else:
-        raise ValueError('Wrong variable names!')
-
-    if var == 'lightning':
+    elif var == 'euclid_msg_grid':
         # calculate total number of lightning in the frame by summing them up
-        values = np.nansum(values) # total number of lightning in the frame
-
-    if var == 'radar_prec':
+        values = np.nansum(values) # total number of lightning in the frame  
+        
+    elif var == 'radar_prec':
         # calculate total number of radar_prec in the frame by summing  it up 
         values = np.nansum(values) # total mm/h in the frame
-
-    if var == 'precipitation':
+    elif var == 'precipitation':
         # calculate total number of precipitation in the frame by summing  it up 
         values = np.nansum(values) # total mm/h in the frame
-        
+    else:
+        raise ValueError('Wrong variable names!')
+    
     return values
 
 
@@ -112,15 +111,29 @@ def filter_cma_values(values, cma_values, var_name, cma_filter=True):
     #if the variable to be filtered is the cloud mask itself, return all the variables, since clear sky pixels are still needed to compute cloud cover
     if var_name == 'cma':
         return values
-
-    if var_name == 'precipitation':
+    elif var_name == 'precipitation':
         if len(values) == 0:
             return [np.nan]
         else:
             filtered = values[values > 0.1]
+    elif var_name == 'euclid_msg_grid':
+        if len(values) == 0:
+            return [0]
+        else:
+            filtered = values[values > 0]
     else:
         if len(values) != len(cma_values):
             raise ValueError("Length mismatch: 'values' and 'cma_values' must be the same.")
         filtered = values[cma_values == 1]
 
     return filtered if len(filtered) > 0 else [0]
+
+
+def apply_closing(ds):
+    #apply closing algorithm (structure 3x3) to fill small holes in cloud mask for each time frame
+    for t in ds.time.values:
+        cma_frame = ds.sel(time=t).values
+        cma_frame_closed = binary_closing(cma_frame==1, structure=np.ones((3,3))).astype(int)
+        ds.loc[dict(time=t)] = cma_frame_closed
+
+    return ds

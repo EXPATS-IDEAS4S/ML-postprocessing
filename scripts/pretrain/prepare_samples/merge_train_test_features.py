@@ -31,7 +31,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import xarray as xr
 
 # ================= CONFIGURATION =================
-run_name = 'dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective'
+run_name = 'dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc'
 event_types = ["PRECIP", "HAIL"]
 train_feat_dir = f'/data1/runs/{run_name}/features/epoch_800/'
 n_dim = 128  # Feature vector dimension
@@ -39,8 +39,7 @@ output_path = f'/data1/fig/{run_name}/test/'
 os.makedirs(output_path, exist_ok=True)
 
 # Paths to crops
-image_train_path = '/data1/crops/ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc/nc/1/'
-
+image_train_path = '/data1/crops/ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/nc/1/'
 # Feature files
 feature_file_train_inds = 'rank0_chunk0_train_heads_inds.npy'
 feature_file_train_features = 'rank0_chunk0_train_heads_features.npy'
@@ -127,20 +126,20 @@ def prepare_and_save_dataset():
     """Main function to load, merge, and save training and test datasets."""
     gc.collect()
 
-    # # Load training features
-    # df_train = load_features_to_df(
-    #     feature_path=train_feat_dir,
-    #     indices_file=feature_file_train_inds,
-    #     features_file=feature_file_train_features,
-    #     assignments_file=train_assignments_file,
-    #     distances_file=train_distances_file,
-    #     centroids_file=train_centroids_file,
-    #     vector_type='msg',
-    #     dataset='train',  # For logging purposes
-    #     case_study=False,
-    #     crops_path=image_train_path
-    # )
-    # print(df_train)
+    # Load training features
+    df_train = load_features_to_df(
+        feature_path=train_feat_dir,
+        indices_file=feature_file_train_inds,
+        features_file=feature_file_train_features,
+        assignments_file=train_assignments_file,
+        distances_file=train_distances_file,
+        centroids_file=train_centroids_file,
+        vector_type='msg',
+        dataset='train',  # For logging purposes
+        case_study=False,
+        crops_path=image_train_path
+    )
+    print(df_train)
     
     # # Save to CSV
     # output_train_csv = os.path.join(output_path, f'features_train_{run_name}.csv')
@@ -149,7 +148,7 @@ def prepare_and_save_dataset():
     
     df_test_list = []
     for event_type in event_types:
-        image_test_path = f'/data1/crops/test_case_essl_2021-2025_100x100_ir108_cma/{event_type}/nc/1/' #png for visualization
+        image_test_path = f'/data1/crops/test_case_essl_13-14-15-17-18-19-20-22-23-24_100x100_ir108_cma/{event_type}/nc/1/' #png for visualization
         test_feat_dir = f'/data1/runs/{run_name}/test_features/epoch_800/{event_type}/'
 
         # Load test features
@@ -173,14 +172,15 @@ def prepare_and_save_dataset():
         df_test.to_csv(output_test_csv, index=False)
         print(f"Saved test case-study dataset with metadata to: {output_test_csv}")
     
-    # # Merge datasets
-    # df_final = pd.concat([df_train, *df_test_list], ignore_index=True)
-    # print(df_final)
+    # Merge datasets
+    df_final = pd.concat([df_train, *df_test_list], ignore_index=True)
+    print(df_final)
     
-    # # Save to CSV
-    # output_csv = os.path.join(output_path, f'features_{run_name}.csv')
-    # df_final.to_csv(output_csv, index=False)
-    # print(f"Saved merged dataset with metadata to: {output_csv}")
+    # Save to CSV
+    output_csv = os.path.join(output_path, f'features_{run_name}.csv')
+    df_final.to_csv(output_csv, index=False)
+    print(f"Saved merged dataset with metadata to: {output_csv}")
 
 if __name__ == "__main__":
     prepare_and_save_dataset()
+#649788

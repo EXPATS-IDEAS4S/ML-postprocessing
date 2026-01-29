@@ -58,15 +58,16 @@ import pandas as pd
 import xarray as xr
 from joblib import Parallel, delayed
 
+
 #sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
-sys.path.append(os.path.abspath("/home/claudia/codes/ML_postprocessing"))
+sys.path.append(os.path.abspath("//home/Daniele/codes/VISSL_postprocessing/"))
 
 from utils.processing.stats_utils import compute_percentile
 from utils.configs import load_config
 from utils.buckets.credentials_buckets import S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY, S3_ENDPOINT_URL
 from utils.processing.coords_utils import extract_coordinates,  extract_coord_from_nc
 from utils.processing.datetime_utils import extract_datetime,  extract_datetime_from_nc
-from utils.processing.stats_utils import compute_categorical_values, filter_cma_values
+from utils.processing.stats_utils import compute_categorical_values, filter_cma_values, apply_closing
 from utils.buckets.get_data_from_buckets import read_file, Initialize_s3_client
 from utils.processing.features_utils import get_num_crop
 
@@ -114,202 +115,26 @@ def get_time_windows(times, var=None):
         return times_by_day
 
 
-
-def process_row_old(row, config, var_config, image_crops_path, logger):
-    """Process a single crop row and compute statistics from bucket data."""
-    s3 = Initialize_s3_client(S3_ENDPOINT_URL, S3_ACCESS_KEY, S3_SECRET_ACCESS_KEY)
-    crop_filename = os.path.basename(row["path"])
-    data_format = config["data"]["file_extension"]
-    vars = config["statistics"]["sel_vars"]
-    nc_engine = config["data"]["nc_engine"]
-    mode = config["statistics"]['spatial'].get("mode", ["per_frame"])
-    #n_frames = config["data"].get("n_frames", 1)
-
-    logger.info(f"Processing crop: {crop_filename}")
-
-    # Get lat/lon and datetime22
-    if data_format == "nc":
-        coords = extract_coord_from_nc(crop_filename, image_crops_path, nc_engine)
-        times = extract_datetime_from_nc(crop_filename, image_crops_path, nc_engine)
-    else:
-        #This should work if images are processed (so only one timeframe)
-        coords = extract_coordinates(crop_filename)
-        datetime_info = extract_datetime(crop_filename)
-        year, month, day, hour, minute = (  datetime_info[k] for k in ["year", "month", "day", "hour", "minute"])
-        times = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00")
-
-    lat_min, lat_max = coords["lat_min"], coords["lat_max"]
-    lon_min, lon_max = coords["lon_min"], coords["lon_max"]
-   
-    row_data = {}
-    for var in vars:
-        #print(var)
-        #select variable metadata from config
-        var_meta = var_config['variables'][var]
-  
-        # Get time windows (possibly spanning multiple days)
-        times_by_day = get_time_windows(
-            times, 
-            var=var
-        )
-        if not times_by_day:
-            continue
-
-        #define statistics based on variable (continuous or categorical)
-        if var_meta['categorical']:
-            stats = ['None']
-        else:
-            stats = config["statistics"]["percentiles"]
-        
-        
-        values_append = []
-
-        logger.info(f"Processing variable '{var}' for crop {row['path']}")
-
-        for day_key, times in times_by_day.items():
-            try:
-                y, m, d = map(int, day_key.split("-"))
-                # insert here var if and then set path * filename
-                bucket_filename = (
-                    f"{var_meta['bucket_filename_prefix']}{y:04d}-{m:02d}-{d:02d}{var_meta['bucket_filename_suffix']}"
-                )
-                my_obj = read_file(s3, bucket_filename, var_meta['bucket_name'])
-                if my_obj is None:
-                    logger.warning(f"File not found in bucket: {bucket_filename}")
-                    continue
-
-                # Open datasets
-                ds_day = xr.open_dataset(io.BytesIO(my_obj))[var]
-                my_obj_cma = read_file(
-                    s3,
-                    f"MCP_{y:04d}-{m:02d}-{d:02d}_regrid.nc",
-                    "expats-cmsaf-cloud",
-                )
-                ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"]
-
-                # Normalize time index if needed
-                if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
-                    ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
-                    ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
-
-                # Subset space + time
-                ds_day = ds_day.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-                ds_subset = ds_day.sel(time=times)
-                ds_day_cma = ds_day_cma.sel(lat=slice(lat_min, lat_max), lon=slice(lon_min, lon_max))
-                ds_subset_cma = ds_day_cma.sel(time=times)
-
-                # Extract values and apply CMA mask
-                if mode == "aggregated":
-                    values = ds_subset.values.flatten()
-                    values_cma = ds_subset_cma.values.flatten()
-                    values = filter_cma_values(values, values_cma, var)
-                    values_append.append(values)
-                elif mode == "per_frame":
-                    # Keep each frame separate
-                    for t_idx, t in enumerate(ds_subset.time.values):
-                        frame_values = ds_subset.sel(time=t).values.flatten()
-                        frame_values_cma = ds_subset_cma.sel(time=t).values.flatten()
-                        frame_values = filter_cma_values(frame_values, frame_values_cma, var)
-
-                        # Store with time index or timestamp
-                        values_append.append(
-                            {
-                                "time": np.datetime64(t).astype("datetime64[s]").item(),  # or str(t)
-                                # "frame": t_idx,
-                                "values": frame_values,
-                                "crop_index": row['crop_index']
-                            }
-                        )
-                else:
-                    logger.error(f"Invalid mode '{mode}' for variable '{var}'")
-                
-
-            except Exception as e:
-                logger.error(
-                    f"Error processing day {day_key} for variable '{var}' (crop {row['path']})",
-                    exc_info=True,
-                )
-                # Keep shape consistency
-                values_append.append(np.array([np.nan]))
-
-        # === Compute statistics ===
-        if values_append:
-            if mode == "aggregated":
-                # Aggregate all frames
-                all_values = np.concatenate([np.atleast_1d(v) for v in values_append])
-                for stat in stats:
-                    entry = f"{var}-{stat}"
-                    logger.debug(f"Computing aggregated statistic: {entry}")
-                    try:
-                        if stat == "None":
-                            result = compute_categorical_values(all_values, var)
-                        else:
-                            result = compute_percentile(all_values, int(stat))
-                    except Exception:
-                        logger.error(f"Error computing statistic '{entry}'", exc_info=True)
-                        result = np.nan
-
-                    row_data[entry] = result
-
-            elif mode == "per_frame":
-                # Compute separately per frame
-                for frame_idx, frame_values in enumerate(values_append):
-                    frame_values = np.atleast_1d(frame_values)
-                    #timestamp = str(times[frame_idx])  # or use frame_idx if you prefer
-                    for stat in stats:
-                        entry = f"{var}-{stat}-frame{frame_idx}"
-                        # alternatively: f"{var}-{stat}-{timestamp}"
-                        logger.debug(f"Computing per-frame statistic: {entry}")
-                        try:
-                            if stat == "None":
-                                result = compute_categorical_values(frame_values, var)
-                            else:
-                                result = compute_percentile(frame_values, int(stat))
-                        except Exception:
-                            logger.error(f"Error computing statistic '{entry}'", exc_info=True)
-                            result = np.nan
-
-                        row_data[entry] = result
-
-        else:
-            # No values at all
-            for stat in stats:
-                if mode == "aggregated":
-                    entry = f"{var}-{stat}"
-                    row_data[entry] = np.nan
-                elif mode == "per_frame":
-                    for frame_idx in range(len(times)):
-                        entry = f"{var}-{stat}-frame{frame_idx}"
-                        row_data[entry] = np.nan
-
-
-    #from list of times extract hours and months of the first and last timestamp
-    month_init, month_end = (np.datetime64(t, 'M').astype(object).month for t in (times[0], times[-1]))
-    hour_init, hour_end = (np.datetime64(t, 'h').astype(object).hour for t in (times[0], times[-1]))
-    # Coords and Datetime Metadata
-    if config["statistics"]["include_geotime"]:
-        row_data.update(
-            {
-                "month": int(month_end),
-                "hour": int(hour_end),
-                "lat_mid": (lat_min + lat_max) / 2,
-                "lon_mid": (lon_min + lon_max) / 2,
-        }
-    )
-    return row_data
-
 def process_row(row, config, var_config, image_crops_path, logger):
     """
     Process a single crop row: load data, mask with CMA, and compute statistics.
     Returns a list of flat dicts (rows), ready for CSV export.
     """
     crop_filename = os.path.basename(row["path"])
+    crop_path = row["path"]
+    print("Processing crop:", crop_filename)
+    #check if vector type column exists
+    if 'vector_type' in row:
+        print("Vector type:", row["vector_type"])
+        vector_type = row["vector_type"]
+    else:
+        vector_type = None
     data_format = config["data"]["file_extension"]
     nc_engine = config["data"]["nc_engine"]
 
     if data_format == "nc":
-        coords = extract_coord_from_nc(crop_filename, image_crops_path, nc_engine)
-        times = extract_datetime_from_nc(crop_filename, image_crops_path, nc_engine)
+        coords = extract_coord_from_nc(crop_path, nc_engine)
+        times = extract_datetime_from_nc(crop_path, nc_engine)
     else:
         coords = extract_coordinates(crop_filename)
         datetime_info = extract_datetime(crop_filename)
@@ -319,7 +144,8 @@ def process_row(row, config, var_config, image_crops_path, logger):
         times = np.datetime64(
             f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00"
         )
-
+    #print('crop times:', times)
+    #print('crop coords:', coords)
     lat_min, lat_max = coords["lat_min"], coords["lat_max"]
     lon_min, lon_max = coords["lon_min"], coords["lon_max"]
 
@@ -328,14 +154,15 @@ def process_row(row, config, var_config, image_crops_path, logger):
     for var in config["statistics"]["spatial"]["sel_vars"]:
         var_rows = process_variable(
             var, times, lat_min, lat_max, lon_min, lon_max,
-            config, var_config, logger, crop_filename, coords
+            config, var_config, logger, crop_filename, coords, vector_type
         )
         all_rows.extend(var_rows)
+    
     return all_rows
 
 
 def process_variable(var, times, lat_min, lat_max, lon_min, lon_max,
-                     config, var_config, logger, crop_filename, coords):
+                     config, var_config, logger, crop_filename, coords, vector_type):
     """Process one variable across time windows."""
     var_meta = var_config['variables'][var]
     stats = ['None'] if var_meta['categorical'] else config["statistics"]["spatial"]["percentiles"]
@@ -345,13 +172,12 @@ def process_variable(var, times, lat_min, lat_max, lon_min, lon_max,
     for day_key, times_for_day in get_time_windows(times, var=var).items():
         print('processing day:', day_key, 'var:', var)
         values = load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_max, times_for_day, logger, mode)
-        #print(values)
         if mode == "aggregated":
             values_append.append(values)
         elif mode == "per_frame":
             values_append.extend(values)  # flatten all frames across days
 
-    return compute_statistics(values_append, stats, var, mode, times, crop_filename, coords)
+    return compute_statistics(values_append, stats, var, mode, times, crop_filename, coords, vector_type)
 
 
 
@@ -396,7 +222,7 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
             lat=slice(lat_min, lat_max),
             lon=slice(lon_min, lon_max)
         )
-        
+
         ds_day_cma = xr.open_dataset(io.BytesIO(my_obj_cma))["cma"].sel(
             lat=slice(lat_min, lat_max),
             lon=slice(lon_min, lon_max)
@@ -407,9 +233,23 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
             ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
             ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
 
-        ds_subset = ds_day.sel(time=times)
+        if var=="euclid_msg_grid":
+            #besdies the timestamp also take +5 min and +10 min
+            ds_subset = ds_day.sel(time=times + np.timedelta64(0,'m')).combine_first(
+                ds_day.sel(time=times + np.timedelta64(5,'m'))
+            ).combine_first(
+                ds_day.sel(time=times + np.timedelta64(10,'m'))
+            )
+        else:
+            ds_subset = ds_day.sel(time=times)
+        
         ds_subset_cma = ds_day_cma.sel(time=times)
 
+        #apply closing
+        ds_subset_cma = apply_closing(ds_subset_cma)
+        if var == "cma":
+            ds_subset = apply_closing(ds_subset)
+        
         if mode == "aggregated":
             values = ds_subset.values.flatten()
             values_cma = ds_subset_cma.values.flatten()
@@ -436,7 +276,7 @@ def load_and_mask_data(day_key, var, var_meta, lat_min, lat_max, lon_min, lon_ma
 
 
 
-def compute_statistics(values_append, stats, var, mode, times, crop_filename, coords):
+def compute_statistics(values_append, stats, var, mode, times, crop_filename, coords, vector_type):
     """
     Compute stats either aggregated across frames or per-frame.
     Returns a list of flat dicts (rows).
@@ -455,6 +295,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
                 "time": times[0],
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,
+                "vector_type": vector_type
             }
             for stat in stats:
                 row[stat] = np.nan
@@ -468,6 +309,7 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
                     "time": str(np.datetime64(t).astype("datetime64[s]").item()),
                     "lat_mid": lat_mid,
                     "lon_mid": lon_mid,
+                    "vector_type": vector_type
                 }
                 for stat in stats:
                     row[stat] = np.nan
@@ -483,9 +325,11 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
             "time": times[0],
             "lat_mid": lat_mid,
             "lon_mid": lon_mid,
+            "vector_type": vector_type
         }
         for stat in stats:
             row[stat] = compute_single_stat(all_values, stat, var)
+            #print(row[stat])
         rows.append(row)
 
     elif mode == "per_frame":
@@ -497,9 +341,11 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, co
                 "time": str(frame_dict["time"]),
                 "lat_mid": lat_mid,
                 "lon_mid": lon_mid,
+                "vector_type": vector_type
             }
             for stat in stats:
                 row[stat] = compute_single_stat(frame_dict["values"], stat, var)
+                #print(row[stat])
             rows.append(row)
 
     return rows
@@ -578,10 +424,11 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     filter_imerg_minutes = config["data"]["filter_imerg"]
     n_frames = config["data"]["n_frames"]
 
+    test_data_set = config["experiment"].get("test_set", False)
+
     # Build paths
     image_crops_path = f"{data_base_path}/{crops_name}/{data_format}/1/"
-    output_path = f"{output_root}/{run_name}/epoch_{epoch}/{sampling_type}/"
-
+    
     # Load crop list
     n_samples = get_num_crop(image_crops_path, extension=data_format)
     #list_image_crops = sorted(glob(image_crops_path + "*." + data_format))
@@ -600,9 +447,18 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
         filter_tags.append("imergmin")
     filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
-    csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
-    df_labels = pd.read_csv(csv_filename)
-    print(df_labels)
+    if test_data_set:
+        output_path = f"{output_root}/{run_name}/epoch_{epoch}/test_traj/"
+        csv_filename = f"{output_path}features_train_test_{run_name}_2nd_labels.csv"
+        df_labels = pd.read_csv(csv_filename)
+        #print unique values of vector_type column
+        #print(df_labels)
+        #get only the rows with test set (remove vector_type column == TRAIN)
+        df_labels = df_labels[df_labels["vector_type"] != "TRAIN"]
+    else:
+        output_path = f"{output_root}/{run_name}/epoch_{epoch}/{sampling_type}/"
+        csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
+        df_labels = pd.read_csv(csv_filename)
     
     #print(f"Loaded {len(df_labels)} rows from crop list.")
     logger.info(f"Loaded {len(df_labels)} rows from crop list.")
@@ -643,7 +499,7 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
         sampling_type,
         str(n_subsample) + filter_suffix,
     ]
-    filename = "_".join([p for p in parts if p]) + "CA.csv"
+    filename = "_".join([p for p in parts if p]) + ".csv"
 
     # Save
     df_results.to_csv(os.path.join(output_path, filename), index=False)
@@ -669,4 +525,7 @@ if __name__ == "__main__":
     var_config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/variables_metadata.yaml"
     #var_config_path = "/home/claudia/codes/ML_postprocessing/configs/variables_metadata.yaml"
     main(config_path, var_config_path)
-    # nohup  855373
+
+
+#nohup stat test: 79853
+#nohup stat train: 80305

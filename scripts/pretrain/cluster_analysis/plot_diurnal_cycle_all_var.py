@@ -4,22 +4,19 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import xarray as xr
+import sys
+
+sys.path.append('/home/Daniele/codes/VISSL_postprocessing/utils/plotting')
+from class_colors import CLOUD_CLASS_INFO, COLORS_PER_CLASS
 
 # === CONFIG ===
-RUN_NAME = "dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"
+RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
 path_to_dir = f"/data1/fig/{RUN_NAME}/epoch_800/closest/"
 merged_path = os.path.join(path_to_dir, "merged_crops_stats_cvc_imergtime_closest_1000.csv")
 
 output_dir = os.path.join(path_to_dir, "diurnal_and_seasonal_cycles/")
 os.makedirs(output_dir, exist_ok=True)
 
-# === COLOR MAP ===
-COLORS_PER_CLASS = {
-    '0': 'darkgray', '1': 'darkslategrey', '2': 'peru', '3': 'orangered',
-    '4': 'lightcoral', '5': 'deepskyblue', '6': 'purple', '7': 'lightblue',
-    '8': 'green', '9': 'goldenrod', '10': 'magenta', '11': 'dodgerblue',
-    '12': 'darkorange', '13': 'olive', '14': 'crimson'
-}
 
 # Variables to plot
 VARIABLES = {
@@ -47,7 +44,11 @@ def extract_hour_from_path(time):
 def extract_month_from_path(time):
     """Extract month (1–12) from filename"""
     return pd.to_datetime(time).month    
-    
+
+
+def extract_year_from_path(time):
+    """Extract year (e.g., 2013) from filename"""
+    return pd.to_datetime(time).year
 
 # -----------------------------
 # === LOAD DATA ===
@@ -57,7 +58,8 @@ print(f"Loaded: {merged_path} ({df.shape})")
 
 df["hour"] = df["time"].apply(extract_hour_from_path)
 df["month"] = df["time"].apply(extract_month_from_path)
-df = df.dropna(subset=["hour", "month"])
+df["year"] = df["time"].apply(extract_year_from_path)
+df = df.dropna(subset=["hour", "month", "year"])
 
 labels = sorted(df["label"].unique())
 
@@ -289,3 +291,118 @@ plt.close()
 
 print("Saved seasonal plots.")
 
+
+
+# ======================================================
+# === YEARLY CYCLES (INTER-ANNUAL) ===
+# ======================================================
+fig, axes = plt.subplots(n_vars, 1, figsize=(5, 2*n_vars), sharex=True)
+
+# ensure year is int
+df["year"] = df["year"].astype(int)
+
+# define years of interest (sorted, explicit is better)
+all_years = np.sort(df["year"].unique())
+
+# ======================================================
+# === Row 1 — Class Occurrence (Normalized by Year) ===
+# ======================================================
+ax = axes[0]
+
+# pivot: rows = year, columns = label, values = counts
+yearly_counts = df.groupby(["year", "label"]).size().unstack(fill_value=0)
+
+# ensure all years exist
+yearly_counts = yearly_counts.reindex(all_years, fill_value=0)
+
+# normalize per year
+totals_per_year = yearly_counts.sum(axis=1).replace(0, np.nan)
+rel_pct = yearly_counts.div(totals_per_year, axis=0) * 100
+rel_pct = rel_pct.fillna(0)
+
+# plot
+for label in sorted(rel_pct.columns):
+    color = COLORS_PER_CLASS.get(str(label), "black")
+    ax.plot(
+        rel_pct.index,
+        rel_pct[label],
+        linewidth=2,
+        marker="o",
+        color=color,
+        label=f"Label {label}"
+    )
+
+ax.set_ylabel("Class Occ (%)")
+ax.set_title("Inter-Annual Cycle – Class Occurrence", fontweight="bold")
+ax.grid(alpha=0.3)
+ax.set_ylim(0, 30)
+ax.tick_params(axis="y", labelsize=12)
+
+ax.set_xticks(all_years)
+ax.set_xticklabels(all_years, fontsize=12)
+
+# ======================================================
+# === Other Variables (Yearly Means per Class) ===
+# ======================================================
+for i, (var, info) in enumerate(VARIABLES.items(), start=1):
+    ax = axes[i]
+    df_var = df[df["var"] == var]
+
+    if info["percentile"] is not None:
+        colname = f"{info['percentile']}"
+    else:
+        colname = "None"
+
+    if colname not in df.columns:
+        continue
+
+    for label in labels:
+        subset = df_var[df_var["label"] == label]
+
+        if subset.empty:
+            continue
+
+        # compute yearly averages
+        yearly_avg = subset.groupby("year")[colname].mean() * info["scale"]
+
+        # ensure all years exist
+        yearly_avg = yearly_avg.reindex(all_years)
+
+        ax.plot(
+            yearly_avg.index,
+            yearly_avg.values,
+            linewidth=2,
+            marker="o",
+            color=COLORS_PER_CLASS[str(label)],
+            label=f"Class {label}"
+        )
+
+    if info["percentile"] is not None:
+        ax.set_ylabel(f"{info['label']} (p{info['percentile']})", fontsize=12)
+    else:
+        ax.set_ylabel(info["label"], fontsize=12)
+
+    clean_label = info["label"].replace("\n", "")
+    ax.set_title(clean_label, fontsize=12, fontweight="bold")
+    ax.grid(alpha=0.3)
+    ax.tick_params(axis="y", labelsize=12)
+
+    if info.get("log", False):
+        ax.set_yscale("log")
+
+    if "vmin" in info and "vmax" in info:
+        ax.set_ylim(info["vmin"], info["vmax"])
+
+# ======================================================
+plt.xlabel("Year", fontsize=12)
+plt.tight_layout()
+
+plt.savefig(
+    os.path.join(output_dir, "yearly_multi_variable.png"),
+    dpi=300,
+    transparent=True,
+    bbox_inches="tight"
+)
+plt.close()
+
+print("Saved yearly plots.")

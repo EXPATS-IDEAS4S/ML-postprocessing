@@ -6,16 +6,18 @@ from datetime import datetime
 from matplotlib.image import imread
 
 # === CONFIG ===
-RUN_NAME = 'dcv2_vit_k10_ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc'
-EVENT_TYPES = ["PRECIP", "HAIL", "ALL"]
+RUN_NAME = 'dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective'
+EVENT_TYPES = ["PRECIP", "HAIL"]
 BASE_DIR = f"/data1/fig/{RUN_NAME}/test"
 CROP_BASE_DIR = "/data1/crops/test_case_essl_2021-2025_100x100_ir108_cma"
 SUMMARY_DIR = "/data1/crops/test_case_essl_2021-2025_100x100_ir108_cma"
 
 # === SELECT CASE ===
-SELECT_EVENT = "HAIL"     # "HAIL" or "PRECIP"
-SELECT_DATE = "2023-07-24"  # YYYY-MM-DD
-N_CLASSES = 10              # Number of classes in the model
+SELECT_EVENT = "PRECIP"     # "HAIL" or "PRECIP"
+SELECT_DATE = "2022-09-15"  # YYYY-MM-DD
+N_CLASSES = 8              # Number of classes in the model
+TARGET_LAT  = 43.51306666666667
+TARGET_LON  = 12.9618
 
 # === COLOR MAP ===
 COLORS_PER_CLASS = {
@@ -27,20 +29,23 @@ COLORS_PER_CLASS = {
 
 def load_case(event):
     """Load and preprocess CSV for a given event."""
-    path = f"{BASE_DIR}/features_test_case_study_{RUN_NAME}_{event}.csv"
+    path = f"{BASE_DIR}/features_train_test_{RUN_NAME}.csv"
     if not os.path.exists(path):
         raise FileNotFoundError(f"❌ File not found: {path}")
     df = pd.read_csv(path, low_memory=False)
-    df = df[df['case_study'] == True].copy()
-    if event != "ALL":
-        df = df[df['vector_type'] == event]
-    df['datetime'] = (
-        df['datetime'].astype(str)
-        .str.extract(r"\['(\d{8}_\d{4})'\]")[0]
-    )
-    df['datetime'] = pd.to_datetime(df['datetime'], format="%Y%m%d_%H%M", errors='coerce')
-    df = df.dropna(subset=['datetime'])
-    df = df.sort_values('datetime')
+    #df = df[df['case_study'] == True].copy()
+    df = df[df['vector_type'] == event]
+    #print(df['datetime'])
+    #print(df['datetime'])
+    # df['datetime'] = (
+    #     df['datetime'].astype(str)
+    #     .str.extract(r"\['(\d{8}_\d{4})'\]")[0]
+    # )
+    #create date column
+    df['datetime'] = pd.to_datetime(df['datetime'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
+    df['date'] = df['datetime'].dt.date
+    #df = df.dropna(subset=['datetime'])
+    #df = df.sort_values('datetime')
     return df
 
 def plot_diurnal_labels(df_day, event, date, n_classes=15):
@@ -53,8 +58,11 @@ def plot_diurnal_labels(df_day, event, date, n_classes=15):
     plt.title(f"Class Evolution on {date} ({event})", fontsize=16, fontweight='bold')
     plt.xlabel("Hour (UTC)", fontsize=16)
     plt.ylabel("Label", fontsize=16)
-    plt.xticks(range(0, 24, 1), fontsize=16, rotation=45, ha='right')
+    plt.xticks(range(0, 25, 1), fontsize=16, rotation=45, ha='right')
     plt.yticks(range(0, n_classes, 1), fontsize=16)
+    #set ylim 
+    plt.ylim(-0.5, n_classes - 0.5)
+    plt.xlim(-0.5, 24)
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
 
@@ -148,14 +156,22 @@ if SELECT_EVENT not in EVENT_TYPES:
 print(f"\n🔍 Looking for {SELECT_EVENT} event on {SELECT_DATE} ...")
 
 df = load_case(SELECT_EVENT)
-df_day = df[df['datetime'].dt.date == datetime.strptime(SELECT_DATE, "%Y-%m-%d").date()]
+#print(df['date'])
+df_day = df[df['date'] == datetime.strptime(SELECT_DATE, "%Y-%m-%d").date()]
+#check how many groups with unique date and lat and lon
+
+#check if more thank 1 entries found
+if len(df_day) > 96:
+    df_day = df_day.sort_values('datetime')
+    #select the one with the desired lon lat
+    df_day = df_day.iloc[((df_day['lat_centre'] - TARGET_LAT)**2 + (df_day['lon_centre'] - TARGET_LON)**2).argsort()[:96]]
 
 if df_day.empty:
     print(f"⚠️ No data found for {SELECT_EVENT} on {SELECT_DATE}")
 else:
     print(f"✅ Found {len(df_day)} entries for {SELECT_EVENT} on {SELECT_DATE}")
-    #plot_diurnal_labels(df_day, SELECT_EVENT, SELECT_DATE, N_CLASSES)
-    #show_image_table(SELECT_EVENT, SELECT_DATE)
+    plot_diurnal_labels(df_day, SELECT_EVENT, SELECT_DATE, N_CLASSES)
+    show_image_table(SELECT_EVENT, SELECT_DATE)
     check_summary(SELECT_EVENT, SELECT_DATE) #TODO fix this function
 
 print("\n🎯 Done.")

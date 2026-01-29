@@ -3,16 +3,17 @@
 # ==========================
 experiment:
   run_names: #add mulitple names in case a comparison has to be done (like chacking loss)
-    - dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1
+    - dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc
     #- dcv2_ir108_ot_100x100_k9_35k_nc_vit
   epoch: 800          # Epoch number for the main run
-  random_state: 3     # Random seed for reproducibility (tsne, sampling selection, training_run)
+  random_state: 3    # Random seed for reproducibility (tsne, sampling selection, training_run)
   base_path: /data1/runs
   path_out: /data1/fig
   from_crop_stats: false  # Use crop stats file instead of crop list file
+  test_set: false        # If true, run on the csv files including also the test set 
   
 logging:  
-  logs_path: /home/claudia/codes/ML_postprocessing/logs
+  logs_path: /home/Daniele/codes/VISSL_postprocessing/logs
   log_level: INFO
 
 # ==========================
@@ -29,14 +30,14 @@ reduction:
 # ==========================
 data:
   data_base_path: /data1/crops
-  crops_name: clips_ir108_100x100_8frames_2013-2020 # name of the dataset, TODO implement the case with more runs
+  crops_name: ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc # name of the dataset, TODO implement the case with more runs
   file_extension: nc   # Options: nc, tif
   nc_engine: netcdf4   #engine for xarray, choose between {"netcdf4", "scipy", "pydap", "h5netcdf", "zarr", None}
-  sampling_type: closest   # Options: random, closest, farthest, all
+  sampling_type: all   # Options: random, closest, farthest, all
   n_subsample: 1000 #70072   # Max samples per cluster. TODO: if 'all', use all samples without specifying here
   filter_daytime: false  # Keep only 06–16 UTC
   filter_imerg: false    # Keep only timestamps at minutes 00 or 30, as IMERG product (set to true only if precipitation is used and n_frames==1)
-  n_frames: 8 # Number of frames to consider for each crop
+  n_frames: 1 # Number of frames to consider for each crop
 
 
 
@@ -46,24 +47,24 @@ data:
 statistics:
   spatial:
     sel_vars:
-      #- cth
-      #- cma
+      - cth
+      - cma
       #- cot
       #- cph
       - precipitation
-      - lightning
-      - radar_prec
+      - euclid_msg_grid
+      #- radar_prec
     percentiles: [50, 99, 25, 75]  # percentiles to compute (IQR can be derived from 25 and 75)
     #TODO implement something to evalaute the cloud organization (Iorg, spectral analysis, aspect_ratio, aggregation...)
 
     # NEW: control whether spatial metrics are per-frame or aggregated
-    mode: per_frame      # compute metrics at each timestep separately (then this can be also used to check the change in time of the spatial metrics)
-      #- aggregated    # collapse all frames into one distribution
+    mode: aggregated      # compute metrics at each timestep separately (then this can be also used to check the change in time of the spatial metrics)
+      #- aggregated or per_frame   # collapse all frames into one distribution
 
 
   # Time-development statistics (multi-frame evolution across time dimension)
   temporal:
-    enabled: true
+    enabled: false
     metrics:
       - cloud_cover_change   # ΔCC / Δt, relative CC change
       - vertical_growth      # ΔCTH / Δt, max/mean option handled in code
@@ -74,7 +75,7 @@ statistics:
       convective_ref: "max_cth"     # how to define "cloud center" (max_cth, center_of_mass, ...)
 
   # General flags
-  include_geotime: false      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
-  time_dimension: true       # Global flag: whether time metrics should be computed at all
+  include_geotime: true      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
+  time_dimension: false       # Global flag: whether time metrics should be computed at all
   use_parallel: false        # Parallelization (logging issue with joblib)
   n_cores: 4                 # Number of CPU cores

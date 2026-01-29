@@ -46,7 +46,7 @@ def get_time_from_ds(ds):
 
 
 
-def extract_datetime_from_nc(filename, dir_path, engine="netcdf4"):
+def extract_datetime_from_nc(filepath, engine="netcdf4"):
     """
     Extract all timestamps from the 'time' variable of a NetCDF file.
 
@@ -64,7 +64,7 @@ def extract_datetime_from_nc(filename, dir_path, engine="netcdf4"):
     list of np.datetime64
         List of all timestamps found in the file.
     """
-    filepath = os.path.join(dir_path, filename)
+    #filepath = os.path.join(dir_path, filename)
 
     try:
         with xr.open_dataset(filepath, engine=engine) as ds:
@@ -75,7 +75,7 @@ def extract_datetime_from_nc(filename, dir_path, engine="netcdf4"):
         return times
 
     except Exception as e:
-        print(f"Error reading {filename}: {e}")
+        print(f"Error reading {filepath}: {e}")
         return []
 
 

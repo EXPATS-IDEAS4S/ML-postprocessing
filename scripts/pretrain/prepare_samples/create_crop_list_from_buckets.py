@@ -87,7 +87,7 @@ def save_results(df: pd.DataFrame, path_out: str, run_name: str, epoch: int, sam
 
     print(f"Saving {len(df)} samples to {output_file} ...")
     print(df.columns)
-    print(df['path'].values[:5])
+    #print(df['path'].values[:5])
     df.to_csv(output_file, index=False)
 
 

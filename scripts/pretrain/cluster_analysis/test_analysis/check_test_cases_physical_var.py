@@ -15,6 +15,7 @@ output_test_csv = os.path.join(output_path, f"features_train_test_{run_name}.csv
 
 df = pd.read_csv(output_test_csv, low_memory=False)
 print(df.columns.tolist())
+exit()
 
 #remove rows with label -100 (invalid)
 df = df[df["label"] != -100]
@@ -281,7 +282,7 @@ def extract_ir108_stats(nc_path):
 
 
 # --- IR_108 distributions for all groups in a single plot ---
-plt.figure(figsize=(10,6))
+plt.figure(figsize=(7,5))
 for gname, mask in groups.items():
     print(f"Processing IR_108 stats for group {gname}...")
     gdf = df[mask]
@@ -325,7 +326,7 @@ plt.close()
 
 
 # --- IR_108 min values ---
-plt.figure(figsize=(10,6))
+plt.figure(figsize=(7,5))
 for gname, mask in groups.items():
     gdf = df[mask]
     if len(gdf) == 0:

@@ -38,12 +38,15 @@ from utils.configs import load_config
 
 
 # === HELPER FUNCTIONS ===
-def load_labels(output_path: str, run_name: str, sampling_type: str, n_samples: int, from_crop_stats: bool) -> pd.DataFrame:
+def load_labels(output_path: str, run_name: str, sampling_type: str, n_samples: int, from_crop_stats: bool, filter_imerg: bool) -> pd.DataFrame:
     """Load labels and crop paths from CSV file depending on the mode."""
     if from_crop_stats:
         fname = f"crops_stats_{run_name}_{sampling_type}_{n_samples}.csv"
     else:
-        fname = f"crop_list_{run_name}_{sampling_type}_{n_samples}.csv"
+        if filter_imerg:
+            fname = f"crop_list_{run_name}_{sampling_type}_{n_samples}_imergmin.csv"
+        else:
+            fname = f"crop_list_{run_name}_{sampling_type}_{n_samples}.csv"
     return pd.read_csv(os.path.join(output_path, fname))
 
 
@@ -66,12 +69,12 @@ def merge_and_filter(tsne_df: pd.DataFrame, labels_df: pd.DataFrame) -> pd.DataF
 
 
 def save_output(df: pd.DataFrame, output_path: str, run_name: str, sampling_type: str,
-                random_state: str, epoch: int, from_crop_stats: bool) -> None:
+                random_state: str, epoch: int, from_crop_stats: bool, perplexity: int) -> None:
     """Save merged dataframe to CSV file with appropriate filename."""
     if from_crop_stats:
-        fname = f"merged_tsne_crop_stats_{run_name}_{sampling_type}_{random_state}_epoch_{epoch}.csv"
+        fname = f"merged_tsne_perpl-{perplexity}_crop_stats_{run_name}_{sampling_type}_{random_state}_epoch_{epoch}.csv"
     else:
-        fname = f"merged_tsne_crop_list_{run_name}_{sampling_type}_{random_state}_epoch_{epoch}.csv"
+        fname = f"merged_tsne_perpl-{perplexity}_crop_list_{run_name}_{sampling_type}_{random_state}_epoch_{epoch}.csv"
     df.to_csv(os.path.join(output_path, fname), index=False)
     print(f"Saved merged DataFrame to {fname}")
 
@@ -91,6 +94,7 @@ def main(config_path: str):
     from_crop_stats = config["experiment"]["from_crop_stats"]
     reduction_method = config["reduction"]["method"]
     perplexity = config["reduction"]["perplexity"]
+    filter_imerg = config["data"]["filter_imerg"]
 
     # Get number of samples
     if sampling_type == "all":
@@ -107,18 +111,18 @@ def main(config_path: str):
         # Define paths
         output_path = f"{output_path}/{run_name}/epoch_{epoch}/{sampling_type}/"
         os.makedirs(output_path, exist_ok=True)
-        filename = f"{reduction_method}_opentsne_{run_name}_{random_state}_epoch_{epoch}.npy"
+        filename = f"{reduction_method}_opentsne_perpl-{perplexity}_{run_name}_{random_state}_epoch_{epoch}.npy"
 
         # Load data
         tsne_df = load_tsne_coordinates(output_path, filename)
-        labels_df = load_labels(output_path, run_name, sampling_type, n_samples, from_crop_stats)
+        labels_df = load_labels(output_path, run_name, sampling_type, n_samples, from_crop_stats, filter_imerg)
 
         # Merge + filter
         merged_df = merge_and_filter(tsne_df, labels_df)
         print(merged_df)
 
         # Save
-        save_output(merged_df, output_path, run_name, sampling_type, random_state, epoch, from_crop_stats)
+        save_output(merged_df, output_path, run_name, sampling_type, random_state, epoch, from_crop_stats, perplexity)
 
 
 if __name__ == "__main__":

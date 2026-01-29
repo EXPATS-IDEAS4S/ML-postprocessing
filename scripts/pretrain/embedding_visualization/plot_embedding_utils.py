@@ -16,6 +16,8 @@ from scipy.spatial import cKDTree
 import matplotlib as mpl
 import matplotlib.cm as cm
 import matplotlib.image as mpimg
+from matplotlib.patches import Rectangle
+
 
 # Convert color names to RGB values
 def name_to_rgb(color_name):
@@ -118,7 +120,7 @@ def add_trajectory_case_study(df_subset, ax, fig, cmap, colorbar=False):
 
 
 
-def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filename, comp_name1, comp_name2, df_subset2=None):
+def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filename, comp_name1, comp_name2, df_subset2=None, perplexity=None, year=None):
 
     # Plot
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -136,7 +138,7 @@ def plot_embedding_dots(df_subset1, colors_per_class1_norm, output_path, filenam
     ax.tick_params(axis='both', which='major', labelsize=20)
 
     # Save figure
-    fig.savefig(output_path + filename.split('.')[0] + '_dots.png', bbox_inches='tight')
+    fig.savefig(output_path + filename.split('.')[0] + f'_perpl-{perplexity}_dots_{year}.png', bbox_inches='tight')
 
 
 
@@ -519,7 +521,7 @@ def create_WV_IR_diff_colormap(vmin, center, vmax, diverg_cmap=mpl.cm.seismic):
     return mpl.colors.LinearSegmentedColormap.from_list('recentered_cmap', colors)
 
 
-def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, grid_size=10, zoom=0.3):
+def plot_embedding_crops_grid_old(df, output_path, filename, variable_type, cmap, grid_size=10, zoom=0.3):
     """
     Plot image crops aligned on a regular grid using normalized Component_1 and Component_2,
     placing one image per grid bin based on minimal distance to bin center.
@@ -587,6 +589,119 @@ def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, gr
     plt.close()
 
 
+
+def plot_embedding_crops_grid(
+    df,
+    df_centroids,
+    output_path,
+    filename,
+    variable_type,
+    COLORS_CLOUD_INFO,
+    comp_1='Component_1',
+    comp_2='Component_2',
+    grid_size=10,
+    zoom=0.3,
+):
+    """
+    Plot image crops on a regular grid with optional density contours per label.
+    Images are the background; contours are overlaid on top.
+    """
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Normalize Component_1 and Component_2
+    x = df[comp_1].values
+    y = df[comp_2].values
+    x_norm = (x - x.min()) / (x.max() - x.min())
+    y_norm = (y - y.min()) / (y.max() - y.min())
+    df['x_norm'] = x_norm
+    df['y_norm'] = y_norm
+
+    # Assign grid bins
+    ix = np.minimum((x_norm * grid_size).astype(int), grid_size - 1)
+    iy = np.minimum((y_norm * grid_size).astype(int), grid_size - 1)
+    centers = np.linspace(0.5 / grid_size, 1 - 0.5 / grid_size, grid_size)
+
+    #Select best image per bin (closest to center)
+    placed = {}
+    for i, j, xn, yn, idx in zip(ix, iy, x_norm, y_norm, df.index):
+        bin_key = (i, j)
+        cx, cy = centers[i], centers[j]
+        dist = (xn - cx) ** 2 + (yn - cy) ** 2
+        if bin_key not in placed or dist < placed[bin_key][0]:
+            placed[bin_key] = (dist, idx)
+
+    # Plot the selected images at bin centers
+    for (i, j), (_, idx) in placed.items():
+        row = df.loc[idx]
+        cx, cy = centers[i], centers[j]
+
+        label = int(row["label"])
+  
+        frame_color = COLORS_CLOUD_INFO[int(label)]['color'] 
+
+        try:
+            img_array = mpimg.imread(row["path"])
+            imagebox = OffsetImage(img_array, zoom=zoom)
+
+            ab = AnnotationBbox(
+                imagebox,
+                (cx, cy),
+                frameon=True,
+                bboxprops=dict(
+                    edgecolor=frame_color,
+                    linewidth=2,
+                    facecolor="none",
+                    boxstyle="square,pad=0"
+                )
+            )
+            ax.add_artist(ab)
+
+        except Exception as e:
+            print(f"Skipping image {row['path']}: {e}")
+            continue
+
+    # ============================================================
+    # 2. Centroid
+    # ============================================================
+    if df_centroids is not None:
+        for _, row in df_centroids.iterrows():
+            #normalize centroid coordinates
+            x_c = (row[comp_1] - x.min()) / (x.max() - x.min())
+            y_c = (row[comp_2] - y.min()) / (y.max() - y.min())
+           
+            ax.scatter(
+                x_c,
+                y_c,
+                color=COLORS_CLOUD_INFO[int(row["label"])]['color'] ,
+                marker="*",
+                s=4000,
+                edgecolor="k",
+                linewidth=1,
+                zorder=5
+            )
+
+    # ============================================================
+    # Final layout
+    # ============================================================
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+
+    plt.tight_layout()
+    base_filename = os.path.splitext(filename)[0]
+    if df_centroids is not None:
+        save_path = os.path.join(
+        output_path,
+        base_filename + '_' + variable_type + '_grid_with_centroids.png'
+    )
+    else:
+        save_path = os.path.join(
+        output_path,
+        base_filename + '_' + variable_type + '_grid.png'
+    )
+    fig.savefig(save_path, bbox_inches='tight', dpi=300)
+    plt.close()
 
 
 
@@ -774,6 +889,134 @@ def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closes
     plt.close()
 
     print(f"Saved plot: {output_file}")
+
+
+
+def plot_embedding_crops_table_transposed_new(
+    df,
+    output_path,
+    filename,
+    ordered_classes,
+    n_closest=3,
+    n_random=2,
+    random_seed=None,
+):
+    """
+    Table of embedding crops:
+    - columns = classes
+    - rows = closest to centroid + random samples
+    """
+
+    num_labels = len(ordered_classes)
+    n_rows = n_closest + n_random
+
+    fig, axes = plt.subplots(
+        n_rows,
+        num_labels,
+        figsize=(num_labels * 2, n_rows * 2),
+    )
+
+    if n_rows == 1:
+        axes = np.expand_dims(axes, axis=0)
+    if num_labels == 1:
+        axes = np.expand_dims(axes, axis=1)
+
+    FONT_COL = 18
+    FONT_ROW = 18
+    FONT_IDX = 18
+
+    for j, (label, info) in enumerate(ordered_classes):
+
+        label_str = str(label)
+        bg_color = info['color']
+        #sort descending distance
+        subset = df[df["label"] == label].sort_values("distance", ascending=False).reset_index(drop=True)
+
+        closest = subset.iloc[:n_closest]
+        remaining = subset.iloc[n_closest:]
+
+        if len(remaining) > 0:
+            random_sel = remaining.sample(
+                n=min(n_random, len(remaining)),
+                random_state=random_seed,
+            )
+        else:
+            random_sel = subset.sample(
+                n=min(n_random, len(subset)),
+                random_state=random_seed,
+            )
+
+        selected = pd.concat([closest, random_sel], ignore_index=True)
+
+        for i in range(n_rows):
+            ax = axes[i, j]
+            #ax.axis("off")
+
+            # --- image
+            if i < len(selected):
+                img_path = selected.loc[i, "path"]
+                if img_path and os.path.exists(img_path):
+                    img = Image.open(img_path).convert("L")
+                    ax.imshow(img, cmap="gray", zorder=1)
+                else:
+                    ax.imshow(np.zeros((10, 10)), cmap="gray", zorder=1)
+            
+            # remove ticks but keep frame
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_frame_on(True)
+
+
+            # --- colored frame per image (class color)
+            frame_color = info['color']
+
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_edgecolor(frame_color)
+                spine.set_linewidth(8)
+
+            # --- row index (numbers)
+            #ax.set_yticks([0.5])
+            #ax.set_yticklabels([str(i + 1)], fontsize=FONT_IDX)
+            ax.tick_params(axis="y", length=0)
+
+            # --- row tags (closest / random)
+            if j == 0:
+                if i < n_closest:
+                    tag = f"closest {i + 1}"
+                else:
+                    tag = f"random {i - n_closest + 1}"
+
+                ax.text(
+                    -0.18,
+                    0.5,
+                    tag,
+                    rotation=90,
+                    va="center",
+                    ha="center",
+                    fontsize=FONT_ROW,
+                    fontweight="bold",
+                    transform=ax.transAxes,
+                )
+
+        # --- column title
+        axes[0, j].set_title(
+            f"{info['short']}",
+            fontsize=FONT_COL,
+            fontweight="bold",
+            pad=14,
+        )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    out = os.path.join(
+        output_path,
+        f"{filename.split('.')[0]}_closest{n_closest}_random{n_random}_rs{random_seed}.png",
+    )
+    plt.savefig(out, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"✅ Saved plot: {out}")
+
 
 
 def plot_classwise_grids(df, output_path, filename,cmap, n=100, selection="closest"):

@@ -4,24 +4,25 @@ import pandas as pd
 import xarray as xr
 
 # === CONFIG ===
-RUN_NAME = "dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"
-crop_sel = "closest"
+RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
+crop_sel = "all"
 epoch = "epoch_800"
-n_subsets = 1000 
+n_subsets = 140207
 BT_THRESHOLD = 240  # Brightness temperature threshold for convective cloud cover (ref sandwich product from EUMETSAT)
+MIN_CLOUDY_PIXELS = 100  # Minimum number of cloudy pixels to compute convective cloud cover
 path_to_dir = f"/data1/fig/{RUN_NAME}/{epoch}/{crop_sel}/"
-merged_path = os.path.join(path_to_dir, f"merged_crops_stats_cvc_imergtime_closest_1000.csv")
+merged_path = os.path.join(path_to_dir, f"merged_crops_stats_all_cvc.csv")
 
 #check if merged_path exists
 if not os.path.exists(merged_path):
     #open crop list
-    crop_list_path = f"/data1/fig/{RUN_NAME}/{epoch}/{crop_sel}/crop_list_{RUN_NAME}_{crop_sel}_{n_subsets}_imergmin.csv"
+    crop_list_path = f"/data1/fig/{RUN_NAME}/{epoch}/{crop_sel}/crop_list_{RUN_NAME}_{crop_sel}_{n_subsets}.csv"
     df_crops = pd.read_csv(crop_list_path)
     print(df_crops.head())
     #extrect crop from path
     df_crops['crop'] = df_crops['path'].apply(lambda x: os.path.basename(x))
     #open stats file
-    stats_path = f"/data1/fig/{RUN_NAME}/{epoch}/{crop_sel}/crops_stats_vars-cth-cma-precipitation-euclid_msg_grid_stats-50-99-25-75_frames-1_coords-datetime_dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective_closest_1000_imergminCA.csv"
+    stats_path = f"/data1/fig/{RUN_NAME}/{epoch}/{crop_sel}/crops_stats_vars-cth-cma-cot-precipitation-euclid_msg_grid_stats-50-99-25-75_frames-1_coords-datetime_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_140207.csv"
     df_stats = pd.read_csv(stats_path)
     print(df_stats.head())
     #merge dataframes on crop
@@ -56,15 +57,23 @@ for index in crop_indices:
     #print(ds)
     #select the ir108 variable
     ir108 = ds['IR_108']
+
+    cloudy_pixels = ir108.where(ir108 < 320, drop=True)
     #count how many pixels are below the BT_THRESHOLD, normalized by total number of pixels
     total_pixels = ir108.size
     #print(f"Total pixels: {total_pixels}")
-    convective_pixels = (ir108 < BT_THRESHOLD).sum().item()
+    convective_pixels = (cloudy_pixels < BT_THRESHOLD)
+    convective_pixels_tot = (cloudy_pixels < BT_THRESHOLD).sum().item()
+
+    #find cloudy pixels (BT<320K)
+    cloud_pixels_tot = (ir108 < 320).sum().item()
 
     #count how many cloud pixels (BT>300K)
     #cloud_pixels = (ir108 < 300).sum().item()
-    
-    convective_cloud_cover = convective_pixels / total_pixels * 100  # percentage
+    if (cloud_pixels_tot <= MIN_CLOUDY_PIXELS) or (convective_pixels_tot <= MIN_CLOUDY_PIXELS): # if less than 10 cloudy pixels, set convective cloud cover to 0
+        convective_cloud_cover = 0.0
+    else:
+        convective_cloud_cover = convective_pixels_tot / cloud_pixels_tot   # percentage
     #round to second decimal
     convective_cloud_cover = round(convective_cloud_cover, 2)
     print(f"Convective cloud cover (% of pixels with BT < {BT_THRESHOLD}K): {convective_cloud_cover:.2f}%")

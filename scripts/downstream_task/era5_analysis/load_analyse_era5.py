@@ -27,14 +27,14 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)
     config_path = f"{post_proc_path}/configs/era5_vars.yaml"
 
-    flatten = False  # if True → flatten variable arrays before analysis
+    flatten = True  # if True → flatten variable arrays before analysis
     per_frame_mode = False  # if True → group distributions by frames
-    vertical_profile = False  # if True → plot vertical profile
+    vertical_profile = True  # if True → plot vertical profile
     n_frame = 8
     ml_mode = "supervised"
     dataset = "val"
-    single_level_variables = ['u10', 'v10', 'd2m', 't2m', 'tcw', 'tcwv', 'cape', 'cin', 'kx', 'msl', 'tcc', 'tp', 'cp']
-    # pressure level variables: ['q', 'r', 'u', 'v', 'w', 't', 'pv', 'd']
+    #single_level_variables = ['u10', 'v10', 'd2m', 't2m', 'tcw', 'tcwv', 'cape', 'cin', 'kx', 'msl', 'tcc', 'tp', 'cp']
+    pressure level variables: ['q', 'r', 'u', 'v', 'w', 't', 'pv', 'd']
 
     color = "lightpink"  # color for histogram bars
     lat_lon_tolerance = 0.039
@@ -137,15 +137,24 @@ if __name__ == "__main__":
             )
 
             if vertical_profile and era_type == "pressure_levels":
-                # Build dict by level
+                # stack extracted arrays into (n_samples, n_levels)
+                all_values = np.vstack(extracted_vars)
+
+                # build dict by level
                 data_by_level = {
-                    lvl: all_values[:, i] if all_values.ndim == 2 else all_values
-                    for i, lvl in enumerate(config["pressure_levels"])
+                    lvl: all_values[:, i] for i, lvl in enumerate(config["era5"]["pressure_levels"]["levels"])
                 }
-                plot_vertical_profile(data_by_level, var_cfg, config["pressure_levels"], title=f"{cat_name} - {variable_to_analyze}")
-                #add to filename to save the vertical_profile flag
+
+                plot_vertical_profile(
+                    data_by_level,
+                    var_cfg,
+                    config["era5"]["pressure_levels"]["levels"],
+                    title=f"{cat_name} - {variable_to_analyze}"
+                )
                 plt_path_vp = plt_path.replace(".png", "_vertical_profile.png")
-                plt.savefig(plt_path_vp)
+                plt.savefig(plt_path_vp, dpi=300)
+                plt.close()
+
 
             elif per_frame_mode:
                 plot_grouped_distribution(all_values, var_cfg, n_frame=n_frame, title=f"{cat_name} - {variable_to_analyze}")

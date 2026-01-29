@@ -53,7 +53,7 @@ variables:
   precipitation:
     long_name: "IMERG rain rate"
     unit: "mm/h"
-    categorical: true
+    categorical: false
     logscale: false
     direction: "incr"
     vmin: 0
@@ -74,8 +74,9 @@ variables:
     bucket_filename_prefix: 
     bucket_filename_suffix: _RR_15min_msg_res.nc.gz
 
-  lightning:
+  euclid_msg_grid:
     long_name: "EUCLID total lightning"
+    #actual_variable_name: "euclid_msg_grid"
     unit: null
     categorical: true
     logscale: 

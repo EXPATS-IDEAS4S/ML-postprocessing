@@ -1,287 +1,386 @@
 import os
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import xarray as xr
-from glob import glob
-from sklearn.metrics.pairwise import cosine_distances
+import sys
+import matplotlib as mpl
+import cmcrameri.cm as cmc
+import numpy as np
+from matplotlib.lines import Line2D
+
+sys.path.append("/home/Daniele/codes/VISSL_postprocessing/")
+from scripts.pretrain.cluster_analysis.test_analysis.utils_func import (filter_rows_in_event_window, stratifiy_by_latitude, 
+                        build_event_groups, print_sample_counts, plot_event_trajectories,
+                        compute_class_kde_grid, plot_class_kde_background, plot_feature_space_dots,
+                        plot_density_contours, plot_distance_boxplot)
+
+from utils.plotting.class_colors import COLORS_PER_CLASS, CLOUD_CLASS_INFO
 
 # ================================================
 # LOAD DATA
 # ================================================
-run_name = "dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"
-output_path = f"/data1/fig/{run_name}/test/"
-output_test_csv = os.path.join(output_path, f"features_train_test_{run_name}.csv")
+run_name = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
+output_path = f"/data1/fig/{run_name}/epoch_800/test_traj"
+output_test_csv = os.path.join(output_path, f"features_train_test_{run_name}_2nd_labels.csv")
+
+feature_space = os.path.join(output_path, "tsne_all_vectors_with_centroids.csv")
+
+#train_feature_space = os.path.join(output_path, "merged_tsne_crop_list_with_img_path.csv")
+
+plot_dir = os.path.join(output_path, "feature_space_plots_ALL")
+os.makedirs(plot_dir, exist_ok=True)
 
 df = pd.read_csv(output_test_csv, low_memory=False)
-print(df.columns.tolist())
+#print(df.columns.tolist())
 
-#remove rows with label -100 (invalid)
-df = df[df["label"] != -100]
+#df_train = pd.read_csv(train_feature_space, low_memory=False)
+
+PERCENTILE = 50  # Percentile for intensity thresholding
+LAT_DIVISION = 47
+MIN_SAMPLES = 50  # Minimum samples to plot per class label
+MIN_REL_PERCENT = 5.0   # percent
+WITHOUT_EXTRAPOLATED = False
+
+percentiles = [50, 90]
+linestyles_list = ['solid', 'dashed','dotted', 'dashdot']
 
 # feature columns
-dim_cols = [c for c in df.columns if c.startswith("dim_")]
+#dim_cols = [c for c in df.columns if c.startswith("dim_")]
 
-# ================================================
-# EVENT TYPE DEFINITIONS
-# ================================================
-# dictionary describes intensity field + units for each event category
-EVENT_TYPES = {
-    "PRECIP": {
-        "intensity": "max_intensity", #mean or max intensity field
-        "unit": "mm",
-        "long_name": "Precipitation Amount"
-    },
-    "HAIL": {
-        "intensity": "max_intensity", #mean or max intensity field
-        "unit": "cm",
-        "long_name": "Maximum Hail Size"
-    }
-}
+#feature_cols_2d = ["2d_dim_1", "2d_dim_2"]
+tsne_cols = ["tsne_dim_1", "tsne_dim_2"]
 
-# ensure intensity column is numeric for all event types
-df["max_intensity"] = pd.to_numeric(df["max_intensity"], errors="coerce")
+#dictionary with group names and colors
+groups_dict = [
+    {'name' :"ALL"},
+    #{'name': "PRECIP"},
+    #{'name': "HAIL" },
+    #{'name': "MIXED" }
+]
 
 
-def filter_rows_in_event_window(df):
-    """
-    Keep only rows where:
-        start_time <= datetime <= end_time
-    Assumes all datetimes are in UTC.
-    """
+cloud_items_ordered = sorted(
+    CLOUD_CLASS_INFO.items(),
+    key=lambda x: x[1]["order"]
+)
 
-    # Work on a copy to avoid SettingWithCopyWarning
-    df = df.copy()
-
-    # Convert to datetime if not already
-    for col in ["datetime", "start_time", "end_time"]:
-        df[col] = pd.to_datetime(df[col], errors="coerce")
-
-    # Ensure all are tz-aware (UTC) to avoid comparison issues
-    for col in ["datetime", "start_time", "end_time"]:
-        if df[col].dt.tz is None:
-            df[col] = df[col].dt.tz_localize("UTC")
-
-    # Drop rows with missing timestamps
-    df = df.dropna(subset=["datetime", "start_time", "end_time"])
-
-    # Keep only rows where datetime is inside the event window
-    mask_in_window = (df["datetime"] >= df["start_time"]) & (df["datetime"] <= df["end_time"])
-    df_filtered = df[mask_in_window]
-
-    return df_filtered.reset_index(drop=True)
+labels_ordered = [lbl for lbl, _ in cloud_items_ordered]
+short_labels = [info["short"] for _, info in cloud_items_ordered]
+colors_ordered = [info["color"] for _, info in cloud_items_ordered]
 
 
+#rename feature columns to tsne columns
+#df = df.rename(columns={"2d_dim_1": "tsne_dim_1", "2d_dim_2": "tsne_dim_2"})
+labels_sorted = sorted(CLOUD_CLASS_INFO.keys())#, key=lambda x: CLOUD_CLASS_INFO[x]["order"])
+print(labels_sorted)
 
-# ================================================
-# GROUP BUILDER
-# ================================================
-def build_event_groups(df):
-    """
-    Creates boolean masks for:
-      - ALL
-      - RAIN_ALL
-      - RAIN_10th (top 10% rain intensity)
-      - HAIL_ALL
-      - HAIL_10th (top 10% hail intensity)
+#open df featture csv
+df_features = pd.read_csv(feature_space, low_memory=False)
 
-    vector_type is used to detect event type.
-    """
+df_centroids = df_features[
+    (df_features["vector_type"] == "CENTROID")
+].dropna(subset=tsne_cols)
+#add label column to centroids df
+df_centroids["label"] = labels_sorted[:len(df_centroids)]
 
-    # --------------------------------------
-    # 1. Identify rain vs hail using vector_type
-    # --------------------------------------
-    rain_mask = df["vector_type"].str.contains("PRECIP", case=False, na=False)
-    hail_mask = df["vector_type"].str.contains("HAIL", case=False, na=False)
-    print(f"Rain mask sum: {rain_mask.sum()}, Hail mask sum: {hail_mask.sum()}")
-    #print the overlap (should be zero)
-    overlap = (rain_mask & hail_mask).sum()
-    print(f"Overlap between rain and hail masks: {overlap}")
+df_features = df_features[
+    (df_features["vector_type"] != "CENTROID")
+].dropna(subset=tsne_cols)
 
-    # --------------------------------------
-    # 2. Compute 90th percentiles separately
-    # --------------------------------------
-    # Rain
-    rain_vals = df.loc[rain_mask, "max_intensity"].dropna()
-    rain_p90 = np.percentile(rain_vals, 90) if len(rain_vals) > 0 else np.nan
+df_test = df_features[df_features["vector_type"] != "TRAIN"]
 
-    # Hail
-    hail_vals = df.loc[hail_mask, "max_intensity"].dropna()
-    hail_p90 = np.percentile(hail_vals, 90) if len(hail_vals) > 0 else np.nan
+df_train = df_features[df_features["vector_type"] == "TRAIN"]
+df_train = df_train[df_train["label"] != -100]
 
-    print(f"Rain 90th percentile (mm): {rain_p90}")
-    print(f"Hail 90th percentile (cm): {hail_p90}")
+print(df_test)
+print(df_train)
 
-    # --------------------------------------
-    # 3. Group masks returned as dictionary
-    # --------------------------------------
-    return {
-        "ALL": rain_mask | hail_mask,
-        "RAIN_ALL": rain_mask,
-        "RAIN_10th": rain_mask & (df["max_intensity"] >= rain_p90),
-        "HAIL_ALL": hail_mask,
-        "HAIL_10th": hail_mask & (df["max_intensity"] >= hail_p90)
-    }
+#extract filenmae in df (from path)
+df['filename'] = df['path'].apply(lambda x: os.path.basename(x))
+
+#select in df only the test vector type and attach the correct tsne col from df_test using filename match
+df_test_feat = df[df["vector_type"] != "TRAIN"].copy()
+print(df_test_feat)
+
+df_test_label = df_test_feat.merge(
+    df_test[["filename", "tsne_dim_1", "tsne_dim_2"]],
+    on="filename",
+    how="left",
+)
+
+print(df_test_label)
+
+
+#if WITHOUT EXTRAPOLATED REMOVE THE rows with crop_tyoe == EXTRAPOLATED
+if WITHOUT_EXTRAPOLATED:
+    df_test_label = df_test_label[df_test_label["crop_type"] != "extrapolated"]
+
+# #replace feature columns in df with those from df_features based on the vector_type and index
+# for vtype in df_test_feat["vector_type"].unique():
+#     mask = df_test_feat["vector_type"] == vtype
+#     df_v = df_test_feat[mask] 
+#     df_test_label.loc[mask, tsne_cols] = df_v.loc[df_test_feat.index[mask], tsne_cols].values
 
 
 # ================================================
 # BUILD GROUP MASKS
 # ================================================
-groups = build_event_groups(df)
+cmap = cmc.lisbon
+norm = mpl.colors.Normalize(vmin=0, vmax=23)
 
-df_all     = df[groups["ALL"]]
-df_rain_top10 = df[groups["RAIN_10th"]]
-df_hail_top10 = df[groups["HAIL_10th"]]
-df_rain_all  = df[groups["RAIN_ALL"]]
-df_hail_all  = df[groups["HAIL_ALL"]]
+n_rows = 1
+n_cols = len(groups_dict)
 
-# print sample counts considering single events (unique datetime and lat_centre and lon_centre)
-
-print("Samples per group:")
-df["date"] = pd.to_datetime(df["datetime"]).dt.date
-for name, mask in groups.items():
-    df_g = df[mask]
-
-    # unique events per day+lat+lon
-    n_events = df_g.groupby(["date", "lat_centre", "lon_centre", "vector_type"]).ngroup().nunique()
-
-    print(f"{name:<12}: {n_events}")
-
-# -----------------------------
-# 2️⃣ PLOT GROUP COUNTS & LABEL COUNTS
-# -----------------------------
-plot_dir = os.path.join(output_path, "analysis_plots")
-os.makedirs(plot_dir, exist_ok=True)
-
-# ----------------------------------------------------------
-# Combined bar plot: counts per label for all groups
-# ----------------------------------------------------------
-
-# list group names in a meaningful order
-group_order = ["ALL", "RAIN_ALL", "RAIN_10th", "HAIL_ALL", "HAIL_10th"]
-
-# assign a color for each group
-colors = {
-    "ALL": "#4E79A7",
-    "RAIN_ALL": "#59A14F",
-    "RAIN_10th": "#8CD17D",
-    "HAIL_ALL": "#F28E2B",
-    "HAIL_10th": "#E15759",
-}
-
-# =============================================================
-# 2D FEATURE SPACE PLOT WITH GROUP MEANS + DENSITY CONTOURS
-# =============================================================
-import seaborn as sns
-from scipy.stats import gaussian_kde
-
-feature_cols_2d = ["2d_dim_1", "2d_dim_2"]
-
-# ----------------------------
-# Background = TRAIN points
-# ----------------------------
-df_train = df[df["vector_type"] == "TRAIN"].dropna(subset=feature_cols_2d)
-
-#filter only the time in the event window
-print(f"Training samples: {len(df_train)}")
-
-# === COLOR MAP ===
-COLORS_PER_CLASS = {
-    '0': 'darkgray', '1': 'darkslategrey', '2': 'peru', '3': 'orangered',
-    '4': 'lightcoral', '5': 'deepskyblue', '6': 'purple', '7': 'lightblue',
-    '8': 'green', '9': 'goldenrod', '10': 'magenta', '11': 'dodgerblue',
-    '12': 'darkorange', '13': 'olive', '14': 'crimson'
-}
-
-plt.figure(figsize=(10, 8))
-
-# scatter background
-plt.scatter(
-    df_train["2d_dim_1"],
-    df_train["2d_dim_2"],
-    c=df_train["label"].astype(str).map(COLORS_PER_CLASS),
-    s=5,
-    alpha=0.1,
-    label="training"
+fig_fs, axes_fs = plt.subplots(
+    n_rows, n_cols,
+    figsize=(3 * n_cols, 3 * n_rows),
+    sharex=True, sharey=True
 )
 
-# ----------------------------------------------------
-# MARKERS for the group means
-# ----------------------------------------------------
-group_markers = {
-    "ALL": "X",
-    "RAIN_ALL": "P",
-    "RAIN_10th": "D",
-    "HAIL_ALL": "s",
-    "HAIL_10th": "o"
-}
+fig_bar, axes_bar = plt.subplots(
+    n_rows, n_cols,
+    figsize=(2 * n_cols, 1 * n_rows),
+    sharex=True, sharey=True
+)
 
-# ----------------------------------------------------
-# Function: density contour for a group
-# ----------------------------------------------------
-def plot_density_contours(df_g, color):
-    if len(df_g) < 10:
-        return
-    x = df_g["2d_dim_1"].values
-    y = df_g["2d_dim_2"].values
-    kde = gaussian_kde(np.vstack([x, y]))
-    
-    # Grid for KDE
-    xmin, xmax = x.min(), x.max()
-    ymin, ymax = y.min(), y.max()
-    xx, yy = np.mgrid[xmin:xmax:200j, ymin:ymax:200j]
-    positions = np.vstack([xx.ravel(), yy.ravel()])
-    density = kde(positions).reshape(xx.shape)
-    
-    # two contour levels: 50% and 90%
-    levels = np.percentile(density, [50, 10])
-    
-    plt.contour(
-        xx, yy, density,
-        levels=levels,
-        colors=[color],
-        linewidths=1.6,
-        alpha=1.0
+
+axes_fs = np.atleast_2d(axes_fs)
+axes_bar = np.atleast_2d(axes_bar)
+#axes_dist = np.atleast_2d(axes_dist)
+#axes_2nd = np.atleast_2d(axes_2nd)
+
+
+#lat_groups = stratifiy_by_latitude(df_test_label, lat_col="lat", LAT_DIVISION=LAT_DIVISION)
+
+
+
+#for r, (region, df_lat) in enumerate(zip(["NORTH", "SOUTH"], lat_groups)):
+
+#print(f"\n=== {region} REGION ===")
+#df_groups = build_event_groups(df_lat, PERCENTILE)
+df_lat = df_test_label.copy()
+for c, ginfo in enumerate(groups_dict):
+    event_name = ginfo["name"]
+    print(f"\n--- Processing group: {event_name} ---")
+    if event_name == "ALL":
+        df_group = df_lat.copy()
+    else:
+        df_group = df_lat[df_lat['storm_type'] == event_name].copy()
+
+    #ax_fs = axes_fs[0, c] if region == "NORTH" else axes_fs[1, c]
+    #ax_bar = axes_bar[0, c] if region == "NORTH" else axes_bar[1, c]
+    #ax_dist = axes_dist[0, c] if region == "NORTH" else axes_dist[1, c]
+
+    # =============================
+    # FEATURE SPACE PLOT
+    # ============================
+    plot_feature_space_dots(
+        axes_fs[0, c],
+        df_train,
+        xcol="tsne_dim_1",
+        ycol="tsne_dim_2",
+        label_col="label",
+        class_colors=CLOUD_CLASS_INFO,
+        s=4,
+        alpha=0.08,
+        rasterized=True,
+    )
+
+    #add centroids as markers with the label color
+    for _, row in df_centroids.iterrows():
+        axes_fs[0, c].scatter(
+            row["tsne_dim_1"],
+            row["tsne_dim_2"],
+            color = CLOUD_CLASS_INFO[int(row["label"])]["color"],
+            marker="^",
+            s=100,
+            edgecolor="black",
+            linewidth=1,
+            zorder=5
+        )
+
+    # ---- test vectors ----
+    #df_events = filter_rows_in_event_window(df_group)
+    #plot_event_trajectories(ax_fs, df_events, cmap, norm, alpha=0.7, linewidth=0.7)
+    print(df_group)
+    plot_density_contours(
+        axes_fs[0, c],
+        df_group,
+        xcol="tsne_dim_1",
+        ycol="tsne_dim_2",
+        percentiles=percentiles,
+        bandwidth=0.25,
+        color="black",
+        linewidths=(2.0, 2.0, 2.0),
+        alpha=1.0,
+        linestyles_list=linestyles_list
+    )
+
+    #remove spines, axes and ticks
+    axes_fs[0, c].set_xticks([])
+    axes_fs[0, c].set_yticks([])
+    axes_fs[0, c].set_xlabel("")
+    axes_fs[0, c].set_ylabel("")
+    axes_fs[0, c].spines['top'].set_visible(False)
+    axes_fs[0, c].spines['right'].set_visible(False)
+    axes_fs[0, c].spines['left'].set_visible(False)
+    axes_fs[0, c].spines['bottom'].set_visible(False)
+
+    # ----------------------------------
+    # Count per class label
+    # ----------------------------------
+
+    counts = (
+        df_group["label"]
+        .astype(int)
+        .value_counts()
+        .reindex(labels_ordered, fill_value=0)
     )
 
 
-# ----------------------------------------------------
-# PLOT each group
-# ----------------------------------------------------
-for name, mask in groups.items():
-    
-    gdf = df[mask]
-    gdf = filter_rows_in_event_window(gdf)
+    #normalize counts to total number of samples in the group
+    #total_counts = counts.sum()
+    #print(f"Total samples in group {event_name}: {total_counts}")
 
-    # plot density contours
-    #plot_density_contours(gdf, colors[gname])
+    #Set count to 0 remove labels with counts below MIN_SAMPLES
+    #counts = counts[counts >= MIN_SAMPLES]
 
-    # compute mean vector position
-    mean_x = gdf["2d_dim_1"].mean()
-    mean_y = gdf["2d_dim_2"].mean()
+    #rel_counts = counts / total_counts * 100  # per 100
 
-    # plot mean marker
-    plt.scatter(
-        mean_x,
-        mean_y,
-        c=colors[name],
-        s=200,
-        marker=group_markers[name],
-        edgecolor="black",
-        linewidth=1.2,
-        label=f"{name} mean",
-        alpha=0.8
+    #make bar plot with the normalized counts
+    x = np.arange(len(labels_ordered))
+
+    axes_bar[0, c].bar(
+        x,
+        counts.values,
+        color=colors_ordered,
+        alpha=0.85,
     )
 
 
-plt.xlabel("2d_dim_1", fontsize=14)
-plt.ylabel("2d_dim_2", fontsize=14)
-plt.title("2D Feature Space with Group Means & Density Contours", fontsize=16, fontweight='bold')
-plt.legend(fontsize=12)
-plt.tight_layout()
 
-plot_path_2d = os.path.join(plot_dir, "2d_feature_space_groups.png")
-plt.savefig(plot_path_2d, dpi=300, bbox_inches="tight", transparent=True)
+    # ----------------------------------
+    # Titles & row labels
+    # ----------------------------------
+    #if r == 0:
+    # axes_fs[0, c].set_title(
+    #     ginfo["name"],
+    #     fontsize=14,
+    #     fontweight="bold"
+    # )
+    # axes_bar[0, c].set_title(
+    #     ginfo["name"],
+    #     fontsize=11,
+    #     fontweight="bold"
+    # )
+
+    #if c == 0:
+        # axes_fs[0, c].text(
+        #     -0.01, 0.5, region,
+        #     transform=ax_fs.transAxes,
+        #     fontsize=14,
+        #     fontweight="bold",
+        #     va="center",
+        #     ha="right",
+        #     rotation=90
+        # ) 
+        # #shift this to the left
+        # axes_bar[0, c].text(
+        #     -0.5, 0.5, region,
+        #     transform=axes_bar[0, c].transAxes,
+        #     fontsize=12,
+        #     fontweight="bold",
+        #     va="center",
+        #     ha="right",
+        #     rotation=90
+        # )
+
+    #if r == n_rows - 1:
+    axes_bar[0, c].set_xticks(x)
+    axes_bar[0, c].set_xticklabels(short_labels, fontsize=11, rotation=45, ha="right")
+
+    #put grid behind bars
+    axes_bar[0, c].set_axisbelow(True)
+    axes_bar[0, c].yaxis.grid(alpha=0.3)
+
+    
+
+    # ----------------------------------
+    # Minimal styling
+    # ----------------------------------
+    axes_bar[0, c].set_yscale("log")
+    #show customized y tichks for bar plot
+    xticks_bar = [10, 100, 1000, 10000]
+    axes_bar[0, c].set_yticks(xticks_bar)
+
+    #ax_bar.set_xticks(labels_sorted)
+    #ax_bar.set_xticklabels([], fontsize=11)
+
+    #ax_bar.set_axisbelow(True)
+    #ax_bar.tick_params(axis="y", labelsize=10)
+    #set y ticks (3 integer ticks)
+    #ax_bar.yaxis.set_major_locator(plt.MaxNLocator(4))
+
+
+#shift this more to the right
+fig_bar.text(-0.15, 0.5, "Count", va="center",
+            rotation="vertical", fontsize=12)
+
+
+#add legend on the right side of the figure (outside) for the percentile of the contours
+#also add the linestyle used for each percentile
+legend_handles = [
+    Line2D([0], [0], color="black", linestyle="solid", linewidth=2.0),
+    Line2D([0], [0], color="black", linestyle="dashed", linewidth=2.0),
+    #Line2D([0], [0], color="black", linestyle="dotted", linewidth=2.0),   
+]
+
+legend_labels = [
+    "50th percentile",
+    "90th percentile",
+    #"99th percentile"
+]
+
+fig_fs.legend(
+    handles=legend_handles,
+    labels=legend_labels,
+    loc="center right",
+    bbox_to_anchor=(1.4, 0.5),   # push legend outside
+    fontsize=10,
+    title="Density contours",
+    title_fontsize=10,
+    frameon=False,
+)
+
+
+#Save figure feature space
+if WITHOUT_EXTRAPOLATED:
+    outname_fs = f"feature_space_region_event_no_extrapolated.png"
+else:
+    outname_fs = f"feature_space_region_event.png"
+fig_fs.savefig(os.path.join(plot_dir, outname_fs),
+            dpi=300, bbox_inches="tight", transparent=True)
+
+print("Saved:", outname_fs)
+
+
+#save bar and distance figures
+
+
+fig_bar.subplots_adjust(wspace=0.15, hspace=0.15)
+
+if WITHOUT_EXTRAPOLATED:
+    outname_bar = "group_population_by_label_latitude_no_extrapolated.png"
+else:
+    outname_bar = "group_population_by_label_latitude.png"
+
+fig_bar.savefig(
+    os.path.join(plot_dir, outname_bar),
+    dpi=300,
+    bbox_inches="tight",
+    transparent=True
+)
+
+print("✅ Saved:", outname_bar)
+
+
 plt.close()
-
-print("Saved:", plot_path_2d)

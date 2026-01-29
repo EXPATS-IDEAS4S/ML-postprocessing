@@ -52,13 +52,13 @@ import openTSNE
 
 # ---------------- CONFIG ---------------- #
 CONFIG = {
-    "scales": ["dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"],
+    "scales": ["dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"],
     "epochs": [800],
-    "feature_folder": "/data1/runs/dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective/test_features/epoch_800/HAIL", 
-    "output_path": "/data1/fig/dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective/test",
-    "filename_suffix": "HAIL",
-    "random_states": [3],#[0, 3, 16, 23, 57],
-    "n_crops": 75002,
+    "feature_folder": "/data1/runs/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/test_features/epoch_800/HAIL/", 
+    "output_path": "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/epoch_800/test/HAIL/",
+    "filename_suffix": "",
+    "random_states": [3], #[0, 3, 16, 23, 57],
+    "n_crops": 111488,
     "sampling_type": "all",  # Options: 'random', 'closest', 'farthest', 'all'
     "methods": ["tsne_opentsne"],#["isomap", "tsne_sklearn", "tsne_opentsne"],
     # Parameters for Isomap
@@ -96,7 +96,8 @@ def save_embedding(embedding, scale: str, epoch: int, method: str, random_state:
     """Save embedding results as .npy file."""
     
     os.makedirs(CONFIG["output_path"], exist_ok=True)
-    filename = f"{method}{extra_tag}_{scale}_{random_state}_epoch_{epoch}_{CONFIG['filename_suffix']}.npy"
+    filename = f"{method}{extra_tag}_perpl-{CONFIG['tsne_opentsne']['perplexity']}_{scale}_{random_state}_epoch_{epoch}{CONFIG['filename_suffix']}.npy"
+    #np.save(os.path.join(CONFIG["output_path"], f"epoch_{epoch}", CONFIG['sampling_type'], filename), embedding)
     np.save(os.path.join(CONFIG["output_path"], filename), embedding)
     print(f"✅ Saved: {filename}")
 
@@ -146,3 +147,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+#648862
