@@ -38,7 +38,7 @@ from utils.plotting.class_colors import CLOUD_CLASS_INFO
 # === CONFIG ===
 RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
 BASE_DIR = f"/data1/fig/{RUN_NAME}/epoch_800/test_traj"
-OUTDIR = f"{BASE_DIR}/transitions_plots_low_high_weights"
+OUTDIR = f"{BASE_DIR}/transitions_plots_no_dominance"
 os.makedirs(OUTDIR, exist_ok=True)
 
 LAT_DIVISION = 47
@@ -128,55 +128,26 @@ def plot_multiplot_regions_events(
 
         print(df_event.columns.tolist())
 
-        # results = compute_transitions_and_persistence(
-        #                 df_event,
-        #                 label_col="label",
-        #                 time_col="datetime",
-        #                 lat_col="lat",
-        #                 lon_col="lon",
-        #                 labels=labels,)
-        
-        results = compute_transitions_and_persistence_weighted(
-                df,
+        # Compute transitions without weighted/dominance split
+        results = compute_transitions_and_persistence(
+                df_event,
                 label_col="label",
                 time_col="datetime",
                 lat_col="lat",
                 lon_col="lon",
-                storm_col="storm_id",
-                wperc_prefix="wperc_label_",
                 labels=labels,
-                wperc_threshold=75,
-                n_bootstrap=100,
-                ci_level=95,
-            )
+        )
+        
         print(results)
-        #get labels from results 
+        # Get labels from results 
         label_names = results['labels']
         print(label_names)
-        #modify colors for class names by specific labels for '_' in class names and adding color based on the label number
         
-        if plot_type != "transition_matrix_weights":
-            #for labels with '_' in name, get the base label and assign color based on the base label
-            colors_per_class = []
-            for lbl in label_names:
-                if '_' in lbl:
-                    base_lbl = int(lbl.split('_')[0])
-                else:
-                    base_lbl = int(lbl)
-                idx = labels.index(base_lbl)
-                colors_per_class.append(selected_colors_ordered[idx])
-        print(colors_per_class)
+        # No need to handle '_' in class names since we're not splitting by dominance
+        # Simply assign colors based on the labels
+        #colors_per_class = selected_colors_ordered.copy()
+        class_names = selected_short_labels.copy()
         
-        #get labels name for class names
-        class_names = []
-        for lbl in label_names:
-            if '_' in lbl:
-                base_lbl = int(lbl.split('_')[0])
-            else:
-                base_lbl = int(lbl)
-            idx = labels.index(base_lbl)
-            class_names.append(selected_short_labels[idx])
-        print(class_names)
 
         # 🔹 delegate plotting
         plot_func(ax, results, label_names, vmax, colors=colors_per_class, class_names=class_names)
@@ -262,7 +233,7 @@ if __name__ == "__main__":
     plot_multiplot_regions_events(
         df_continuous,
         plot_func=plot_transition_heatmap_multiplot,
-        plot_type="transition_matrix_weights",
+        plot_type="transition_matrix",
         vmax=VMAX,
         labels= selected_labels_ordered,
         colors_per_class=cmc.batlow,

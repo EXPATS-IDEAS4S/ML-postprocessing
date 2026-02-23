@@ -15,7 +15,7 @@ from class_colors import CLOUD_CLASS_INFO, COLORS_PER_CLASS
 # === CONFIG ===
 RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
 path_to_dir = f"/data1/fig/{RUN_NAME}/epoch_800/all/"
-merged_path = os.path.join(path_to_dir, "merged_crops_stats_all_cvc_cot_fractions.csv")
+merged_path = os.path.join(path_to_dir, "merged_crops_stats_all_cvc_cot_cth_fractions.csv")
 
 
 # crop_list_path = os.path.join(path_to_dir, "crop_list_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_140207.csv")
@@ -46,15 +46,16 @@ cloud_items = sorted(CLOUD_CLASS_INFO.items(), key=lambda x: x[1]["order"])
 
 # Variables to plot
 VARIABLES = [
-    {"var": "cma", "short_name": "CC", "label": "Cloud Cover (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
-    {"var": "cth", "short_name": "CTH50", "label": "Cloud Top \n Height (km)", "percentile": 50, "scale": 0.001, "log": False, "vmin": 0, "vmax": 15},
-    {"var": "cth", "short_name": "CTH99", "label": "Cloud Top \n Height (km)", "percentile": 99, "scale": 0.001, "log": False, "vmin": 0, "vmax": 15},
+    {"var": "cma", "short_name": "d) CC", "label": "Cloud Cover (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
+    #{"var": "cth", "short_name": "e) CTH50", "label": "Cloud Top \n Height (km)", "percentile": 50, "scale": 0.001, "log": False, "vmin": 0, "vmax": 12},
+    {"var": "cth_very_high", "short_name": "e) CTH(10+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
+    #{"var": "cth", "short_name": "CTH99", "label": "Cloud Top \n Height (km)", "percentile": 99, "scale": 0.001, "log": False, "vmin": 0, "vmax": 15},
     #{"var": "ccv", "short_name": "CVC", "label": "Convective \n Cover (%)", "percentile": None, "scale": 100, "log": True, "vmin": 1, "vmax": 100},
     #{"var": "cot", "short_name": "COT50", "label": "Cloud Optical \n Thickness", "percentile": 50, "scale": 1, "log": False, "vmin": 0, "vmax": 35},
     #{"var": "cot", "short_name": "COT99", "label": "Cloud Optical \n Thickness", "percentile": 99, "scale": 1, "log": False, "vmin": 0, "vmax": 155},
-    {"var": "cot_thin", "short_name": "COT(0-5)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
-    {"var": "cot_medium", "short_name": "COT(5-30)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
-    {"var": "cot_thick", "short_name": "COT(30+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
+    #{"var": "cot_thin", "short_name": "COT(0-5)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
+    #{"var": "cot_medium", "short_name": "COT(5-30)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
+    {"var": "cot_thick", "short_name": "f) COT(30+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 70},
     #{"var": "precip_area", "short_name": "PA", "label": "Precipitating \n Area (%)", "percentile": None, "scale": 100, "log": True, "vmin": 1, "vmax": 100},
     #{"var": "precipitation", "short_name": "RR99", "label": "Rain Rate \n (mm/h)", "percentile": 99, "scale": 1, "log": True, "vmin": 0.1, "vmax": 40},
     #{"var": "euclid_msg_grid", "short_name": "LC", "label": "Lightning \n Count", "percentile": None, "scale": 1, "log": True, "vmin": 1, "vmax": 200},
@@ -124,6 +125,7 @@ print(df['var'].unique())
 
 #print all unique values of var column
 print(df['var'].unique())
+#print the values for var == 'cth_very_high'
 
 print(f"Loaded: {merged_path} ({df.shape})")
 
@@ -136,11 +138,17 @@ labels = sorted(df["label"].unique())
 n_vars = len(VARIABLES)
 print(f"Creating multi-variable boxplot with {n_vars} variables...")
 
+n_rows = 1
+n_cols = 3
+
 fig, axes = plt.subplots(
-    2, 3,
-    figsize=(8, 3),
+    n_rows, n_cols,
+    figsize=(8, 1.5),
     sharex=True
 )
+
+if n_rows == 1:
+    axes = np.array([axes])  # make it 2D for consistency
 
 for idx, info in enumerate(VARIABLES):
 
@@ -154,6 +162,8 @@ for idx, info in enumerate(VARIABLES):
     print(f"Processing {var} – {info}")
 
     df_var = df[df["var"] == var]
+    df_cma = df[df["var"] == "cma"]
+
 
     box_data = []
     box_positions = []
@@ -162,9 +172,18 @@ for idx, info in enumerate(VARIABLES):
     for j, (label, color_info) in enumerate(cloud_items, start=1):
 
         subset = df_var[df_var["label"] == label]
-        if var == "euclid_msg_grid":
-            print(subset)
-            print(len(subset))
+        cma_subset = df_cma[df_cma["label"] == label]
+        print(cma_subset["None"])#.describe())
+
+        if var != "cma":
+            # align by crop id (not by index)
+            subset = subset.merge(
+                cma_subset[["crop", "None"]].rename(columns={"None": "cma_val"}),
+                on="crop",
+                how="inner"
+            )
+            subset["cma_val"] = pd.to_numeric(subset["cma_val"], errors="coerce")
+            #subset = subset[subset["cma_val"] >= 0.05]
 
         colname = str(percentile) if percentile is not None else "None"
         data = pd.to_numeric(subset[colname], errors="coerce").dropna()
@@ -174,6 +193,7 @@ for idx, info in enumerate(VARIABLES):
             #make an empty series
             data = pd.Series(dtype=float)
 
+        
         data = data * info["scale"]
         print(f"Label {label}: using column '{colname}' for boxplot with {len(data)} samples.")
         print(data.median(), data.quantile(0.25))

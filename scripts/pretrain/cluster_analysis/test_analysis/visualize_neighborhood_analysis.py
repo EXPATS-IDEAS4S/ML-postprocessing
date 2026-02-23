@@ -30,7 +30,6 @@ tsne_csv = os.path.join(
     "tsne_all_vectors_with_centroids.csv"
 )
 
-
 df = pd.read_csv(neighbors_csv)
 df_tsne = pd.read_csv(tsne_csv)
 df_tsne_test = df_tsne[(df_tsne["vector_type"] != "TRAIN") & (df_tsne["vector_type"] != "CENTROID")]
@@ -126,10 +125,12 @@ for group_name, df_group in df_groups.items():
 
         n_classes = len(INTERESTING_CLASSES)
         fig, axes = plt.subplots(
-            1, n_classes,
-            figsize=(2.3 * n_classes, 1.5),
-            sharey=True
+            n_classes, 1,
+            figsize=(2, 1.5 * n_classes),
+            sharex=True,
         )
+        #increase space between subplots
+        fig.subplots_adjust(hspace=0.4)
 
         fig_sc, axes_sc = plt.subplots(
             1, n_classes,
@@ -169,8 +170,10 @@ for group_name, df_group in df_groups.items():
                 data=df_cls,
                 x="neighbor_label",
                 y="probability",
+                hue="neighbor_label",
                 ax=ax,
                 palette=palette,
+                legend=False,
                 showfliers=False,
                 width=0.6
             )
@@ -268,39 +271,61 @@ for group_name, df_group in df_groups.items():
 
             ax.set_title(
                 LABEL_NAME_MAP.get(short[cls], short[cls]),
-                fontsize=12, fontweight="bold"
+                fontsize=11
             )
 
             ax_sc.set_title(
                 LABEL_NAME_MAP.get(short[cls], short[cls]),
-                fontsize=12, fontweight="bold"
-            )
-
-            ax.set_xticklabels(
-                short,
-                rotation=45, fontsize=10
+                fontsize=11, fontweight="bold"
             )
 
             ax_sc.set_ylim(0,1.6)
             ax_sc.set_xlim(30,100)
             
             ax.set_xlabel("")
-            ax.set_xticklabels(
-                [short[l].upper() for l in labels_ordered],
-                rotation=45, fontsize=10)
-            ax.set_ylabel("Weighted probability", fontsize=11)
+            if i == n_classes - 1:
+                ax.set_xticks(np.arange(len(labels_ordered)))
+                ax.set_xticklabels(
+                    [short[l].upper() for l in labels_ordered],
+                    rotation=45, fontsize=10
+                )
+            else:
+                ax.set_xticks(np.arange(len(labels_ordered)))
+                ax.set_xticklabels([])
+
+            if i == n_classes // 2:
+                ax.set_ylabel("Dominance", fontsize=11)
+            else:
+                ax.set_ylabel("")
             #set y tickes label with FixedLocator to have 5 ineger values
             ax.set_yticks(np.linspace(0, 100, 5))
             #ax.set_yticklabels(np.arange(0, 110, 20), fontsize=10)
 
             ax.grid(True, axis="y", alpha=0.3)
 
+            #add an horizontal line at y=75 to highlight the dominance threshold
+            ax.axhline(
+                75, color="black", linestyle="--", linewidth=1, alpha=0.7
+            )
+            #highlight the area above the line with a light color
+            # ax.fill_between(
+            #     x=[-0.5, len(labels_ordered)-0.5],
+            #     y1=75, y2=100,
+            #     color="black", alpha=0.05
+            # )
+
         # fig.suptitle(
         #     f"Event: {event}",
         #     fontsize=14, y=1.07
         # )
         #reduce space between subplots
-        fig.subplots_adjust(wspace=0.15)
+        #fig.subplots_adjust(wspace=0.15)
+
+        #add title to the figure with the group name and event
+        fig.suptitle(
+            f"c) Percentage of neighbor labels",
+            fontsize=11, fontweight="bold", y=1.
+        )
 
         fig.savefig(
             os.path.join(output_dir, f"neighborhood_prob_boxplots_{DIVIDE_BY}_{group_name}_{event}.png"),

@@ -115,12 +115,11 @@ for i, info in enumerate(VARIABLES):
         ax.set_ylabel(f"{info['label']}", fontsize=11)
     
     if info["percentile"] == "IQR":
-        ax.set_title(info["percentile"], fontsize=11, fontweight="bold")
+        ax.set_title(f"c) {info['percentile']}", fontsize=11, fontweight="bold")
     elif info["percentile"] == 99:
-        ax.set_title(f"P01", fontsize=11, fontweight="bold")
+        ax.set_title(f"b) Extreme", fontsize=11, fontweight="bold")
     else:
-        ax.set_title(f"P{info['percentile']}", fontsize=11, fontweight="bold")
-
+        ax.set_title(f"a) Median", fontsize=11, fontweight="bold")
     ax.grid(axis="y", alpha=0.3)
     ax.tick_params(axis="y", labelsize=11)
     #set only integer y ticks

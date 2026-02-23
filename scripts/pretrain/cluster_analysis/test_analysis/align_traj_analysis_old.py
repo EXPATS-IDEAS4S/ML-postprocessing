@@ -22,21 +22,38 @@ output_dir = os.path.join(base_path, "hypersphere_analysis")
 plot_dir = os.path.join(output_dir, "trajectory_plots")
 os.makedirs(plot_dir, exist_ok=True)
 
+neighbors_csv = os.path.join(
+    output_dir,
+    "test_vectors_local_label_composition.csv"
+)
 
-csv_file = "test_vectors_neigh_with_stats.csv"
+tsne_csv = os.path.join(
+    base_path,
+    "tsne_all_vectors_with_centroids.csv"
+)
 
-csv_tnse_file = "tsne_all_vectors_with_centroids.csv"
+#open the variable csv stats
+stats_csv = os.path.join(
+    base_path,"crops_stats_vars-cth-cma-precipitation-euclid_msg_grid_stats-50-99-25-75_frames-1_coords-datetime_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_0.csv"
+)
 
-df = pd.read_csv(os.path.join(output_dir, csv_file))
-df_tsne = pd.read_csv(os.path.join(base_path, csv_tnse_file))
+df_stats = pd.read_csv(stats_csv)
+#print(df_stats.columns.tolist())    
+#print(df_stats)
+#change name of column from time to datetime
+df_stats = df_stats.rename(columns={"time": "datetime"})
+df_stats = df_stats.rename(columns={"crop": "filename"})
 
-median_wperc = 75
-physical_vars = ["cma", "cth50"]
+df = pd.read_csv(neighbors_csv)
+df_tsne = pd.read_csv(tsne_csv)
+df_tsne_test = df_tsne[(df_tsne["vector_type"] != "TRAIN") & (df_tsne["vector_type"] != "CENTROID")]
 
-var_names = {
-    "cma": "CC",
-    "cth50": "CTH Median (km)"
-}
+# merge tsne coords
+df = df.merge(
+    df_tsne_test[["filename", "tsne_dim_1", "tsne_dim_2"]],
+    on="filename",
+    how="left"
+)
 
 labels_ordered = sorted(
     CLOUD_CLASS_INFO.keys(),
@@ -55,26 +72,24 @@ print(perc_cols)
 #df["dominant_label"] = df[perc_cols].idxmax(axis=1).str.replace("perc_label_", "")
 #df["dominance"] = df[perc_cols].max(axis=1)
 
-#df["entropy"] = df[perc_cols].apply(
-#    lambda x: entropy(x / 100.0) if np.isfinite(x).all() else np.nan,
-#    axis=1
-#)
+df["entropy"] = df[perc_cols].apply(
+    lambda x: entropy(x / 100.0) if np.isfinite(x).all() else np.nan,
+    axis=1
+)
 
 df["dominance"] = df[perc_cols].max(axis=1) 
+
 
 datetimes = [ fname.split("_")[1] for fname in df["filename"] ]
 df["datetime"] = pd.to_datetime(datetimes, format="%Y-%m-%dT%H-%M")
 
 df["hour"] = df["datetime"].dt.hour
-#df["day_night"] = np.where(df["hour"].between(8, 16), "DAY", "NIGHT")
-#df["region"] = np.where(df["lat"] >= 47, "NORTH", "SOUTH")
+df["day_night"] = np.where(df["hour"].between(8, 16), "DAY", "NIGHT")
+df["region"] = np.where(df["lat"] >= 47, "NORTH", "SOUTH")
 print(df.columns.tolist())
 
 #make storm_id column removing timestamp (first part after first underscore)
 df["storm_id"] = df["filename"].str.split("_").str[0]
-
-print(df.columns.tolist())
-
 
 # ---------------------------------
 # trajectory-aligned time
@@ -161,6 +176,32 @@ def population_by_time(df, remove_extrapolated=False):
     return counts.reset_index(name="counts")
 
 
+#merge from df_stats the coluns var==precipitation and column==99, and the var==euclid_msg_grid and columns None
+#using the filename column
+df = df.merge(
+    df_stats[
+        (df_stats["var"] == "precipitation")
+        & (df_stats["99"].notnull())
+    ][["filename", "99"]],
+    on="filename",
+    how="left",
+    suffixes=("", "_precip_99")
+)
+
+df = df.merge(
+    df_stats[
+        (df_stats["var"] == "euclid_msg_grid")
+        & (df_stats["None"].notnull())
+    ][["filename", "None"]],
+    on="filename",
+    how="left",
+    suffixes=("", "_euclid_msg_grid_None")
+)
+
+#rename column None to euclid_msg_grid and 99 to precipitation_99
+df = df.rename(columns={"None": "lightning_count"})
+df = df.rename(columns={"99": "rain_rate_p99"})
+
 
 
 INTERESTING_CLASSES = ["EC", "DC", "OA"]
@@ -180,12 +221,6 @@ print(colors_interesting)
 
 
 print(df.columns.tolist())
-
-styles = {
-    #"all": dict(color="black", alpha=0.8, lw=2),
-    "max_wperc>=75%": dict(alpha=0.5, lw=2, ls='-'),
-    "max_wperc<75%": dict(alpha=0.9, lw=3, ls=':'),
-}
 
 palette = {
     f"wperc_label_{k}": v
@@ -228,18 +263,20 @@ for group_name, df_group in df_groups.items():
             df_event = df_group[df_group['storm_type'] == event]
             df_event_no_extrap = df_groups_no_extrap[group_name][df_groups_no_extrap[group_name]['storm_type'] == event]
 
-        n_classes = 1#len(INTERESTING_CLASSES)
+        n_classes = len(INTERESTING_CLASSES)
         fig, axes = plt.subplots(
-            3, n_classes,
+            4, n_classes,
             figsize=(10, 5), #reduce height
             sharex=True,#make ratio 0.5, 1, 1
-            gridspec_kw={'height_ratios': [1, 1, 1]}
+            gridspec_kw={'height_ratios': [0.5, 1, 1, 1]}
         )
         #reduce horizontal space between subplots
         fig.subplots_adjust(hspace=0.1, wspace=0.08)
 
-        # if n_classes == 1:
-        #     axes = [axes]
+        
+        if n_classes == 1:
+            axes = [axes]
+
 
         for i, cls in enumerate(INTERESTING_CLASSES):
             print(f"Processing event {event} - class {cls}...")
@@ -251,114 +288,157 @@ for group_name, df_group in df_groups.items():
             print(color)
 
             df_cls = df_event[df_event["label"] == label]
-            df_cls["max_wperc"] = df_cls[perc_cols].max(axis=1)
-            df_high = df_cls[df_cls["max_wperc"] >= median_wperc]
-            df_low  = df_cls[df_cls["max_wperc"] <  median_wperc]
 
             # --------------------
             # Population
             # --------------------
-            #pop_cls = population_by_time(df_cls)
-            #pop_low = population_by_time(df_low)
-            #pop_high = population_by_time(df_high)
+            pop_cls = population_by_time(df_cls)
             #pop_cls_no_extrap = population_by_time(df_cls, remove_extrapolated=True)
             #pop_cls = pop[pop["label"] == label]
 
-            for key, subset in zip(
-            ["max_wperc>=75%", "max_wperc<75%"],
-            [df_high, df_low]
-            ):
-                pop_subset = population_by_time(subset)
-                axes[0].plot(
-                    pop_subset["t_bin"],
-                    pop_subset["counts"],
-                    color=color,
-                    lw=styles[key]['lw'],
-                    alpha=styles[key]['alpha'],
-                    ls=styles[key]['ls']
-                )
+            axes[0,i].plot(
+                pop_cls["t_bin"],
+                pop_cls["counts"],
+                color=color,
+                lw=2
+            )
 
+            # axes[0,i].plot(
+            #     pop_cls_no_extrap["t_bin"],
+            #     pop_cls_no_extrap["counts"],
+            #     color=color,
+            #     lw=2,
+            #     ls="--"
+            # )
 
             y_max = 5000
-            axes[0].set_ylim(10, y_max)
-            axes[0].set_yscale("log")
+            axes[0,i].set_ylim(10, y_max)
+            axes[0,i].set_yscale("log")
             #remove y label and ticks for y axis except for first column
            
-            axes[0].set_title(f"Class {cls}", fontsize=12, fontweight="bold")
-            axes[0].grid(which='both', axis='both', linestyle='--', alpha=0.3)
-    
-            axes[0].set_ylabel("Counts", fontsize=10)
-            #set 5 y ticks
+            axes[0,i].set_title(f"Class {cls}", fontsize=12, fontweight="bold")
+            axes[0,i].grid(which='both', axis='both', linestyle='--', alpha=0.3)
+            if i != 0:
+                axes[0, i].set_ylabel("")
+                axes[0, i].set_yticklabels([])
+            else:
+                axes[0,i].set_ylabel("Counts", fontsize=10)
+                #set 5 y ticks
+                
+                axes[0,i].yaxis.set_major_locator(mpl.ticker.FixedLocator([10, 100, 1000]))
+                #set y ticks label fontsize
+                axes[0,i].tick_params(axis='y', labelsize=10)
 
-            axes[0].yaxis.set_major_locator(mpl.ticker.FixedLocator([10, 100, 1000]))
-            #set y ticks label fontsize
-            axes[0].tick_params(axis='y', labelsize=10)
+            # --------------------
+            # Weighted Percentage of Interest Classes
+            # --------------------
+            for lbl in INTERESTING_CLASSES:
+                label_2 = [key for key, l in short.items() if l == lbl][0]
+                perc = mean_std_by_time(df_cls, f"wperc_label_{label_2}")
+                color_2 = colors[label_2]
+                #plot only if the count in the bin is > 50
+                perc = perc[perc["count"] >= 30]
 
-            
+                axes[1, i].plot(
+                    perc["t_bin"],
+                    perc["mean"],
+                    color=color_2,
+                    lw=2,
+                    alpha=0.8
+                )
+                axes[1, i].fill_between(
+                    perc["t_bin"],
+                    perc["mean"] - perc["std"],
+                    perc["mean"] + perc["std"],
+                    color=color_2,
+                    alpha=0.15
+                )
+            axes[1, i].set_ylim(0,105)
+            axes[1,i].grid(which='both', axis='both', linestyle='--', alpha=0.3)
+            axes[1, 0].yaxis.set_major_locator(mpl.ticker.FixedLocator([0, 25, 50, 75, 100]))
+            #remove label and ticks for y axis except for first column
+            if i != 0:
+                axes[1, i].set_ylabel("")
+                axes[1, i].set_yticklabels([])
+            else:
+                axes[1, 0].set_ylabel("Weighted \n Percentage", fontsize=10)
+                #set y ticks label fontsize
+                axes[1, 0].tick_params(axis='y', labelsize=10)
+                #draw 4 ticks in y with FixedLocator
                 
             # --------------------
             # Add precipitation 99th percentile and lightning count in the same plot (twin y axis)
             # --------------------
-            
-            for key, subset in zip(
-            ["max_wperc>=75%", "max_wperc<75%"],
-            [df_high, df_low]
-            ):
-                rr99 = mean_std_by_time(subset, "precipitation99")
-                rr99 = rr99[rr99["count"] >= 30]
-                axes[1].plot(
-                    rr99["t_bin"],
-                    rr99["mean"],
-                    color=color,
-                    lw=styles[key]['lw'],
-                    alpha=styles[key]['alpha'],
-                    ls=styles[key]['ls']
-                )
-         
-            #remove label and ticks for y axis except for first column
-            axes[1].set_ylim(0,25)
-            axes[1].grid(which='both', axis='both', linestyle='--', alpha=0.3)
-            axes[1].yaxis.set_major_locator(mpl.ticker.FixedLocator([0, 5, 10, 15, 20]))
-            axes[1].set_ylabel("Rain Rate \n p99 (mm/hr)", fontsize=10) 
-            #set y ticks label fontsize
-            axes[1].tick_params(axis='y', labelsize=10)#, colors="blue")
-    
-
-            
-            for key, subset in zip(
-            ["max_wperc>=75%", "max_wperc<75%"],
-            [df_high, df_low]
-            ):
-                lc = mean_std_by_time(subset, "euclid_msg_grid")
-                lc = lc[lc["count"] >= 30]
-                axes[2].plot(
-                    lc["t_bin"],
-                    lc["mean"],
-                    color=color,
-                    lw=styles[key]['lw'],
-                    alpha=styles[key]['alpha'],
-                    ls=styles[key]['ls']
+            rr99 = mean_std_by_time(df_cls, "rain_rate_p99")
+            rr99 = rr99[rr99["count"] >= 30]
+            axes[2, i].plot(
+                rr99["t_bin"],
+                rr99["mean"],
+                color="blue",
+                lw=2,
+                alpha=0.8
             )
+            axes[2, i].fill_between(
+                rr99["t_bin"],
+                rr99["mean"] - rr99["std"],
+                rr99["mean"] + rr99["std"],
+                color="blue",
+                alpha=0.15
+            )
+            #remove label and ticks for y axis except for first column
+            axes[2, i].set_ylim(0,25)
+            axes[2, i].grid(which='both', axis='both', linestyle='--', alpha=0.3)
+            axes[2, i].yaxis.set_major_locator(mpl.ticker.FixedLocator([0, 5, 10, 15, 20]))
+            if i == 0:
+                axes[2, i].set_ylabel("Rain Rate \n p99 (mm/hr)", fontsize=10) 
+                #set y ticks label fontsize
+                axes[2, i].tick_params(axis='y', labelsize=10)#, colors="blue")
+            else:
+                axes[2, i].set_ylabel("")
+                axes[2, i].set_yticklabels([])
+           
+
+            #create twin axis for lightning count
             
-            axes[2].set_ylim(50, 2000)
-            axes[2].set_yscale("log")
-            axes[2].grid(which='both', axis='both', linestyle='--', alpha=0.3)
-            axes[2].yaxis.set_major_locator(mpl.ticker.FixedLocator([100, 500, 1000]))
-   
-            axes[2].set_ylabel("Lightning \n Count", fontsize=10)#, color="orange")
-            #set y ticks label fontsize
-            axes[2].tick_params(axis='y', labelsize=10)#, colors="orange")
-            axes[2].set_yticklabels([100, 500, 1000])
+            lc = mean_std_by_time(df_cls, "lightning_count")
+            lc = lc[lc["count"] >= 30]
+            axes[3, i].plot(
+                lc["t_bin"],
+                lc["mean"],
+                color="green",
+                lw=2,
+                alpha=0.8
+            )
+            axes[3, i].fill_between(
+                lc["t_bin"],
+                lc["mean"] - lc["std"],
+                lc["mean"] + lc["std"],
+                color="green",
+                alpha=0.15
+            )
+            axes[3, i].set_ylim(50, 2000)
+            axes[3, i].set_yscale("log")
+            axes[3, i].grid(which='both', axis='both', linestyle='--', alpha=0.3)
+            axes[3, i].yaxis.set_major_locator(mpl.ticker.FixedLocator([100, 500, 1000]))
+            #remove label and ticks for y axis except for first column
+            if i != 0:
+                axes[3, i].set_ylabel("")
+                axes[3, i].set_yticklabels([])
+            else:
+                axes[3, i].set_ylabel("Lightning \n Count", fontsize=10)#, color="orange")
+                #set y ticks label fontsize
+                axes[3, i].tick_params(axis='y', labelsize=10)#, colors="orange")
+                axes[3, i].set_yticklabels([100, 500, 1000])
 
         # --------------------
         # Final cosmetics
         # --------------------
-        axes[2].set_xlabel("Aligned time (hours)", fontsize=12)
-        axes[2].set_xlim(-6 - BIN_HOURS, 6 + BIN_HOURS)
+        axes[3,1].set_xlabel("Aligned time (hours)", fontsize=12)
+        axes[3,i].set_xlim(-6 - BIN_HOURS, 6 + BIN_HOURS)
         #set ticks every 2 hours
-        axes[2].set_xticks(np.arange(-6, 7, 2))
+        axes[3,i].set_xticks(np.arange(-6, 7, 2))
         #set x ticks label fontsize
-        axes[2].tick_params(axis='x', labelsize=10)
+        axes[3,i].tick_params(axis='x', labelsize=10)
         #set overall title
         fig.suptitle(
             f"{event} - Trajectory-aligned analysis",
@@ -373,7 +453,7 @@ for group_name, df_group in df_groups.items():
 
         output_path = os.path.join(
             plot_dir,
-            f"trajectory_analysis_with_stats_{event}_simplified.png"
+            f"trajectory_analysis_with_stats_{event}.png"
         )
         fig.savefig(
             output_path,

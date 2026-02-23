@@ -15,6 +15,7 @@ def plot_persistence_bar_multiplot(ax, results, labels, vmax=None, colors=None, 
     ax.set_ylabel("Persistence prob." if ax.is_first_col() else "")
 
 
+
 def plot_persistence_time_multiplot(ax, results, labels, vmax=None, colors=None, class_names=None):
     durations = results["persistence_durations"]
     lbls = list(durations.keys())
@@ -32,8 +33,15 @@ def plot_persistence_time_multiplot(ax, results, labels, vmax=None, colors=None,
     
     #ax.set_yscale("log")
     ax.set_xticks(range(1, len(class_names) + 1))
-    #set x ticks only on last row
-    ax.set_xticklabels(class_names if ax.is_last_row() else [], fontsize=12, rotation=45, ha="right")
+    #set x ticks only on last row\
+    #rewrite class_names adding also the split.{'_'}0 of the labels to the class nema
+    class_names_modified = []
+    for suffix, name in zip(labels, class_names):
+        if '_' in suffix:
+            class_names_modified.append(name +  '_' + suffix.split('_')[1])
+        else:
+            class_names_modified.append(name)
+    ax.set_xticklabels(class_names_modified if ax.is_last_row() else [], fontsize=12, rotation=45, ha="right")
     #ax.set_xlabel("Class label" if ax.is_last_row() else "", fontsize=12)
     ax.set_ylabel("Persistence \n time (hours)" if ax.is_first_col() else "", fontsize=12)
     #set y ticks to be fixed along plots, to have 4 values from 0 to vmax
@@ -41,9 +49,10 @@ def plot_persistence_time_multiplot(ax, results, labels, vmax=None, colors=None,
     #ax.set_yticklabels(np.arange(0, vmax + 1, vmax / 5).astype(int), fontsize=12)
     #use only 5 ticks usinf FIXED locator
     
-    ax.set_ylim(0., vmax)
-    #ax.set_yscale("log")
-    ax.yaxis.set_major_locator(plt.FixedLocator([0,2,4,6,8,10]))
+    ax.set_ylim(0.1, vmax)
+    ax.set_yscale("log")
+    #ax.yaxis.set_major_locator(plt.FixedLocator([0,2,4,6,8]))
+    ax.yaxis.set_major_locator(plt.FixedLocator([0.1,1,10]))
     #ax.yaxis.tick_params(labelsize=12)
     #set grid
     ax.yaxis.grid(True)
@@ -63,13 +72,16 @@ def plot_transition_heatmap_multiplot(
     P = results["transition_matrix"]
     P_low = results.get("transition_ci_low", None)
     P_high = results.get("transition_ci_high", None)
-    persistence_prob = results.get("persistence_prob", None)
-    persistence_ci_low = results.get("persistence_ci_low", None)
-    persistence_ci_high = results.get("persistence_ci_high", None)
+    #persistence_prob = results.get("persistence_prob", None)
+    #persistence_ci_low = results.get("persistence_ci_low", None)
+    #persistence_ci_high = results.get("persistence_ci_high", None)
+    persistence_durations = results.get("persistence_durations", None)
+    
 
     M = P.copy()
     np.fill_diagonal(M, np.nan)
-
+    print(colors)
+    
     sns.heatmap(
         M,
         ax=ax,
@@ -86,11 +98,11 @@ def plot_transition_heatmap_multiplot(
         for j in range(M.shape[1]):
             if i != j and not np.isnan(M[i, j]):
 
-                if P_low is not None and P_high is not None:
-                    ci = (P_high[i, j] - P_low[i, j]) / 2
-                    text = f"{M[i, j]:.2f}\n±{ci:.2f}"
-                else:
-                    text = f"{M[i, j]:.2f}"
+                # if P_low is not None and P_high is not None:
+                #     ci = (P_high[i, j] - P_low[i, j]) / 2
+                #     text = f"{M[i, j]:.2f}\n±{ci:.2f}"
+                # else:
+                text = f"{M[i, j]:.2f}"
 
                 ax.text(
                     j + 0.5,
@@ -98,22 +110,24 @@ def plot_transition_heatmap_multiplot(
                     text,
                     ha="center",
                     va="center",
-                    fontsize=8,
+                    fontsize=10,
                     color="white" if M[i, j] < vmax / 2 else "black",
                 )
 
     # --- diagonal: persistence probability ---
-    if persistence_prob is not None:
+    if persistence_durations is not None:
         for i, cls in enumerate(class_names):
-            val = persistence_prob[i]
-            if persistence_ci_low is not None and persistence_ci_high is not None:
-                ci = (persistence_ci_high[i] - persistence_ci_low[i]) / 2
-                text = f"{val:.2f}\n±{ci:.2f}"
-            else:
-                if np.isfinite(val):
-                    text = f"{val:.2f}"
+            # persistence_durations is a dict with label keys and duration lists as values
+            label = labels[i]
+            if label in persistence_durations and len(persistence_durations[label]) > 0:
+                durations = np.array(persistence_durations[label])
+                mean_duration = np.nanmean(durations)
+                if np.isfinite(mean_duration):
+                    text = f"{mean_duration:.1f}h"
                 else:
                     text = "n/a"
+            else:
+                text = "n/a"
 
             ax.text(
                 i + 0.5,
@@ -121,7 +135,7 @@ def plot_transition_heatmap_multiplot(
                 text,
                 ha="center",
                 va="center",
-                fontsize=9,
+                fontsize=10,
                 fontweight="bold",
                 color="red",
             )
@@ -129,12 +143,22 @@ def plot_transition_heatmap_multiplot(
     # --- ticks & labels ---
     ax.set_yticks(np.arange(len(class_names)) + 0.5)
     ax.set_xticks(np.arange(len(class_names)) + 0.5)
+
+    class_names_modified = []
+    print(labels)
+
+    for suffix, name in zip(str(labels), class_names):
+        if '_' in suffix:
+            class_names_modified.append(name +'_' + suffix.split('_')[1])
+        else:
+            class_names_modified.append(name)
+
     ax.set_yticklabels(
-        class_names, rotation=0,
+            class_names_modified, rotation=0,
         fontsize=10 if len(class_names) <= 10 else 8
     )
     ax.set_xticklabels(
-        class_names, rotation=45, ha="right",
+        class_names_modified, rotation=45, ha="right",
         fontsize=10 if len(class_names) <= 10 else 8
     )
 
@@ -143,6 +167,9 @@ def plot_transition_heatmap_multiplot(
 
     if ax.is_last_row():
         ax.set_xlabel("Next class", fontsize=10)
+    
+    #title
+    ax.set_title("g)", fontsize=12, fontweight="bold")
 
     # --- colorbar ---
     if ax.is_last_col():
@@ -152,9 +179,21 @@ def plot_transition_heatmap_multiplot(
             orientation="vertical",
             fraction=0.046,
             pad=0.04,
+            #title of colorbar on the left side with label "Transition probability" and fontsize 10 
+            #label="Transition probability",
+            #fontsize=10,
+
         )
-        cbar.ax.yaxis.set_label_position("left")
+        #cbar.ax.yaxis.set_label_position("left")
         cbar.ax.tick_params(labelsize=10)
+        #cbar.ax.yaxis.set_ticks_position('left')
+        #titel on the left side of colorbar with label "Transition probability" and fontsize 10
+        cbar.set_label("Transition probability", fontsize=10, labelpad=8)
+        cbar.ax.yaxis.set_label_position("right")
+        cbar.ax.yaxis.set_ticks_position("right")
+        cbar.ax.tick_params(labelsize=10)
+
+
 
         
 

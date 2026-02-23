@@ -9,135 +9,206 @@ import cmcrameri.cm as cmc
 # ==================================================
 # IMPORT PROJECT UTILITIES
 # ==================================================
-sys.path.append("/home/Daniele/codes/VISSL_postprocessing/scripts/pretrain/")
-from transitions.data_utils import (
+sys.path.append("/home/Daniele/codes/VISSL_postprocessing/")
+from scripts.pretrain.transitions.data_utils import (
     filter_rows_in_event_window,
     build_event_groups,
     split_by_region,
     load_data
 )
 
-from transitions.case_study_utils import (
+from scripts.pretrain.transitions.case_study_utils import (
     build_trajectory_id,
     select_extreme_cases,
     show_crop_table_with_gaps,
+    show_crop_table,
     plot_feature_space_with_trajectory,
     plot_feature_trajectory,
     build_crop_filename
 )
 
+from utils.plotting.class_colors import CLOUD_CLASS_INFO
 
 # === CONFIG ===
 RUN_NAME = 'dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc'
-EVENT_TYPES = ["PRECIP", "HAIL"]
-BASE_DIR = f"/data1/fig/{RUN_NAME}/epoch_800/test"
-CROP_BASE_DIR = "/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma"
-SUMMARY_DIR = "/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma"
+BASE_DIR = f"/data1/fig/{RUN_NAME}/epoch_800/test_traj"
+
+CROP_BASE_DIR = "/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj"
+PLOT_DIR = f"{BASE_DIR}/case_studies"
+os.makedirs(PLOT_DIR, exist_ok=True)
+
+EVENT_TYPES = ["PRECIP", "HAIL", "MIXED"]
 LAT_DIV = 47
 REGIONS = ["NORTH", "SOUTH"]
-EVENT_TYPES = ["PRECIP", "HAIL"]
+N_STORMS = 10
+RANDOM_SEED = 42
+
 FEATURE_SPACE = os.path.join(BASE_DIR, "tsne_all_vectors_with_centroids.csv")
+NEIGH_CSV = os.path.join(BASE_DIR, "hypersphere_analysis", "test_vectors_local_label_composition.csv")
+STATS_CSV = os.path.join(BASE_DIR, "crops_stats_vars-cth-cma-precipitation-euclid_msg_grid_stats-50-99-25-75_frames-1_coords-datetime_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_0.csv")
+
 TSNE_COLS = ['tsne_dim_1', 'tsne_dim_2']
 
-# === COLOR MAP ===
-COLORS_PER_CLASS = {
-    0: 'darkgray', 1: 'darkslategrey', 2: 'peru', 3: 'orangered',
-    4: 'lightcoral', 5: 'deepskyblue', 6: 'purple', 7: 'lightblue',
-    8: 'green', 9: 'goldenrod', 10: 'magenta', 11: 'dodgerblue',
-    12: 'darkorange', 13: 'olive', 14: 'crimson'
-}
 
-path = f"{BASE_DIR}/features_train_test_{RUN_NAME}.csv"
+cloud_items_ordered = sorted(
+    CLOUD_CLASS_INFO.items(),
+    key=lambda x: x[1]["order"]
+)
 
-
-df = load_data(path, filter_event_window=False)
-df = df.rename(columns={"2d_dim_1": "tsne_dim_1", "2d_dim_2": "tsne_dim_2"})
-labels_sorted = sorted(df['label'].unique())
-#print(df['path'].loc[0])
-
-#extrat filenmae from path and change basename from this 2014-04-04T12:00_44.59_10.95.nc to 2014-04-03T00:00_50.53_12.82_20140403T0000.png
-df['crop_filename'] = df.apply(lambda row: build_crop_filename(
-    row['path'],
-    row['lat_centre'],
-    row['lon_centre']
-), axis=1)
-
-#print(df['crop_filename'].loc[0])
-#print(df)
-
-#open df featture csv
-df_features = pd.read_csv(FEATURE_SPACE, low_memory=False)
-
-df_centroids = df_features[
-    (df_features["vector_type"] == "CENTROID")
-].dropna(subset=TSNE_COLS)
-#add label column to centroids df
-df_centroids["label"] = labels_sorted[:len(df_centroids)]
-
-df_features = df_features[
-    (df_features["vector_type"] != "CENTROID")
-].dropna(subset=TSNE_COLS)
+labels_ordered = [lbl for lbl, _ in cloud_items_ordered]
+short_labels = [info["short"] for _, info in cloud_items_ordered]
+colors_ordered = [info["color"] for _, info in cloud_items_ordered]
+#order colors by keys in CLOUD_CLASS_INFO
+colors = []
+for idx in range(len(labels_ordered)):
+    info = CLOUD_CLASS_INFO[idx]
+    colors.append(info["color"])
+#colors = [info["color"] for _, info in CLOUD_CLASS_INFO.items()]
+print(CLOUD_CLASS_INFO)
+print(colors)
 
 
-#replace feature columns in df with those from df_features based on the vector_type and index
-for vtype in df_features["vector_type"].unique():
-    mask = df["vector_type"] == vtype
-    df_v = df_features[df_features["vector_type"] == vtype]
-    df_v = df.loc[mask, :].copy()   # IMPORTANT: keep index
-    df.loc[mask, TSNE_COLS] = df_v[TSNE_COLS].to_numpy()
+path = f"{BASE_DIR}/features_train_test_{RUN_NAME}_2nd_labels.csv"
 
+#open columns: 'path', 'datetime', 'lat', 'lon', 'label', 'distance', 'vector_type', 'label_2nd', 'storm_id', 'storm_type', 'crop_type', 'region'
+df = pd.read_csv(path, usecols=[
+    'path', 'datetime', 'lat', 'lon', 'label', 
+    'distance', 'vector_type', 'label_2nd', 'storm_id', 
+    'storm_type', 'crop_type', 'region'
+])
 
+#seect only rows with vector_type different then TRAIN
+df = df[df['vector_type'] != 'TRAIN']
 
+#create filenmae column from path
+df['filename'] = df['path'].apply(lambda x: os.path.basename(x))
+#print(df.columns.to_list())
 
-df_train = df[df["vector_type"] == "TRAIN"]
+df_tsne = pd.read_csv(FEATURE_SPACE, low_memory=False)
+#print(df_tsne)#.columns.to_list())
 
-df_regions = split_by_region(df, lat_column="lat_centre", LAT_DIVISION=LAT_DIV)
-#print(df)
+df_tsne_train = df_tsne[df_tsne['vector_type'] == 'TRAIN']
+#print(df_tsne_train)
+#remove invalid rows where label is -100
+df_tsne_train = df_tsne_train[df_tsne_train['label'] != -100]
+#add a column color based on label using colors list
+df_tsne_train['color'] = df_tsne_train['label'].apply(lambda x: colors[x])
 
-for region, df_region in zip(REGIONS, df_regions.values()):
-    print(f"Processing region: {region}")
-    #print(df_region)
-    for event in EVENT_TYPES:
-        print(f"  Processing event: {event}")
-        #select rows where vector_type is event
-        df_event = df_region[df_region['vector_type'] == event]
-        #include a column with day only
-        df_event['date'] = pd.to_datetime(df_event['datetime']).dt.date
+df_tsne_centroids = df_tsne[df_tsne['vector_type'] == 'CENTROID']
+df_tsne_test = df_tsne[(df_tsne['vector_type'] != 'TRAIN') & (df_tsne['vector_type'] != 'CENTROID')]
 
-        df_event = build_trajectory_id(df_event, time_column="date", lat_column="lat_centre", lon_column="lon_centre")
+print(df_tsne_test)
 
-        df_cases, summaries = select_extreme_cases(df_event, intensity_column="max_intensity", traj_id_column="trajectory_id", n_cases=5, agg="max")
-        #print(df_case['datetime'].to_list())
-        for summury, df_case in zip(summaries, df_cases):
-            print(summury)
-            print(df_case)
-         
-            print(f"📌 {region} – {event}: {df_case['trajectory_id'].iloc[0]} with max intensity {df_case['max_intensity'].iloc[0]}")
-            
-            
-            fig1 = show_crop_table_with_gaps(
-                    img_dir=f"{CROP_BASE_DIR}/{event}/images/IR_108/png_vmin-vmax_greyscale_CMA",
-                    df_traj=df_case,
-                    class_colors=COLORS_PER_CLASS,
-                )
+#merge df with df_tsne_test on filename
+df = df.merge(
+    df_tsne_test[['filename'] + TSNE_COLS],
+    on='filename',
+    how='left'
+)
+#print(df.columns.to_list())
 
-            #fig2 = plot_feature_trajectory(df_case)
-            fig1.savefig(f"{BASE_DIR}/trajectory_crops/case_{region}_{event}_{df_case['trajectory_id'].iloc[0]}_crops_table.png", dpi=300)
-            #fig2.savefig(f"{BASE_DIR}/case_{region}_{event}_features.png", dpi=300)
+df_neigh = pd.read_csv(NEIGH_CSV, low_memory=False)
+#remove the columns: 'lat', 'lon', 'storm_type', 'crop_type', 'label', 'label_2nd',
+df_neigh = df_neigh.drop(columns=[
+    'lat', 'lon', 'storm_type', 'crop_type', 'label', 'label_2nd'
+])
 
-            fig, ax = plt.subplots(figsize=(8, 6))
+#merge df with df_neigh on filename
+df = df.merge(
+    df_neigh,
+    on='filename',
+    how='left'
+)
+print(df.columns.to_list())
 
-            plot_feature_space_with_trajectory(
-                ax,
-                df_case,
-                df_train,
-                df_centroids,
-                xcol="tsne_dim_1",
-                ycol="tsne_dim_2",
-                label_col="label",
+df_stats = pd.read_csv(STATS_CSV, low_memory=False)
+
+df['trajectory_id'] = df['filename'].apply(lambda x: x.split('_')[0])
+print(df.columns.to_list())
+
+#set random seed
+np.random.seed(RANDOM_SEED)
+
+for event in EVENT_TYPES:
+    print(f"  Processing event: {event}")
+    #select rows where vector_type is event
+    df_event = df[df['storm_type'] == event]
+    #print(df_event)
+    #add column traj_id by applytins split('_')[0] to filename
+    
+    #include a column with day only
+    #df_event['date'] = pd.to_datetime(df_event['datetime']).dt.date
+    #group by storm_id and select random N_STORMS storm_id
+    selected_storms = df_event['trajectory_id'].drop_duplicates().sample(n=N_STORMS, random_state=RANDOM_SEED, replace=False).to_list()
+    #filter df_event by selected_storms
+    df_event = df_event[df_event['trajectory_id'].isin(selected_storms)]
+
+    for df_case_idx, df_case in df_event.groupby('trajectory_id'):
+        print(f"    Processing storm_id: {df_case_idx}")
+        print(df_case)
+        
+        fig1 = show_crop_table(
+                img_dir=f"{CROP_BASE_DIR}/images/IR_108/png_vmin-vmax_greyscale_CMA",
+                df_traj=df_case,
+                storm_id = df_case_idx,
                 time_col="datetime",
-                class_colors=COLORS_PER_CLASS,
+                label_col="label",
+                class_colors=colors,
+                #freq="15min",        # "15min" or "1H"
+                cols=8,
+                max_rows=12,
             )
 
-            out_path = f"{BASE_DIR}/trajectory_feature_space/case_{region}_{event}_{df_case['trajectory_id'].iloc[0]}_feature_space_trajectory.png"
-            fig.savefig(out_path, dpi=300, bbox_inches="tight", transparent=True)
+        #fig2 = plot_feature_trajectory(df_case)
+        fig1.savefig(f"{PLOT_DIR}/case__{event}_{df_case['trajectory_id'].iloc[0]}_crops_table.png", dpi=300)
+        #fig2.savefig(f"{BASE_DIR}/case_{region}_{event}_features.png", dpi=300)
+        
+        
+        #built time aligned column in hours from the first timestamp
+        # --- trajectory prep ---
+        df_case['datetime'] = pd.to_datetime(df_traj[time_col], utc=True).dt.tz_convert(None)
+        df_traj = df_traj.sort_values(time_col).copy()
+
+        t0 = df_traj[time_col].iloc[len(df_traj) // 2]  # midpoint reference
+        df_traj["t_aligned"] = (
+            (df_traj[time_col] - t0).dt.total_seconds() / 3600.0
+        )
+        
+        
+        
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+        plot_feature_space_with_trajectory(
+            ax,
+            df_case,
+            df_tsne_train,
+            df_tsne_centroids,
+            xcol="tsne_dim_1",
+            ycol="tsne_dim_2",
+            label_col="label",
+            time_col="datetime",
+            class_colors=colors,
+        )
+
+        out_path = f"{PLOT_DIR}/case_{event}_{df_case['trajectory_id'].iloc[0]}_feature_space_trajectory.png"
+        fig.savefig(out_path, dpi=300, bbox_inches="tight", transparent=True)
+
+        
+        
+        #Plot the trajectrpy of the wperc_label_ of each class over time in a line plot over aligned time
+        # identify weighted-percentage columns
+        wperc_cols = [c for c in df_case.columns if c.startswith("wperc_label_")]
+
+        df_long = (
+            df_case
+            .sort_values("aligned_time_hours")
+            .melt(
+                id_vars=["aligned_time_hours"],
+                value_vars=wperc_cols,
+                var_name="class",
+                value_name="wperc"
+            )
+        )
+
+        # extract class id
+        df_long["class"] = df_long["class"].str.replace("wperc_label_", "").astype(int)

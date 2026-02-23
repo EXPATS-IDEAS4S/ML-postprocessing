@@ -18,7 +18,7 @@ output_dir = os.path.join(input_dir, "diurnal_cycle_plots_new_colors")
 os.makedirs(output_dir, exist_ok=True)
 
 YLIM = 45  # Y-axis limit
-FONTSIZE = 16
+FONTSIZE = 12
 
 print(CLOUD_CLASS_INFO)
 
@@ -165,7 +165,7 @@ occ_counts = occ_counts.reindex(np.arange(24), fill_value=0)
 # =========================
 fig, (ax_bar, ax_pie) = plt.subplots(
     1, 2,
-    figsize=(8, 3),
+    figsize=(10, 3),
     gridspec_kw={"width_ratios": [3, 1]}
 )
 
@@ -192,12 +192,12 @@ for label, info in items:
     )
     bottom += values
 
-ax_bar.set_title("Hourly Occurrence Count", fontsize=FONTSIZE, fontweight="bold")
+ax_bar.set_title("g) Hourly Occurrence Count", fontsize=FONTSIZE, fontweight="bold")
 ax_bar.set_xlabel("Hour (UTC)", fontsize=FONTSIZE)
 ax_bar.set_ylabel("# Occurrences", fontsize=FONTSIZE)
 #rotate x ticks 45 degrees for better visibility
 ax_bar.set_xticks(range(0, 24, 1))
-ax_bar.tick_params(axis='x', rotation=45, labelsize=10)
+ax_bar.tick_params(axis='x', rotation=45, labelsize=12)
 ax_bar.tick_params(axis='y', labelsize=12)
 ax_bar.grid(axis="y", alpha=0.3)
 
@@ -213,7 +213,7 @@ for label, info in items:
     value = total_occ[label]
     if value > 0:
         pct = 100 * value / total
-        labels.append(f"Class {label}\n{pct:.1f}%")
+        labels.append(f"{info['short']}: {pct:.1f}%")
         sizes.append(value)
         colors.append(info["color"])
 
@@ -222,16 +222,16 @@ ax_pie.pie(
     labels=labels,
     colors=colors,
     startangle=90,
-    radius=0.5,                     # 🔹 smaller pie
+    radius=0.4,                     # 🔹 smaller pie
     labeldistance=1.2,             # 🔹 keeps labels close
-    textprops={"fontsize": 8, "weight": "bold"},
+    textprops={"fontsize": 10, "weight": "bold"},
 )
 
 ax_pie.set_title(
-    "Overall sample\n distribution",
-    fontsize=13,
+    "e) Overall sample distribution",
+    fontsize=12,
     fontweight="bold",
-    y=0.95
+    y=1.03
 )
 
 ax_pie.axis("equal")  # keep it circular

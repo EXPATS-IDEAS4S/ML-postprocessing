@@ -1,8 +1,8 @@
 """
-Compute fractional area of Cloud Optical Thickness (COT) categories for each crop
+Compute fractional area of Cloud Top Height (CTH) categories for each crop
 and add them to the existing CSV file.
 
-Also, generate a stacked bar plot showing the composition of COT categories per cloud class.
+Also, generate a stacked bar plot showing the composition of CTH categories per cloud class.
 
 """
 
@@ -30,41 +30,42 @@ from buckets.get_data_from_buckets import read_file, Initialize_s3_client
 # =====================
 RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
 epoch = "epoch_800"
-crop_sel = "test_traj"
+crop_sel = "all"
 
 
 MIN_PIXEL_COUNT = 100
 
-COT_BINS = {
-    #"cot_clear": (0, 1),
-    "cot_thin": (0, 5),
-    "cot_medium": (5, 30),
-    #"cot_thick": (15, 30),
-    "cot_thick": (30, np.inf),
+CTH_BINS = {
+    # Assumes CTH is in meters. Adjust if your data is in km.
+    "cth_low": (0, 2000),
+    "cth_medium": (2000, 7000),
+    "cth_high": (7000, 10000),
+    "cth_very_high": (10000, np.inf)
+
 }
 
-COMPUTE_COT = True
+COMPUTE_CTH = True
 PLOT_RESULTS = False
 
 PERCENTILE_COLS = ["25", "50", "75", "99"]
 
-MIN_VALID_FRACTION = 0.5
+MIN_VALID_FRACTION = 0.05  # Minimum fraction of valid pixels required to compute CTH fractions
 
 S3_BUCKET_NAME = "expats-cmsaf-cloud"
 bucket_filename_prefix = "MCP_"
 bucket_filename_suffix = "_regrid.nc"
 
 path_to_dir = f"/data1/fig/{RUN_NAME}/{epoch}/{crop_sel}/"
-crop_base_dir = "/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj/nc/1/"
+crop_base_dir = "/data1/crops/ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/nc/1/"
 
 csv_path = os.path.join(
     path_to_dir,
-    "crops_stats_vars-cth-cma-precipitation-euclid_msg_grid_stats-50-99-25-75_frames-1_coords-datetime_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_0.csv"
+    "merged_crops_stats_all_cvc_cot_fractions.csv"
 )
 
 output_path = os.path.join(
     path_to_dir,
-    "merged_crops_stats_cot_fractions.csv"
+    "merged_crops_stats_all_cvc_cot_cth_fractions.csv"
 )
 
 cloud_items = sorted(CLOUD_CLASS_INFO.items(), key=lambda x: x[1]["order"])
@@ -100,14 +101,14 @@ def read_s3_nc(day_key, s3, BUCKET_NAME, var):
         return None
 
 
-def compute_cot_fractions(ds, ds_cma):
+def compute_cth_fractions(ds, ds_cma):
     """
-    Compute fractional area of COT categories for one crop.
+    Compute fractional area of CTH categories for one crop.
     Returns dict or None if not enough valid pixels.
     """
 
-    cot = ds.values
-    valid = np.isfinite(cot) 
+    cth = ds.values
+    valid = np.isfinite(cth) 
 
     if valid.mean() < MIN_VALID_FRACTION:
         return None
@@ -118,12 +119,12 @@ def compute_cot_fractions(ds, ds_cma):
     cma = binary_closing(cma==1, structure=np.ones((3,3))).astype(int)
     cloud_mask = cma == 1  #consider as cloud pixels with c
 
-    cot_valid = cot[valid & cloud_mask]
-    total = cot_valid.size
+    cth_valid = cth[valid & cloud_mask]
+    total = cth_valid.size
 
     fractions = {}
-    for name, (lo, hi) in COT_BINS.items():
-        fractions[name] = np.logical_and(cot_valid >= lo, cot_valid < hi).sum() / total
+    for name, (lo, hi) in CTH_BINS.items():
+        fractions[name] = np.logical_and(cth_valid >= lo, cth_valid < hi).sum() / total
         #round fractions to 4 decimal places
         fractions[name] = round(fractions[name], 4)
 
@@ -132,9 +133,9 @@ def compute_cot_fractions(ds, ds_cma):
 
 
 
-def plot_cot_violin_by_class(df, items, savepath=None):
+def plot_cth_violin_by_class(df, items, savepath=None):
     """
-    Violin plots of COT distributions (thin / medium / thick)
+    Violin plots of CTH distributions (low / medium / high)
     across cloud classes.
 
     One row, three columns.
@@ -142,12 +143,13 @@ def plot_cot_violin_by_class(df, items, savepath=None):
 
     class_col = "label"
     value_col = "None"
-    cot_vars = ["cot_thin", "cot_medium", "cot_thick"]
+    cth_vars = ["cth_low", "cth_medium", "cth_high", "cth_very_high"]
 
-    cot_var_titles = {
-        "cot_thin": "COT Thin (0–5)",
-        "cot_medium": "COT Medium (5–30)",
-        "cot_thick": "COT Thick (30+)",
+    cth_var_titles = {
+        "cth_low": "CTH Low (0–2 km)",
+        "cth_medium": "CTH Medium (2–7 km)",
+        "cth_high": "CTH High (7–10 km)",
+        "cth_very_high": "CTH Very High (10+ km)",
     }
 
     # -----------------------------
@@ -160,27 +162,27 @@ def plot_cot_violin_by_class(df, items, savepath=None):
     # -----------------------------
     # Filter dataframe
     # -----------------------------
-    df_cot = df[df["var"].isin(cot_vars)].copy()
-    df_cot = df_cot[~df_cot[value_col].isna()]
+    df_cth = df[df["var"].isin(cth_vars)].copy()
+    df_cth = df_cth[~df_cth[value_col].isna()]
 
     # -----------------------------
     # Figure
     # -----------------------------
     fig, axes = plt.subplots(
-        1, len(cot_vars),
-        figsize=(3. * len(cot_vars), 2),
+        1, len(cth_vars),
+        figsize=(3. * len(cth_vars), 2),
         sharey=True
     )
 
-    if len(cot_vars) == 1:
+    if len(cth_vars) == 1:
         axes = [axes]
 
     # -----------------------------
     # Plot each COT bin
     # -----------------------------
-    for ax, cot_var in zip(axes, cot_vars):
+    for ax, cth_var in zip(axes, cth_vars):
 
-        df_var = df_cot[df_cot["var"] == cot_var]
+        df_var = df_cth[df_cth["var"] == cth_var]
         df_var[value_col] = pd.to_numeric(df_var[value_col], errors="coerce")
 
 
@@ -207,7 +209,7 @@ def plot_cot_violin_by_class(df, items, savepath=None):
                 data.append(vals)
                 medians.append(np.nanmedian(vals))
 
-            print(f"{cot_var} - {lbl}: median COT fraction = {medians[-1]}")
+            print(f"{cth_var} - {lbl}: median CTH fraction = {medians[-1]}")
 
         # -----------------------------
         # Violin plot
@@ -246,7 +248,7 @@ def plot_cot_violin_by_class(df, items, savepath=None):
         # -----------------------------
         # Axis formatting
         # -----------------------------
-        ax.set_title(cot_var_titles[cot_var], fontsize=12, fontweight="bold")
+        ax.set_title(cth_var_titles[cth_var], fontsize=12, fontweight="bold")
         ax.set_xticks(np.arange(len(labels_ordered)))
         ax.set_xticklabels(short_labels, rotation=45, ha="right", fontsize=12)
 
@@ -269,46 +271,11 @@ def plot_cot_violin_by_class(df, items, savepath=None):
             transparent=True,
             bbox_inches="tight"
         )
-        print(f"✅ Saved COT violin plot → {savepath}")
+        print(f"✅ Saved CTH violin plot → {savepath}")
 
     return fig, axes
 
-#function to print and plot numerosity of daytime samples per cloud class
-def print_daytime_numerosity_per_class(df, items, path_to_dir):
-    labels_ordered = [lbl for lbl, _ in items]
-    short_labels = [info["short"] for _, info in items]
-    colors = {lbl: info["color"] for lbl, info in items}
 
-    class_col = "label"
-    #daytime is where column nighttime_scene is not True
-    df_daytime = df[(df["var"] == "nighttime_scene") & (df["None"] != True)]
-    class_counts = df_daytime[class_col].value_counts()
-    print("Numerosity of daytime samples per cloud class:")
-    for lbl, count in class_counts.items():
-        print(f"  {lbl}: {count} samples")
-    #order it by labels_ordered
-    class_counts = class_counts.reindex(labels_ordered).fillna(0)
-
-    plt.figure(figsize=(5, 3))
-    sns.barplot(
-        x=class_counts.index,
-        y=class_counts.values,
-        palette=[colors[lbl] for lbl in class_counts.index]
-    )
-
-    plt.ylabel("Number of Samples", fontsize=12)
-    plt.yticks(fontsize=12)
-    plt.xticks(ticks=np.arange(len(short_labels)), labels=short_labels, rotation=45, ha="right", fontsize=12)
-    plt.title("Daytime Samples per Cloud Class", fontsize=12, fontweight="bold")
-    plt.grid(axis="y", alpha=0.3)
-    plt.savefig(
-        os.path.join(path_to_dir, "daytime_numerosity_per_class.png"),
-        dpi=300,
-        transparent=True,
-        bbox_inches="tight"
-    )
-    print(f"✅ Saved daytime numerosity plot → {os.path.join(path_to_dir, 'daytime_numerosity_per_class.png')}")
-    plt.close()
 
 
 def load_csv(csv_path, random_sample=None):
@@ -344,7 +311,7 @@ def process_crop_statistics(df, crop_indices, crop_base_dir=None):
         print(time)
         #extract date in pandas
         date = pd.to_datetime(time).strftime("%Y-%m-%d")
-        ds, ds_cma = read_s3_nc(date, s3, S3_BUCKET_NAME, var="cot")
+        ds, ds_cma = read_s3_nc(date, s3, S3_BUCKET_NAME, var="cth")
         if ds is None:
             print(f"  ❌ Failed to open dataset: {e}")
             continue
@@ -366,12 +333,12 @@ def process_crop_statistics(df, crop_indices, crop_base_dir=None):
         ds_cma = ds_cma.sel(time=pd.to_datetime(time), method="nearest")
         #print(ds)
         # -----------------------
-        # COT FRACTIONS
+        # CTH FRACTIONS
         # -----------------------
-        cot_fracs = compute_cot_fractions(ds, ds_cma)
+        cth_fracs = compute_cth_fractions(ds, ds_cma)
 
-        if cot_fracs is None:
-            print("  ⚠️ Not enough valid COT pixels")
+        if cth_fracs is None:
+            print("  ⚠️ Not enough valid CTH pixels")
             print('  Saving the row as nighttime samples')
             new_row = row.copy()
             new_row["var"] = "nighttime_scene"
@@ -381,7 +348,7 @@ def process_crop_statistics(df, crop_indices, crop_base_dir=None):
             new_rows.append(new_row)
             continue
 
-        for var_name, frac in cot_fracs.items():
+        for var_name, frac in cth_fracs.items():
             new_row = row.copy()
             new_row["var"] = var_name
             new_row["None"] = frac
@@ -390,7 +357,7 @@ def process_crop_statistics(df, crop_indices, crop_base_dir=None):
         
             new_rows.append(new_row)
 
-        print("  ✅ COT fractions computed")
+        print("  ✅ CTH fractions computed")
 
     return new_rows
     
@@ -400,7 +367,7 @@ def save_results(new_rows, df):
     if len(new_rows) > 0:
         df_out = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
         df_out.to_csv(output_path, index=False)
-        print(f"\n✅ Saved updated CSV with cot fractions → {output_path}")
+        print(f"\n✅ Saved updated CSV with cth fractions → {output_path}")
     else:
         print("\n⚠️ No new rows added")
 
@@ -408,7 +375,7 @@ def save_results(new_rows, df):
 
 if __name__ == "__main__":
     
-    if COMPUTE_COT:
+    if COMPUTE_CTH:
         df, crop_indices = load_csv(csv_path)#, random_sample=10)
         new_rows = process_crop_statistics(df, crop_indices, crop_base_dir=crop_base_dir)
         print(new_rows)
@@ -417,14 +384,9 @@ if __name__ == "__main__":
     # Load updated dataframe for plotting
         df_out = pd.read_csv(output_path)
         print(df_out['var'].unique())
-        print_daytime_numerosity_per_class(df_out, cloud_items, path_to_dir)
         
-        
-        #if nighttime_scene column is True, remove those rows
-        #df_out = df_out[~((df_out['var'] == 'nighttime_scene') & (df_out['None'] == True))]
-        #plot_cot_violin_by_class(df_out, cloud_items, path_to_dir + "cot_violin_by_class.png")
         
 
-#221767
+#1753677
 
 

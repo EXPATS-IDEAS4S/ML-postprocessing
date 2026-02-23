@@ -132,7 +132,7 @@ n_cols = len(groups_dict)
 
 fig_fs, axes_fs = plt.subplots(
     n_rows, n_cols,
-    figsize=(3 * n_cols, 3 * n_rows),
+    figsize=(5 * n_cols, 5 * n_rows),
     sharex=True, sharey=True
 )
 
@@ -180,8 +180,8 @@ for c, ginfo in enumerate(groups_dict):
         ycol="tsne_dim_2",
         label_col="label",
         class_colors=CLOUD_CLASS_INFO,
-        s=4,
-        alpha=0.08,
+        s=5,
+        alpha=0.1,
         rasterized=True,
     )
 
@@ -251,7 +251,7 @@ for c, ginfo in enumerate(groups_dict):
 
     axes_bar[0, c].bar(
         x,
-        counts.values,
+        counts.values * 1e-3,  #scale to thousands
         color=colors_ordered,
         alpha=0.85,
     )
@@ -307,9 +307,10 @@ for c, ginfo in enumerate(groups_dict):
     # ----------------------------------
     # Minimal styling
     # ----------------------------------
-    axes_bar[0, c].set_yscale("log")
+    #axes_bar[0, c].set_yscale("log")
     #show customized y tichks for bar plot
-    xticks_bar = [10, 100, 1000, 10000]
+    #xticks_bar = [10, 100, 1000, 10000]
+    xticks_bar = [0, 5, 10, 15]
     axes_bar[0, c].set_yticks(xticks_bar)
 
     #ax_bar.set_xticks(labels_sorted)
@@ -322,8 +323,8 @@ for c, ginfo in enumerate(groups_dict):
 
 
 #shift this more to the right
-fig_bar.text(-0.15, 0.5, "Count", va="center",
-            rotation="vertical", fontsize=12)
+fig_bar.text(-0.12, 0.5, "Count (10^3)", va="center",
+            rotation="vertical", fontsize=10)
 
 
 #add legend on the right side of the figure (outside) for the percentile of the contours
@@ -344,11 +345,17 @@ fig_fs.legend(
     handles=legend_handles,
     labels=legend_labels,
     loc="center right",
-    bbox_to_anchor=(1.4, 0.5),   # push legend outside
+    bbox_to_anchor=(1.2, 0.75),   # push legend outside
     fontsize=10,
     title="Density contours",
     title_fontsize=10,
     frameon=False,
+)
+
+#add title to the figure with the group name and event
+fig_fs.suptitle(
+    f"a)",# Training embedding with \n test vector density contours",
+    fontsize=10, fontweight="bold", y=1.03, x=0.82, #shift more to the right
 )
 
 
@@ -367,6 +374,12 @@ print("Saved:", outname_fs)
 
 
 fig_bar.subplots_adjust(wspace=0.15, hspace=0.15)
+
+#add title to the figure with the group name and event
+fig_bar.suptitle(
+    f"b)",# Group population",
+    fontsize=10, fontweight="bold", y=1.09
+)
 
 if WITHOUT_EXTRAPOLATED:
     outname_bar = "group_population_by_label_latitude_no_extrapolated.png"

@@ -279,3 +279,343 @@ def compute_transitions_and_persistence(
         "persistence_durations": persistence_durations,
         "entropy": entropy,
     }
+
+
+
+def compute_transitions_and_persistence_weighted(
+    df,
+    label_col="label",
+    time_col="datetime",
+    lat_col="lat",
+    lon_col="lon",
+    storm_col="storm_id",
+    wperc_prefix="wperc_label_",
+    labels=None,
+    wperc_threshold=75,
+    n_bootstrap=100,
+    ci_level=95,
+):
+
+    df = df.copy()
+
+    # ------------------
+    # Datetime handling
+    # ------------------
+    df[time_col] = pd.to_datetime(df[time_col], utc=True, errors="coerce")
+    df = df.dropna(subset=[time_col, label_col, lat_col, lon_col])
+
+    # ------------------
+    # Base labels
+    # ------------------
+    if labels is None:
+        labels = np.sort(df[label_col].unique())
+    labels = np.asarray(labels)
+
+    # ------------------
+    # Build extended state space
+    # ------------------
+    ext_labels = []
+    for l in labels:
+        ext_labels.append(f"{l}_low")
+        ext_labels.append(f"{l}_high")
+
+    ext_labels = np.asarray(ext_labels)
+    n = len(ext_labels)
+    label_to_idx = {l: i for i, l in enumerate(ext_labels)}
+
+    # ------------------
+    # Helper: row → effective label
+    # ------------------
+    def get_effective_label(row):
+        base = row[label_col]
+        wcol = f"{wperc_prefix}{base}"
+        if wcol not in row or pd.isna(row[wcol]):
+            return None
+        level = "high" if row[wcol] >= wperc_threshold else "low"
+        return f"{base}_{level}"
+
+    # ------------------
+    # Containers
+    # ------------------
+    T = np.zeros((n, n), dtype=int)
+    persistence_durations = {l: [] for l in ext_labels}
+    trajectories = []
+
+    # ======================
+    # Main pass
+    # ======================
+    for _, traj in df.groupby(storm_col):
+        traj = traj.sort_values(time_col)
+
+        traj_states = []
+        prev_state = None
+        run_start_time = None
+        prev_time = None
+
+        for _, row in traj.iterrows():
+            curr_state = get_effective_label(row)
+            curr_time = row[time_col]
+
+            if curr_state not in label_to_idx:
+                continue
+
+            traj_states.append(label_to_idx[curr_state])
+
+            if prev_state is None:
+                run_start_time = curr_time
+
+            elif curr_state != prev_state:
+                duration = (prev_time - run_start_time).total_seconds() / 3600
+                persistence_durations[prev_state].append(duration)
+
+                T[label_to_idx[prev_state], label_to_idx[curr_state]] += 1
+                run_start_time = curr_time
+
+            prev_state = curr_state
+            prev_time = curr_time
+
+        if prev_state is not None and run_start_time is not None:
+            duration = (prev_time - run_start_time).total_seconds() / 3600
+            persistence_durations[prev_state].append(duration)
+
+        if len(traj_states) > 1:
+            trajectories.append(traj_states)
+
+    # ------------------
+    # Transition matrix
+    # ------------------
+    row_sums = T.sum(axis=1, keepdims=True)
+    mask_valid = row_sums.squeeze() < 50
+
+    P = np.zeros_like(T, dtype=float)
+    np.divide(T, row_sums, where=row_sums != 0, out=P)
+    P[mask_valid, :] = np.nan
+
+    # ------------------
+    # Persistence probability
+    # ------------------
+    dt_hours = 15 / 60
+    persistence_prob = np.full(n, np.nan)
+
+    for l, idx in label_to_idx.items():
+        durs = np.asarray(persistence_durations[l])
+        if len(durs) > 0:
+            persistence_prob[idx] = np.mean(durs > dt_hours)
+
+    # ======================
+    # Bootstrap
+    # ======================
+    boot_P = []
+    boot_persist = []
+
+    for _ in range(n_bootstrap):
+        T_b = np.zeros((n, n), dtype=int)
+        persist_counts = {i: [] for i in range(n)}
+
+        sampled = np.random.choice(len(trajectories), len(trajectories), replace=True)
+
+        for idx in sampled:
+            traj = trajectories[idx]
+            run_len = 1
+
+            for t in range(len(traj) - 1):
+                T_b[traj[t], traj[t + 1]] += 1
+
+                if traj[t + 1] == traj[t]:
+                    run_len += 1
+                else:
+                    persist_counts[traj[t]].append(run_len)
+                    run_len = 1
+
+            persist_counts[traj[-1]].append(run_len)
+
+        row_sums_b = T_b.sum(axis=1, keepdims=True)
+        P_b = np.zeros_like(T_b, dtype=float)
+        np.divide(T_b, row_sums_b, where=row_sums_b != 0, out=P_b)
+        P_b[row_sums_b.squeeze() < 50, :] = np.nan
+        boot_P.append(P_b)
+
+        p_b = np.full(n, np.nan)
+        for i in range(n):
+            runs = np.asarray(persist_counts[i])
+            if len(runs) > 0:
+                p_b[i] = np.mean(runs > 1)
+
+        boot_persist.append(p_b)
+
+    boot_P = np.asarray(boot_P)
+    boot_persist = np.asarray(boot_persist)
+
+    alpha = (100 - ci_level) / 2
+    P_ci_low = np.nanpercentile(boot_P, alpha, axis=0)
+    P_ci_high = np.nanpercentile(boot_P, 100 - alpha, axis=0)
+
+    persist_ci_low = np.nanpercentile(boot_persist, alpha, axis=0)
+    persist_ci_high = np.nanpercentile(boot_persist, 100 - alpha, axis=0)
+
+    # ------------------
+    # Entropy
+    # ------------------
+    entropy = np.full(n, np.nan)
+    entropy[~mask_valid] = -np.sum(
+        P[~mask_valid] * np.log(P[~mask_valid] + 1e-12), axis=1
+    )
+
+    return {
+        "labels": ext_labels,
+        "transition_matrix": P,
+        "transition_ci_low": P_ci_low,
+        "transition_ci_high": P_ci_high,
+        "persistence_prob": persistence_prob,
+        "persistence_ci_low": persist_ci_low,
+        "persistence_ci_high": persist_ci_high,
+        "persistence_durations": persistence_durations,
+        "entropy": entropy,
+    }
+
+
+
+
+def compute_weighted_transitions_and_persistence(
+    df,
+    time_col="datetime",
+    labels=None,
+    storm_id_col="storm_id",
+    weight_prefix="wperc_label_",
+    min_row_sum=0.5,
+    min_count=50,
+    n_bootstrap=200,
+    ci_level=95,
+):
+    """
+    Compute weighted transition matrix and per-class normalized
+    weighted persistence using neighborhood probabilities,
+    with bootstrap CI over trajectories.
+    """
+
+    df = df.copy()
+    df[time_col] = pd.to_datetime(df[time_col], utc=True, errors="coerce")
+    df = df.dropna(subset=[time_col, storm_id_col])
+
+    # --- labels ---
+    if labels is None:
+        labels = sorted(
+            int(c.replace(weight_prefix, ""))
+            for c in df.columns if c.startswith(weight_prefix)
+        )
+
+    labels = np.asarray(labels)
+    n = len(labels)
+    label_to_idx = {l: i for i, l in enumerate(labels)}
+    weight_cols = [f"{weight_prefix}{l}" for l in labels]
+
+    # --- containers ---
+    T = np.zeros((n, n), dtype=float)
+
+    # persistence accumulators
+    num = np.zeros(n)   # E[w_i(t) w_i(t+1)]
+    den = np.zeros(n)   # E[w_i(t)]
+
+    trajectories = []
+
+    # ======================
+    # Main pass (point estimates)
+    # ======================
+    for _, traj in df.groupby(storm_id_col):
+        traj = traj.sort_values(time_col)
+
+        W = traj[weight_cols].values
+        if len(W) < 2:
+            continue
+
+        row_sums = W.sum(axis=1)
+        valid = row_sums > min_row_sum
+        W = W[valid]
+
+        if len(W) < 2:
+            continue
+
+        trajectories.append(W)
+
+        for t in range(len(W) - 1):
+            wt = W[t]
+            wt1 = W[t + 1]
+
+            # weighted transitions
+            T += np.outer(wt, wt1)
+
+            # per-class persistence
+            num += wt * wt1
+            den += wt
+
+    # --- transition matrix ---
+    row_sums = T.sum(axis=1, keepdims=True)
+    P = np.divide(T, row_sums, where=row_sums > 0)
+    P[row_sums.squeeze() < min_count] = np.nan
+
+    # --- per-class normalized persistence ---
+    persistence_prob = np.divide(num, den, where=den > 0)
+    persistence_prob[den < min_count] = np.nan
+
+    # ======================
+    # Bootstrap over trajectories
+    # ======================
+    boot_P = []
+    boot_persist = []
+
+    n_traj = len(trajectories)
+    alpha = (100 - ci_level) / 2
+
+    for _ in range(n_bootstrap):
+        T_b = np.zeros((n, n), dtype=float)
+        num_b = np.zeros(n)
+        den_b = np.zeros(n)
+
+        sampled = np.random.choice(n_traj, n_traj, replace=True)
+
+        for idx in sampled:
+            W = trajectories[idx]
+            for t in range(len(W) - 1):
+                wt = W[t]
+                wt1 = W[t + 1]
+
+                T_b += np.outer(wt, wt1)
+                num_b += wt * wt1
+                den_b += wt
+
+        row_sums_b = T_b.sum(axis=1, keepdims=True)
+        P_b = np.divide(T_b, row_sums_b, where=row_sums_b > 0)
+        P_b[row_sums_b.squeeze() < min_count] = np.nan
+
+        p_b = np.divide(num_b, den_b, where=den_b > 0)
+        p_b[den_b < min_count] = np.nan
+
+        boot_P.append(P_b)
+        boot_persist.append(p_b)
+
+    boot_P = np.asarray(boot_P)
+    boot_persist = np.asarray(boot_persist)
+
+    P_ci_low = np.nanpercentile(boot_P, alpha, axis=0)
+    P_ci_high = np.nanpercentile(boot_P, 100 - alpha, axis=0)
+
+    persist_ci_low = np.nanpercentile(boot_persist, alpha, axis=0)
+    persist_ci_high = np.nanpercentile(boot_persist, 100 - alpha, axis=0)
+
+    # --- entropy ---
+    entropy = np.full(n, np.nan)
+    valid = ~np.isnan(P).any(axis=1)
+    entropy[valid] = -np.sum(P[valid] * np.log(P[valid] + 1e-12), axis=1)
+
+    return {
+        "labels": labels,
+        "transition_matrix": P,
+        "transition_ci_low": P_ci_low,
+        "transition_ci_high": P_ci_high,
+        "persistence_prob": persistence_prob,
+        "persistence_ci_low": persist_ci_low,
+        "persistence_ci_high": persist_ci_high,
+        "entropy": entropy,
+        "n_trajectories": n_traj,
+    }
+
