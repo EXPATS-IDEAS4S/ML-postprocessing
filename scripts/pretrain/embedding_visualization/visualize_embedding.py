@@ -9,7 +9,6 @@ visualization styles.
 """
 
 import os
-from glob import glob
 import pandas as pd
 import sys
 
@@ -41,7 +40,8 @@ from utils.plotting.class_colors import COLORS_PER_CLASS, CLOUD_CLASS_INFO
 from scripts.pretrain.embedding_visualization.config_visualization import (
     RUN_NAME,
     OUTPUT_PATH,
-    LIST_IMAGE_CROPS,
+    TRAIN_LIST_IMAGE_CROPS,
+    TEST_LIST_IMAGE_CROPS,
     N_FRAMES,
     FILENAME_TSNE,
     FILENAME_LABELS,
@@ -76,7 +76,7 @@ def plot_main_embeddings(df: pd.DataFrame, filename: str = "tsne_embedding.png")
     # plot_classwise_grids(df, OUTPUT_PATH, FILENAME, CMAP, n=100, selection="closest")
 
 
-def plot_video_frames(df_expanded: pd.DataFrame, df_centroids: pd.DataFrame, items):
+def plot_video_frames(df_expanded: pd.DataFrame, df_centroids: pd.DataFrame, ordered_items, items_dict):
     """Plot embeddings for each video frame if VIDEO mode is enabled."""
     
     for frame_idx in range(N_FRAMES):
@@ -84,22 +84,21 @@ def plot_video_frames(df_expanded: pd.DataFrame, df_centroids: pd.DataFrame, ite
         if not df_frame.empty:
             print(f"Plotting frame {frame_idx} with {len(df_frame)} samples...")
             plot_embedding_crops_grid(   
-                df_expanded,
+                df_frame,
                 df_centroids,
                 OUTPUT_PATH,
                 FILENAME,
                 VARIABLE_TYPE,
-                items,
+                items_dict,
                 comp_1='tsne_dim_1',
                 comp_2='tsne_dim_2',
                 grid_size=20,
                 zoom=0.33)
-            exit()
             plot_embedding_crops_table_transposed_new(
             df_frame,
             OUTPUT_PATH,
             f"feature_space_{RUN_NAME}.png",
-            items,
+            ordered_items,
             n_closest=5,
             n_random=5,
             random_seed=0,
@@ -127,18 +126,61 @@ def main():
     print(items)
     labels = sorted([label for label, _ in items])
     print(labels)
-    print(f"n samples: {len(LIST_IMAGE_CROPS)}")
+    print(f"TRAIN image files: {len(TRAIN_LIST_IMAGE_CROPS)}")
+    print(f"TEST image files: {len(TEST_LIST_IMAGE_CROPS)}")
 
-    df_centroids = load_labels(OUTPUT_PATH, FILENAME_TSNE, FILENAME_LABELS, labels)[1]
-    
-    df_feat_train = pd.read_csv(expanded_csv)
+    df_feat_labels, df_centroids = load_labels(OUTPUT_PATH, FILENAME_TSNE, FILENAME_LABELS, labels)
+    print(df_feat_labels)
+    print(df_centroids)
+
+    #in df_feat_labels only retain split == TRAIN
+    df_feat_labels = df_feat_labels[df_feat_labels["split"].isin(["TRAIN"])]
+   
+    if not os.path.exists(expanded_csv):
+        raise FileNotFoundError(
+            f"Expanded CSV not found: {expanded_csv}. Run prepare_df_with_img_path.py first."
+        )
+
+    df_feat_train = pd.read_csv(expanded_csv, low_memory=False)
+    print(df_feat_train)
+    #retain onlu splot == TRAIN
+    df_feat_train = df_feat_train[df_feat_train["split"].isin(["TRAIN"])]
+
+
+    # Backfill columns that may be missing in an older expanded CSV.
+    # merge_cols = []
+    # for col in ["path", "distance", "split", "vector_type"]:
+    #     if col in df_feat_labels.columns:
+    #         merge_cols.append(col)
+
+    # if "distance" not in df_feat_train.columns and "path" in df_feat_train.columns and "path" in merge_cols:
+    #     lookup = df_feat_labels[merge_cols].drop_duplicates(subset=["path"], keep="first")
+    #     df_feat_train = df_feat_train.merge(
+    #         lookup,
+    #         on="path",
+    #         how="left",
+    #         suffixes=("", "_src")
+    #     )
+
+    #     for col in ["distance", "split", "vector_type"]:
+    #         src_col = f"{col}_src"
+    #         if src_col in df_feat_train.columns and col not in df_feat_train.columns:
+    #             df_feat_train[col] = df_feat_train[src_col]
+    #         elif src_col in df_feat_train.columns and col in df_feat_train.columns:
+    #             df_feat_train[col] = df_feat_train[col].where(df_feat_train[col].notna(), df_feat_train[src_col])
+    #         if src_col in df_feat_train.columns:
+    #             df_feat_train = df_feat_train.drop(columns=[src_col])
+
+    if "img_path" in df_feat_train.columns:
+        df_feat_train["sample_path"] = df_feat_train["path"]
+        df_feat_train["path"] = df_feat_train["img_path"]
 
 
     df_feat_train = df_feat_train[df_feat_train["label"] != -100]
  
     #plot_main_embeddings(df_feat_train, df_centroids, filename=FILENAME)
     if VIDEO:
-        plot_video_frames(df_feat_train, df_centroids, items_dict)
+        plot_video_frames(df_feat_train, df_centroids, items, items_dict)
 
 
 if __name__ == "__main__":

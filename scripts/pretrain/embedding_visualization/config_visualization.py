@@ -6,10 +6,10 @@
 from glob import glob
 
 
-RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
-CROPS_NAME = "ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
+RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc"
+CROPS_NAME = "ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc"
 RANDOM_STATE = 3 #[0, 3, 16, 23, 57],
-SAMPLING_TYPE = "test_traj"            # Options: "all", "subsample"
+SAMPLING_TYPE = "teamx_test"            # Options: "all", "subsample"
 REDUCTION_METHOD = "tsne"        # Options: "tsne", "isomap"
 PERPLEXITY = 50
 EPOCH = 800
@@ -29,9 +29,12 @@ FILENAME_TSNE = "tsne_all_vectors_with_centroids.csv"
 FILENAME_LABELS = f"features_train_test_{RUN_NAME}_2nd_labels.csv"
 FILENAME = f"{REDUCTION_METHOD}_embedding_{RUN_NAME}_epoch_{EPOCH}.png"
 
-# Input data
-IMAGE_CROPS_PATH = f"/data1/crops/{CROPS_NAME}/img/{VARIABLE_TYPE}/"
-LIST_IMAGE_CROPS = sorted(glob(IMAGE_CROPS_PATH + "*." + FILE_EXTENSION))
+# Input data (split-aware image roots)
+TRAIN_IMAGE_CROPS_PATH = "/data1/crops/ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc/img/IR_108/"
+TEST_IMAGE_CROPS_PATH = "/data1/crops/teamx_Apr-Sep_2025_icon_msg/img/"
+
+TRAIN_LIST_IMAGE_CROPS = sorted(glob(TRAIN_IMAGE_CROPS_PATH + "*." + FILE_EXTENSION))
+TEST_LIST_IMAGE_CROPS = sorted(glob(TEST_IMAGE_CROPS_PATH + "*." + FILE_EXTENSION))
 
 SUBSTITUTE_PATH = True
 
