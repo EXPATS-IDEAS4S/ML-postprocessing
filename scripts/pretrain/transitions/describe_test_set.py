@@ -75,7 +75,9 @@ EVENT_ORDER = [e["name"] for e in EVENTS]
 # LOAD DATA
 # ==================================================
 df = pd.read_csv(CSV_PATH, low_memory=False)
+print(df)
 print(df.columns.to_list())
+exit()
 
 #df = df[df["label"] != -100]
 #df["max_intensity"] = pd.to_numeric(df["max_intensity"], errors="coerce")

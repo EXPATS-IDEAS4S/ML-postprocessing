@@ -4,7 +4,6 @@ import sys
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import matplotlib.patches as mpatches
-import matplotlib.ticker as ticker
 import numpy as np
 import cmcrameri.cm as cmc
 from scipy.stats import gaussian_kde
@@ -12,23 +11,12 @@ from PIL import Image
 from datetime import timedelta
 from datetime import datetime
 import glob
+import ast
+import xarray as xr
 
 
-mpl.rcParams.update({
-    "font.family": "DejaVu Sans",
-    "text.usetex": False,
-    "font.size": 15,
-    "axes.titlesize": 17,
-    "axes.labelsize": 16,
-    "xtick.labelsize": 14,
-    "ytick.labelsize": 14,
-    "legend.fontsize": 13,
-    "axes.linewidth": 1.3,
-    "xtick.major.width": 1.2,
-    "ytick.major.width": 1.2,
-    "xtick.major.size": 4,
-    "ytick.major.size": 4,
-})
+mpl.rcParams["font.family"] = "DejaVu Sans"
+mpl.rcParams["text.usetex"] = False
 
 sys.path.append("/home/Daniele/codes/VISSL_postprocessing/")
 from utils.plotting.class_colors import CLOUD_CLASS_INFO
@@ -43,7 +31,6 @@ CLASSES_LABELS = [str(c) for c in SELECTED_CLASSES]  # ['1', '2', '4']
 
 path = f"{OUT_DIR}/df_pathways_merged_no_dominance.csv"
 df = pd.read_csv(path, low_memory=False)
-df['datetime'] = pd.to_datetime(df['datetime'])
 print(df)#.columns.tolist())
 print(df.columns.tolist())
 
@@ -62,33 +49,6 @@ csv_tnse_file = "tsne_all_vectors_with_centroids.csv"
 df_tsne = pd.read_csv(os.path.join(BASE_DIR, csv_tnse_file))
 df_tsne_centroids = df_tsne[df_tsne["vector_type"] == "CENTROID"]
 df_tsne_train = df_tsne[df_tsne["vector_type"] == "TRAIN"]
-
-# Attempt to load external crop percentiles (CTH/COT per crop)
-pct_path = os.path.join(BASE_DIR, "merged_crops_stats_cot_percentiles.csv")
-if os.path.exists(pct_path):
-    try:
-        df_crop_pct = pd.read_csv(pct_path, low_memory=False)
-        print(f"Loaded crop percentiles from: {pct_path}")
-        df_crop_cth_pct = (
-            df_crop_pct[df_crop_pct["var"] == "cth"]
-            .rename(columns={"25": "cth25_pct", "50": "cth50_pct", "75": "cth75_pct"})
-            [["crop", "cth25_pct", "cth50_pct", "cth75_pct"]]
-        )
-        df_crop_cot_pct = (
-            df_crop_pct[df_crop_pct["var"] == "cot_percentiles"]
-            .rename(columns={"25": "cot25_pct", "50": "cot50_pct", "75": "cot75_pct"})
-            [["crop", "cot25_pct", "cot50_pct", "cot75_pct"]]
-        )
-    except Exception as e:
-        print(f"Failed to load crop percentiles: {e}")
-        df_crop_pct = None
-        df_crop_cth_pct = None
-        df_crop_cot_pct = None
-else:
-    df_crop_pct = None
-    df_crop_cth_pct = None
-    df_crop_cot_pct = None
-    print(f"Crop percentiles file not found: {pct_path}")
 
 
 cloud_items_ordered = sorted(
@@ -129,12 +89,6 @@ def stat_by_time(df, value_col, stat="mean"):
             .mean()
             .reset_index()
         )
-    elif stat == "median":
-        return (
-            df.groupby("t_bin")[value_col]
-            .median()
-            .reset_index()
-        )
     elif stat == "sum":
         return (
             df.groupby("t_bin")[value_col]
@@ -147,37 +101,48 @@ def stat_by_time(df, value_col, stat="mean"):
             .max()
             .reset_index()
         )
-    elif stat == "std":
-        return (
-            df.groupby("t_bin")[value_col]
-            .std()
-            .reset_index()
-        )
-    else:
-        raise ValueError(f"Unsupported stat: {stat}")
 
+def normalize_coords(coords):
+    if coords is None or (isinstance(coords, float) and np.isnan(coords)):
+        return None
+    if isinstance(coords, str):
+        try:
+            return ast.literal_eval(coords)
+        except (ValueError, SyntaxError):
+            return None
+    return coords
 
-def style_clean_axis(ax, grid_axis="both"):
-    ax.grid(True, which="major", axis=grid_axis, color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-    ax.set_axisbelow(True)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_linewidth(1.4)
-    ax.spines["bottom"].set_linewidth(1.4)
+def load_nc_as_image(nc_path):
+    try:
+        ds = xr.open_dataset(nc_path)
+        var_name = "IR_108" if "IR_108" in ds.data_vars else list(ds.data_vars)[0]
+        data = ds[var_name].values
+        if data.ndim == 3:
+            data = data[0]
+        lat_vals = ds["lat"].values if "lat" in ds.coords else None
+        lon_vals = ds["lon"].values if "lon" in ds.coords else None
+        ds.close()
+        data_min = np.nanmin(data)
+        data_max = np.nanmax(data)
+        if data_max > data_min:
+            data_norm = ((data - data_min) / (data_max - data_min) * 255).astype(np.uint8)
+        else:
+            data_norm = np.zeros_like(data, dtype=np.uint8)
+        return data_norm, lat_vals, lon_vals
+    except Exception:
+        return None, None, None
 
+def latlon_to_pixel(lat, lon, lat_vals, lon_vals):
+    if lat_vals is None or lon_vals is None:
+        return None
+    lat_min, lat_max = np.min(lat_vals), np.max(lat_vals)
+    lon_min, lon_max = np.min(lon_vals), np.max(lon_vals)
+    if lat < lat_min or lat > lat_max or lon < lon_min or lon > lon_max:
+        return None
+    y_idx = int(np.argmin(np.abs(lat_vals - lat)))
+    x_idx = int(np.argmin(np.abs(lon_vals - lon)))
+    return x_idx, y_idx
 
-def style_right_twin_axis(ax):
-    ax.spines["top"].set_visible(False)
-    ax.spines["left"].set_visible(False)
-    ax.spines["right"].set_linewidth(1.4)
-
-
-def style_left_offset_axis(ax, offset=48):
-    ax.yaxis.set_label_position("left")
-    ax.yaxis.tick_left()
-    ax.spines["left"].set_visible(False)
-    ax.spines["right"].set_position(("axes", -offset / 100.0))
-    ax.spines["right"].set_linewidth(1.4)
 
 
 
@@ -300,13 +265,10 @@ pathway_stats.to_csv(
 scatter_stats = (
     storm_stats.groupby(["pathway_id", "pathway"]).agg(
         mean_precipitation99=("max_precipitation99", "mean"),
-        std_precipitation99=("max_precipitation99", "std"),
         mean_hail_intensity=("max_hail_intensity", "mean"),
-        std_hail_intensity=("max_hail_intensity", "std"),
         max_precipitation99=("max_precipitation99", "max"),
         max_hail_intensity=("max_hail_intensity", "max"),
         mean_duration_hours=("duration_hours", "mean"),
-        std_duration_hours=("duration_hours", "std"),
         max_duration_hours=("duration_hours", "max"),
     )
     .reset_index()
@@ -353,7 +315,7 @@ most_common_pathway_info = {
 print(f"Most common pathway IDs: {list(most_common_pathway_info.keys())}")
 
 # --- Plotting ---
-fig, axes = plt.subplots(1, 2, figsize=(7.5, 4.2), sharey=False)
+fig, axes = plt.subplots(1, 2, figsize=(6, 3), sharey=False)
 
 # Create separate normalizations for mean and max duration
 norm_mean = mpl.colors.Normalize(
@@ -399,18 +361,17 @@ for ax, x_col, y_col, duration_col, title, norm in zip(
                 row[x_col],
                 row[y_col],
                 str(int(row["pathway_id"])),
-                fontsize=12,
+                fontsize=9,
                 weight="bold",
                 ha="left",
                 va="bottom",
                 c="black",
             )
 
-    ax.set_xlabel("Rain Rate P99 (mm/h)", fontsize=13)
-    ax.set_ylabel("Max Hail Size (cm)", fontsize=13)
-    ax.set_title(title, fontsize=15, fontweight="bold")
-    ax.tick_params(axis="both", which="major", labelsize=12)
-    style_clean_axis(ax)
+    ax.set_xlabel("Rain Rate P99 (mm/h)", fontsize=10)
+    ax.set_ylabel("Max Hail Size (cm)", fontsize=10)
+    ax.set_title(title, fontsize=10, fontweight="bold")
+    ax.grid(alpha=0.3)
 
 # --- Create separate colorbars for each subplot ---
 cbar_mean = fig.colorbar(
@@ -420,8 +381,8 @@ cbar_mean = fig.colorbar(
     fraction=0.03,
     pad=0.04,
 )
-cbar_mean.set_label("Mean Duration (hours)", fontsize=12)
-cbar_mean.ax.tick_params(labelsize=12)
+cbar_mean.set_label("Mean Duration (hours)", fontsize=10)
+cbar_mean.ax.tick_params(labelsize=11)
 
 cbar_max = fig.colorbar(
     mpl.cm.ScalarMappable(norm=norm_max, cmap=cmap),
@@ -430,8 +391,8 @@ cbar_max = fig.colorbar(
     fraction=0.03,
     pad=0.04,
 )
-cbar_max.set_label("Max Duration (hours)", fontsize=12)
-cbar_max.ax.tick_params(labelsize=12)
+cbar_max.set_label("Max Duration (hours)", fontsize=10)
+cbar_max.ax.tick_params(labelsize=11)
 
 fig.tight_layout()
 
@@ -451,7 +412,7 @@ print("Top precip pathway:")
 print(top_precip_row[["pathway_id", "pathway", "max_precipitation99"]])
 
 # Define crop directory for use in pathway loop
-crop_dir = "/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj/images/IR_108/png_vmin-vmax_greyscale_CMA"
+crop_dir = "/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj/nc/1"
 
 for pathway_id, event_type in most_common_pathway_info.items():
     df_pw = df[df["pathway_id"] == pathway_id].copy()
@@ -464,26 +425,22 @@ for pathway_id, event_type in most_common_pathway_info.items():
         continue
     path = df_pw["pathway"].iloc[0]
     print(f"Plotting pathway {pathway_id} ({event_type}) with path {path}")
-    fig = plt.figure(figsize=(9, 16))
+    fig = plt.figure(figsize=(10, 14))
     gs = fig.add_gridspec(
-        nrows=9,
+        nrows=5,
         ncols=2,
-        height_ratios=[0.85, 0.02, 0.45, 0.35, 0.25, 0.25, 0.04, 0.28, 0.28],
-        hspace=0.5,
-        wspace=0.35,
-        top=0.98
+        height_ratios=[1, 0.75, 0.3, 0.28, 0.28],
+        hspace=0.45,
+        wspace=0.3,
+        top=0.94
     )
 
     ax_feat  = fig.add_subplot(gs[0, 0])
-    ax_cloud_props = fig.add_subplot(gs[0, 1])
-    # spacer row at gs[1,:]
-    ax_cloud = fig.add_subplot(gs[2, :])
-    ax_cth_cot_trend = fig.add_subplot(gs[3, :])
-    ax_events = fig.add_subplot(gs[4, :])
-    ax_time_dist = fig.add_subplot(gs[5, :])
-    # spacer row at gs[6,:]
-    ax_crops_precip = fig.add_subplot(gs[7, :])
-    ax_crops_hail = fig.add_subplot(gs[8, :])
+    ax_box   = fig.add_subplot(gs[0, 1])
+    ax_cloud = fig.add_subplot(gs[1, :])
+    ax_events = fig.add_subplot(gs[2, :])
+    ax_crops_precip = fig.add_subplot(gs[3, :])
+    ax_crops_hail = fig.add_subplot(gs[4, :])
 
     # ==========================================================
     # FEATURE SPACE (density contours on training embedding)
@@ -493,7 +450,7 @@ for pathway_id, event_type in most_common_pathway_info.items():
         df_tsne_train["tsne_dim_1"],
         df_tsne_train["tsne_dim_2"],
         color=df_tsne_train["color"].values,
-        s=5,
+        s=2,
         alpha=0.1,
         linewidth=0
     )
@@ -557,36 +514,49 @@ for pathway_id, event_type in most_common_pathway_info.items():
             zorder=10
         )
 
-    ax_feat.set_title("a) Feature space", fontsize=15, fontweight="bold")
+    ax_feat.set_title("a) Feature space density contours", fontsize=13, fontweight="bold")
     ax_feat.set_xticks([])
     ax_feat.set_yticks([])
 
     # ==========================================================
-    # CLOUD PROPERTIES HISTOGRAM FOR THIS PATHWAY
+    # CLASS PERSISTENCE HISTOGRAM
     # ==========================================================
-    # Extract cloud properties for this pathway (normalized to 0-1)
-    cc_pathway = df_pw["cma"].dropna()
-    cth_very_high_pathway = df_pw["cth_very_high"].dropna()
-    cot_thick_pathway = df_pw["cot_thick"].dropna()
+    pers = compute_class_persistence(df_pw)
+    pers = pers[pers["state"].isin(SELECTED_CLASSES)]
     
-    # Plot histograms with different line styles
-    bins_props = np.linspace(0, 1, 31)
-    ax_cloud_props.hist(cc_pathway, bins=bins_props, histtype="step", linewidth=2.5, 
-                  label="CC", color="steelblue", linestyle="-", density=True)
-    ax_cloud_props.hist(cth_very_high_pathway, bins=bins_props, histtype="step", linewidth=2.5, 
-                  label="CTH10+", color="darkorange", linestyle="-", density=True)
-    ax_cloud_props.hist(cot_thick_pathway, bins=bins_props, histtype="step", linewidth=2.5, 
-                  label="COT30+", color="green", linestyle="-", density=True)
+    # Create histogram for each class with overlapping 1-hour bins
+    max_duration = pers["duration"].max()
+    n_bins = int(np.ceil(max_duration))
+    bin_edges = np.arange(0, max_duration + 1, 1)
+    bar_width = bin_edges[1] - bin_edges[0]
     
-    ax_cloud_props.set_ylabel("Density Function", fontsize=16)
-    ax_cloud_props.set_xlabel("Cloud Area Fraction", fontsize=16)
-    ax_cloud_props.set_title("b) Cloud Properties Distribution", fontsize=16, fontweight="bold")
-    ax_cloud_props.legend(fontsize=13, title_fontsize=14, loc="upper right", frameon=True)
-    #ax_cloud_props.set_yscale("log")
-    ax_cloud_props.grid(True, which="major", axis="both", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-    ax_cloud_props.tick_params(axis="both", labelsize=15)
-    ax_cloud_props.xaxis.set_major_locator(ticker.FixedLocator([0.0, 0.25, 0.50, 0.75, 1.0]))
-    style_clean_axis(ax_cloud_props, grid_axis="both")
+    for i, cls in enumerate(SELECTED_CLASSES):
+        class_data = pers.loc[pers["state"] == cls, "duration"]
+        if len(class_data) > 0:
+            counts, _ = np.histogram(class_data, bins=bin_edges)
+            # Overlap bars in each bin
+            bar_x = bin_edges[:-1]
+            ax_box.bar(
+                bar_x,
+                counts,
+                width=bar_width,
+                label=selected_short_labels[i],
+                facecolor="none",
+                edgecolor=selected_colors_ordered[i],
+                linewidth=1.2,
+                alpha=0.7
+            )
+    
+    ax_box.set_xlabel("Duration (hours)", fontsize=12)
+    ax_box.set_ylabel("Count", fontsize=12)
+    ax_box.set_title("b) Class persistence duration", fontsize=13, fontweight="bold")
+    ax_box.tick_params(axis="x", labelsize=12)
+    ax_box.tick_params(axis="y", labelsize=12)
+    ax_box.grid(ls="--", alpha=0.3, axis="y")
+    #use x ticks label (0,2,4,6,8,10,12,14,16) and set xlim to 0-10
+    ax_box.set_xticks([0,2,4,6,8,10,12,14,16,18])
+    #ax_box.set_xlim(0, 10)
+    #ax_box.legend(fontsize=10)
 
     # ==========================================================
     # TIME-ALIGNED PANEL 1: CLOUD PROPERTIES ONLY
@@ -647,30 +617,30 @@ for pathway_id, event_type in most_common_pathway_info.items():
     p75_cot = stat_by_time_percentile(df_pw, "cot_thick", 0.75)
     
     # Plot median trends
-    ax_cloud.plot(median_cc["t_bin"], median_cc["cma_p50"], lw=2, label="CC", color="steelblue")
-    ax_cloud.plot(median_cth["t_bin"], median_cth["cth_very_high_p50"], lw=2, label="CTH10+", color="darkorange")
-    ax_cloud.plot(median_cot["t_bin"], median_cot["cot_thick_p50"], lw=2, label="COT30+", color="green")
+    ax_cloud.plot(median_cc["t_bin"], median_cc["cma_p50"], lw=2, label="CC", color="C0")
+    ax_cloud.plot(median_cth["t_bin"], median_cth["cth_very_high_p50"], lw=2, label="CTH very high", color="C1")
+    ax_cloud.plot(median_cot["t_bin"], median_cot["cot_thick_p50"], lw=2, label="COT thick", color="C2")
     
     # Fill between 25th and 75th percentiles with low alpha
     ax_cloud.fill_between(
         median_cc["t_bin"],
         p25_cc["cma_p25"],
         p75_cc["cma_p75"],
-        color="steelblue",
+        color="C0",
         alpha=0.2
     )
     ax_cloud.fill_between(
         median_cth["t_bin"],
         p25_cth["cth_very_high_p25"],
         p75_cth["cth_very_high_p75"],
-        color="darkorange",
+        color="C1",
         alpha=0.2
     )
     ax_cloud.fill_between(
         median_cot["t_bin"],
         p25_cot["cot_thick_p25"],
         p75_cot["cot_thick_p75"],
-        color="green",
+        color="C2",
         alpha=0.2
     )
     
@@ -679,124 +649,13 @@ for pathway_id, event_type in most_common_pathway_info.items():
         ax_cloud.axvspan(t_low, t_high, color="gray", alpha=0.2, zorder=0)
         ax_cloud.axvline(t_med, color="gray", ls="--", lw=1)
 
-    ax_cloud.set_ylabel("Cloud Area\nFraction", fontsize=16)
-    ax_cloud.set_title("c) Time-aligned cloud area fraction properties and rain rate", fontsize=16, fontweight="bold")
+    ax_cloud.set_ylabel("Cloud properties", fontsize=12)
+    #ax_cloud.set_xlabel("Aligned time (hours)", fontsize=12)
+    ax_cloud.set_title("c) Time-aligned cloud properties", fontsize=13, fontweight="bold")
     ax_cloud.axvline(0, color="k", ls="--", lw=1, alpha=0.5)
-    ax_cloud.grid(True, which="major", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-    ax_cloud.tick_params(axis="both", labelsize=15)
-    ax_cloud.set_yticks([0.0, 0.25, 0.50, 0.75])
-    ax_cloud.legend(fontsize=12, loc="upper left")
-    style_clean_axis(ax_cloud)
-    
-    # Add twin y-axis for max precipitation rate
-    # Add twin y-axis for precipitation rate (mean and max)
-    ax_cloud_twin = ax_cloud.twinx()
-    mean_precip99 = stat_by_time(df_pw, "precipitation99", stat="mean")
-    max_precip99 = stat_by_time(df_pw, "precipitation99", stat="max")
-    ax_cloud_twin.plot(
-        mean_precip99["t_bin"],
-        mean_precip99["precipitation99"],
-        color="black",
-        lw=2.,
-        linestyle="-",
-        label="Mean RR p99",
-        alpha=0.7
-    )
-    ax_cloud_twin.plot(
-        max_precip99["t_bin"],
-        max_precip99["precipitation99"],
-        color="black",
-        lw=2.,
-        linestyle=":",
-        label="Max RR p99",
-        alpha=0.7
-    )
-    ax_cloud_twin.set_ylabel("Rain rate\n(mm/h)", fontsize=16)
-    ax_cloud_twin.tick_params(axis="y", labelsize=15)
-    ax_cloud_twin.set_yticks([0, 20, 40, 60])
-    ax_cloud_twin.legend(fontsize=12, loc="upper right")
-    style_right_twin_axis(ax_cloud_twin)
-    
-    # Set fixed x-axis limits and ticks for all time-aligned plots (for cross-pathway comparison)
-    shared_xlim = (-10, 10)
-    shared_xticks = np.arange(-10, 11, 2)
-    shared_xticks_three = np.linspace(shared_xlim[0], shared_xlim[1], 3)
-    
-    # ==========================================================
-    # NEW PANEL D: CTH AND COT MEDIANS (with transition shading)
-    # ==========================================================
-    ax_cot_pathway = ax_cth_cot_trend.twinx()
-
-    if df_crop_cth_pct is not None and df_crop_cot_pct is not None:
-        df_pw_pct = (
-            df_pw.merge(df_crop_cth_pct, on="crop", how="left")
-                .merge(df_crop_cot_pct, on="crop", how="left")
-        )
-
-        cth_series = df_pw_pct.groupby("t_bin")[["cth25_pct", "cth50_pct", "cth75_pct"]].median()
-        cot_series = df_pw_pct.groupby("t_bin")[["cot25_pct", "cot50_pct", "cot75_pct"]].median()
-    else:
-        # Fallback to pathway columns if the external CSV is unavailable.
-        cth_series = df_pw.groupby("t_bin")[["cth50"]].median()
-        cth_series["cth25_pct"] = df_pw.groupby("t_bin")["cth50"].quantile(0.25)
-        cth_series["cth75_pct"] = df_pw.groupby("t_bin")["cth50"].quantile(0.75)
-        cot_series = df_pw.groupby("t_bin")[["cot_thick"]].median()
-        cot_series["cot25_pct"] = df_pw.groupby("t_bin")["cot_thick"].quantile(0.25)
-        cot_series["cot75_pct"] = df_pw.groupby("t_bin")["cot_thick"].quantile(0.75)
-
-    if not cth_series.empty:
-        cth_plot = cth_series.reset_index()
-        ax_cth_cot_trend.plot(cth_plot["t_bin"], cth_plot["cth50_pct"] / 1000, color="darkorange", lw=3, label="CTH p50")
-        ax_cth_cot_trend.fill_between(
-            cth_plot["t_bin"],
-            cth_plot["cth25_pct"] / 1000,
-            cth_plot["cth75_pct"] / 1000,
-            color="darkorange",
-            alpha=0.2,
-        )
-
-    if not cot_series.empty:
-        cot_plot = cot_series.reset_index()
-        ax_cot_pathway.plot(cot_plot["t_bin"], cot_plot["cot50_pct"], color="green", lw=3, label="COT p50")
-        ax_cot_pathway.fill_between(
-            cot_plot["t_bin"],
-            cot_plot["cot25_pct"],
-            cot_plot["cot75_pct"],
-            color="green",
-            alpha=0.2,
-        )
-
-    if transition_window is not None:
-        t_low, t_high, t_med = transition_window
-        ax_cth_cot_trend.axvspan(t_low, t_high, color="gray", alpha=0.2, zorder=0)
-        ax_cth_cot_trend.axvline(t_med, color="gray", ls="--", lw=1)
-
-    ax_cth_cot_trend.set_ylabel("CTH p50\n(km)", fontsize=16, color="darkorange")
-    ax_cot_pathway.set_ylabel("COT p50", fontsize=16, color="green")
-    ax_cth_cot_trend.set_title("d) Time-aligned CTH and COT Medians", fontsize=16, fontweight="bold")
-    ax_cth_cot_trend.tick_params(axis="both", labelsize=15)
-    ax_cot_pathway.tick_params(axis="y", labelsize=15)
-    ax_cth_cot_trend.set_yticks([3, 7, 11])
-    ax_cot_pathway.set_yticks([0, 50, 100])
-
-    ax_cth_cot_trend.set_xlim(shared_xlim)
-    ax_cth_cot_trend.set_xticks(shared_xticks)
-    ax_cth_cot_trend.axvline(0, color="k", ls="--", lw=1, alpha=0.5)
-    style_clean_axis(ax_cth_cot_trend)
-    style_right_twin_axis(ax_cot_pathway)
-
-    ax_cth_cot_trend.spines["left"].set_color("darkorange")
-    ax_cot_pathway.spines["right"].set_color("green")
-    ax_cth_cot_trend.tick_params(axis="y", colors="darkorange", labelsize=15)
-    ax_cot_pathway.tick_params(axis="y", colors="green", labelsize=15)
-
-    trend_pw_handles = []
-    trend_pw_labels = []
-    for axis in (ax_cth_cot_trend, ax_cot_pathway):
-        handles, labels = axis.get_legend_handles_labels()
-        trend_pw_handles.extend(handles)
-        trend_pw_labels.extend(labels)
-    #ax_cth_cot_trend.legend(trend_pw_handles, trend_pw_labels, loc="upper left", fontsize=12, frameon=False)
+    ax_cloud.grid(ls="--", alpha=0.3)
+    ax_cloud.tick_params(axis="both", labelsize=12)
+    ax_cloud.legend(fontsize=10, loc="lower right")
     
     # ==========================================================
     # TIME-ALIGNED PANEL 2: EVENTS SPLIT BY TYPE
@@ -829,46 +688,13 @@ for pathway_id, event_type in most_common_pathway_info.items():
         ax_events.axvspan(t_low, t_high, color="gray", alpha=0.2, zorder=0)
         ax_events.axvline(t_med, color="gray", ls="--", lw=1)
 
-    ax_events.set_ylabel("Count", fontsize=16)
-    ax_events.set_title("e) Time-aligned event counts", fontsize=16, fontweight="bold")
+    ax_events.set_ylabel("Event count", fontsize=12)
+    ax_events.set_xlabel("Aligned time (hours)", fontsize=12)
+    ax_events.set_title("d) Time-aligned event counts by type", fontsize=13, fontweight="bold")
     ax_events.axvline(0, color="k", ls="--", lw=1, alpha=0.5)
-    ax_events.grid(True, which="major", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-    ax_events.tick_params(axis="both", labelsize=15)
-    #fix to 3 intervals on y-axis with integer formatting
-    ax_events.yaxis.set_major_locator(mpl.ticker.MaxNLocator(nbins=3, integer=True))
-    ax_events.legend(fontsize=12, loc="upper right")
-    style_clean_axis(ax_events)
-
-    # ==========================================================
-    # STORM TEMPORAL DISTRIBUTION (by time aligned bin)
-    # ==========================================================
-    # Use t_bin from the dataframe (same as other plots)
-    time_counts = df_pw.groupby("t_bin").size().reset_index(name="count")
-    
-    ax_time_dist.bar(time_counts["t_bin"], time_counts["count"], width=0.8, color="steelblue", 
-                edgecolor="black", linewidth=0.8, alpha=0.7)
-    ax_time_dist.set_xlabel("Aligned time (hours)", fontsize=16, fontweight="bold")
-    ax_time_dist.set_ylabel("Count", fontsize=16)
-    ax_time_dist.set_title("f) Crop occurrence by time bin", fontsize=16, fontweight="bold")
-    ax_time_dist.set_yscale("log")
-    ax_time_dist.grid(True, which="major", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-    ax_time_dist.tick_params(axis="both", labelsize=15)
-    # Fix y-axis ticks to show three log ticks in exponential notation (10^1, 10^2, 10^3)
-    ax_time_dist.yaxis.set_major_locator(ticker.FixedLocator([10, 100, 1000]))
-    ax_time_dist.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f'$10^{{{int(np.log10(x))}}}$'))
-    ax_time_dist.yaxis.set_minor_locator(ticker.NullLocator())
-    ax_time_dist.axvline(0, color="k", ls="--", lw=1, alpha=0.5)
-    style_clean_axis(ax_time_dist, grid_axis="both")
-    
-    ax_cloud.set_xlim(shared_xlim)
-    ax_cloud.set_xticks(shared_xticks)
-    ax_cloud_twin.set_xlim(shared_xlim)
-    
-    ax_events.set_xlim(shared_xlim)
-    ax_events.set_xticks(shared_xticks)
-    
-    ax_time_dist.set_xlim(shared_xlim)
-    ax_time_dist.set_xticks(shared_xticks)
+    ax_events.grid(ls="--", alpha=0.3)
+    ax_events.tick_params(axis="both", labelsize=12)
+    ax_events.legend(fontsize=10, loc="upper right")
 
     # ==========================================================
     # CROP IMAGES FOR EXTREME PRECIP AND HAIL EVENTS
@@ -883,12 +709,12 @@ for pathway_id, event_type in most_common_pathway_info.items():
     precip_pw_storm_id = int(extreme_precip_pw_row["storm_id"].replace('storm', '')) if 'storm' in str(extreme_precip_pw_row["storm_id"]) else int(extreme_precip_pw_row["storm_id"])
     hail_pw_storm_id = int(extreme_hail_pw_row["storm_id"].replace('storm', '')) if 'storm' in str(extreme_hail_pw_row["storm_id"]) else int(extreme_hail_pw_row["storm_id"])
     
-    def plot_crop_row(ax, storm_id, trajectory_df, crop_dir, event_col, ax_events, n_crops=6, gap_pixels=20):
-        """Plot crop images: show evenly spaced frames with class-colored borders."""
+    def plot_crop_row(ax, storm_id, trajectory_df, crop_dir, event_col, ax_events, precip_coords=None, hail_coords=None, n_crops=6, gap_pixels=20):
+        """Plot crop images: show evenly spaced frames with class-colored borders and event markers."""
         ax.clear()
         
         # Find nearby images around the target time
-        search_pattern = f"{crop_dir}/storm{storm_id}_*_*.png"
+        search_pattern = f"{crop_dir}/storm{storm_id}_*_*.nc"
         matching_files = glob.glob(search_pattern)
         
         if not matching_files:
@@ -964,11 +790,16 @@ for pathway_id, event_type in most_common_pathway_info.items():
         
         colors = []
         t_aligned_vals = []
+        lat_grids = []
+        lon_grids = []
         for fpath, img_dt, t_al, _event_val, state_color in selected_images:
             try:
-                img = Image.open(fpath)
-                img_array = np.array(img)
+                img_array, lat_vals, lon_vals = load_nc_as_image(fpath)
+                if img_array is None:
+                    continue
                 loaded_images.append(img_array)
+                lat_grids.append(lat_vals)
+                lon_grids.append(lon_vals)
                 titles.append(f"{t_al:+.1f}h")
                 colors.append(state_color)
                 t_aligned_vals.append(t_al)
@@ -996,9 +827,11 @@ for pathway_id, event_type in most_common_pathway_info.items():
             current_x += w + gap
         
         # Display composite
-        ax.imshow(composite, cmap="gray", aspect="auto")
+        ax.imshow(composite, cmap="gray", aspect="auto", origin="upper")
         
-        # Draw colored frames for each crop (class color)
+        # Draw colored frames for each crop (class color) and event markers
+        precip_coords = normalize_coords(precip_coords)
+        hail_coords = normalize_coords(hail_coords)
         current_x = 0
         for idx, color in enumerate(colors):
             rect = mpatches.Rectangle(
@@ -1010,6 +843,36 @@ for pathway_id, event_type in most_common_pathway_info.items():
                 edgecolor=color
             )
             ax.add_patch(rect)
+            
+            lat_vals = lat_grids[idx]
+            lon_vals = lon_grids[idx]
+            if precip_coords:
+                for lat, lon in precip_coords:
+                    pos = latlon_to_pixel(lat, lon, lat_vals, lon_vals)
+                    if pos is None:
+                        continue
+                    x_idx, y_idx = pos
+                    ax.plot(current_x + x_idx, y_idx, marker="o", color="cyan", markersize=6,
+                            markeredgecolor="darkblue", markeredgewidth=1, alpha=0.8)
+            if hail_coords:
+                for lat, lon in hail_coords:
+                    pos = latlon_to_pixel(lat, lon, lat_vals, lon_vals)
+                    if pos is None:
+                        continue
+                    x_idx, y_idx = pos
+                    ax.plot(current_x + x_idx, y_idx, marker="s", color="red", markersize=6,
+                            markeredgecolor="darkred", markeredgewidth=1, alpha=0.8)
+            current_x += w + gap
+        
+        # Draw dotted lines on the event plot aligned with each crop time
+        if ax_events is not None:
+            for t_al, color in zip(t_aligned_vals, colors):
+                ax_events.axvline(x=t_al, color=color, ls=":", lw=2, alpha=0.9)
+        
+        # Add vertical lines at gaps for visual separation
+        current_x = w
+        for idx in range(len(loaded_images) - 1):
+            ax.axvline(x=current_x - 0.5, color="red", linestyle="--", linewidth=1, alpha=0.5)
             current_x += w + gap
         
         # Set ticks at image centers
@@ -1020,38 +883,34 @@ for pathway_id, event_type in most_common_pathway_info.items():
             current_x += w + gap
         
         ax.set_xticks(tick_positions)
-        ax.set_xticklabels(titles, fontsize=12)
+        ax.set_xticklabels(titles, fontsize=10)
         ax.set_yticks([])
     
     # Display precipitation crops
-    plot_crop_row(ax_crops_precip, precip_pw_storm_id, df_pw, crop_dir, "n_precip", None)
+    precip_coords = extreme_precip_pw_row.get("precip_event_coords", None)
+    hail_coords = extreme_hail_pw_row.get("hail_event_coords", None)
+    plot_crop_row(ax_crops_precip, precip_pw_storm_id, df_pw, crop_dir, "n_precip", ax_events, precip_coords=precip_coords, hail_coords=None)
     precip_dt = pd.to_datetime(extreme_precip_pw_row["datetime"])
     precip_val = extreme_precip_pw_row["precipitation99"]
     ax_crops_precip.set_title(
-        f"g) {precip_dt.strftime('%Y-%m-%d')} | Max rain rate: {precip_val:.2f}",
-        fontsize=15,
+        f"{precip_dt.strftime('%Y-%m-%d')} | Max rain rate: {precip_val:.2f}",
+        fontsize=11,
         fontweight="bold"
     )
-    ax_crops_precip.set_ylabel("Precip", fontsize=12, fontweight="bold")
+    ax_crops_precip.set_ylabel("Precip", fontsize=11, fontweight="bold")
     ax_crops_precip.yaxis.set_label_position("left")
-    # Set spine colors to white
-    for spine in ax_crops_precip.spines.values():
-        spine.set_color('white')
     
     # Display hail crops
-    plot_crop_row(ax_crops_hail, hail_pw_storm_id, df_pw, crop_dir, "n_hail", None)
+    plot_crop_row(ax_crops_hail, hail_pw_storm_id, df_pw, crop_dir, "n_hail", ax_events, precip_coords=None, hail_coords=hail_coords)
     hail_dt = pd.to_datetime(extreme_hail_pw_row["datetime"])
     hail_val = extreme_hail_pw_row["max_hail_intensity"]
     ax_crops_hail.set_title(
-        f"h) {hail_dt.strftime('%Y-%m-%d')} | Max hail diameter: {hail_val:.2f}",
-        fontsize=15,
+        f"{hail_dt.strftime('%Y-%m-%d')} | Max hail diameter: {hail_val:.2f}",
+        fontsize=11,
         fontweight="bold"
     )
-    ax_crops_hail.set_ylabel("Hail", fontsize=12, fontweight="bold")
+    ax_crops_hail.set_ylabel("Hail", fontsize=11, fontweight="bold")
     ax_crops_hail.yaxis.set_label_position("left")
-    # Set spine colors to white
-    for spine in ax_crops_hail.spines.values():
-        spine.set_color('white')
 
     # ==========================================================
     # TITLE + SAVE
@@ -1066,12 +925,11 @@ for pathway_id, event_type in most_common_pathway_info.items():
         except:
             pathway_desc.append(state)
     pathway_desc_str = " → ".join(pathway_desc)
-    # Remove overall title to save space
-    # fig.suptitle(
-    #     f"Pathway: {pathway_desc_str}" + f" - n_storms: {n_storms}",
-    #     fontsize=18,
-    #     y=1.00
-    # )
+    fig.suptitle(
+        f"Pathway: {pathway_desc_str}" + f" - n_storms: {n_storms}",
+        fontsize=18,
+        y=1.00
+    )
 
     fname = f"pathway_{pathway_id}_no_dom.png"
     fig.savefig(
@@ -1090,10 +948,10 @@ import glob
 from datetime import datetime, timedelta
 
 def load_image_by_datetime(storm_id, target_dt, crop_dir, tolerance_hours=2):
-    """Find and load the closest image to the target datetime."""
+    """Find and load the closest NC crop to the target datetime."""
     try:
         # Search for images matching this storm
-        search_pattern = f"{crop_dir}/storm{storm_id}_*_*.png"
+        search_pattern = f"{crop_dir}/storm{storm_id}_*_*.nc"
         matching_files = glob.glob(search_pattern)
         
         if not matching_files:
@@ -1106,7 +964,7 @@ def load_image_by_datetime(storm_id, target_dt, crop_dir, tolerance_hours=2):
         for fpath in matching_files:
             # Extract datetime from filename (format: storm{id}_{datetime}_...)
             basename = os.path.basename(fpath)
-            # Find the datetime part (after first underscore, before next underscore or .png)
+            # Find the datetime part (after first underscore, before next underscore or .nc)
             parts = basename.split('_')
             if len(parts) >= 2:
                 try:
@@ -1135,8 +993,8 @@ def load_image_by_datetime(storm_id, target_dt, crop_dir, tolerance_hours=2):
                     pass
         
         if closest_file and closest_diff <= tolerance_hours:
-            img = Image.open(closest_file)
-            return np.array(img)
+            img_array, _lat_vals, _lon_vals = load_nc_as_image(closest_file)
+            return img_array
     except Exception as e:
         pass
     
@@ -1288,82 +1146,6 @@ print(hail_type_counts_occ)
 print("Top 50 hail pathway types (unique pathways):")
 print(hail_type_counts_unique)
 
-# ==========================================================
-# CREATE COMPREHENSIVE PATHWAY RANKING TABLE
-# ==========================================================
-# Build pathway type mapping
-pathway_type_map_full = (
-    df.dropna(subset=["pathway_type"])
-    .drop_duplicates(subset=["pathway"])
-    .set_index("pathway")["pathway_type"]
-)
-
-# Create ranking table sorted by number of storms
-pathway_ranking = scatter_stats.copy()
-pathway_ranking["pathway_type"] = pathway_ranking["pathway"].map(pathway_type_map_full).fillna("unknown")
-pathway_ranking = pathway_ranking.sort_values("n_storms", ascending=False).reset_index(drop=True)
-pathway_ranking["rank"] = range(1, len(pathway_ranking) + 1)
-
-# Create mean ± std formatted columns
-pathway_ranking["hail_diameter"] = pathway_ranking.apply(
-    lambda row: f"{row['mean_hail_intensity']:.2f} ± {row['std_hail_intensity']:.2f}" 
-    if pd.notna(row['std_hail_intensity']) else f"{row['mean_hail_intensity']:.2f} ± 0.00",
-    axis=1
-)
-pathway_ranking["rain_rate"] = pathway_ranking.apply(
-    lambda row: f"{row['mean_precipitation99']:.2f} ± {row['std_precipitation99']:.2f}" 
-    if pd.notna(row['std_precipitation99']) else f"{row['mean_precipitation99']:.2f} ± 0.00",
-    axis=1
-)
-pathway_ranking["duration"] = pathway_ranking.apply(
-    lambda row: f"{row['mean_duration_hours']:.2f} ± {row['std_duration_hours']:.2f}" 
-    if pd.notna(row['std_duration_hours']) else f"{row['mean_duration_hours']:.2f} ± 0.00",
-    axis=1
-)
-
-# Select and reorder columns
-pathway_ranking_display = pathway_ranking[[
-    "rank", "pathway", "pathway_type", "n_storms",
-    "hail_diameter", "rain_rate", "duration"
-]].copy()
-
-# Print the table
-print("\n" + "="*150)
-print("PATHWAY RANKING TABLE (sorted by number of storms)")
-print("="*150)
-print(pathway_ranking_display.to_string(index=False))
-print("="*150 + "\n")
-
-# Save ranking table as CSV
-pathway_ranking_csv_path = os.path.join(OUT_DIR, "pathway_ranking_table.csv")
-pathway_ranking_display.to_csv(pathway_ranking_csv_path, index=False)
-print(f"✅ Saved pathway ranking table (CSV) to: {pathway_ranking_csv_path}\n")
-
-# Create and save LaTeX table
-latex_table_str = pathway_ranking_display.to_latex(
-    index=False,
-    escape=True,
-    column_format="c" * len(pathway_ranking_display.columns)
-)
-
-# Improve LaTeX formatting
-latex_table_str = latex_table_str.replace("pathway_type", "Type")
-latex_table_str = latex_table_str.replace("n_storms", "\\# Storms")
-latex_table_str = latex_table_str.replace("hail_diameter", "Hail Diam. (mm)")
-latex_table_str = latex_table_str.replace("rain_rate", "Rain Rate (mm/h)")
-latex_table_str = latex_table_str.replace("duration", "Duration (h)")
-latex_table_str = latex_table_str.replace("±", "$\\pm$")
-
-# Save LaTeX table
-latex_table_path = os.path.join(OUT_DIR, "pathway_ranking_table.tex")
-with open(latex_table_path, "w") as f:
-    f.write(latex_table_str)
-print(f"✅ Saved pathway ranking table (LaTeX) to: {latex_table_path}")
-print("\nLaTeX Table Preview:")
-print(latex_table_str)
-print()
-
-
 # --- Visualization: Top pathways in Top 50 ---
 def pathway_to_short_names(pathway):
     states = pathway.split(" -> ")
@@ -1462,12 +1244,11 @@ most_common_hail_pathway = top_hail_events["pathway"].value_counts().idxmax()
 extreme_precip_pathway = top_precip_events.loc[top_precip_events["max_precipitation99"].idxmax(), "pathway"]
 extreme_hail_pathway = top_hail_events.loc[top_hail_events["max_hail_intensity"].idxmax(), "pathway"]
 
-# Create figure with 2 rows and 2 columns
-fig = plt.figure(figsize=(16, 11))
-gs = fig.add_gridspec(2, 2, hspace=0.42, wspace=0.34, height_ratios=[1.2, 1])
+# Create figure with 2 rows
+fig, axes = plt.subplots(2, 1, figsize=(14, 6))
 
-# --- Top 20 Precipitation Events (top left) ---
-ax_precip = fig.add_subplot(gs[0, 0])
+# --- Top 20 Precipitation Events ---
+ax_precip = axes[0]
 # Assign colors based on whether pathway is most common
 colors_precip = []
 for pathway in top_precip_events["pathway"].values:
@@ -1489,9 +1270,9 @@ bars_precip = ax_precip.bar(
 bars_precip[0].set_edgecolor("black")
 bars_precip[0].set_linewidth(3)
 
-ax_precip.set_ylabel("Max Rain \n Rate (mm/h)", fontsize=15, fontweight="bold")
+ax_precip.set_ylabel("Max Rain \n Rate (mm/h)", fontsize=13, fontweight="bold")
 #ax_precip.set_xlabel("Pathway Rank", fontsize=13, fontweight="bold")
-ax_precip.set_title("a) Top 50 Most Intense Precipitation Events", fontsize=16, fontweight="bold")
+ax_precip.set_title("a) Top 50 Most Intense Precipitation Events", fontsize=14, fontweight="bold")
 ax_precip.set_xticks(range(len(top_precip_events)))
 # Set x-axis labels to rankings (convert pathway to short class names)
 rankings_precip = []
@@ -1507,14 +1288,15 @@ for pathway in top_precip_events["pathway"].values:
         except:
             short_names.append(state)
     rankings_precip.append(" → ".join(short_names))
-ax_precip.set_xticklabels(rankings_precip, rotation=45, ha="right", fontsize=12)
+ax_precip.set_xticklabels(rankings_precip, rotation=45, ha="right", fontsize=10)
 ax_precip.set_yticks([0, 25, 50])
-ax_precip.tick_params(axis="y", labelsize=13)
-ax_precip.tick_params(axis="x", labelsize=13)
-style_clean_axis(ax_precip, grid_axis="y")
+ax_precip.tick_params(axis="y", labelsize=12)
+ax_precip.tick_params(axis="x", labelsize=12)
+ax_precip.grid(axis="y", alpha=0.3, ls="--")
+ax_precip.set_axisbelow(True)
 
-# --- Top 20 Hail Events (top right) ---
-ax_hail = fig.add_subplot(gs[0, 1])
+# --- Top 20 Hail Events ---
+ax_hail = axes[1]
 # Assign colors based on whether pathway is most common
 colors_hail = []
 for pathway in top_hail_events["pathway"].values:
@@ -1536,9 +1318,9 @@ bars_hail = ax_hail.bar(
 bars_hail[0].set_edgecolor("black")
 bars_hail[0].set_linewidth(3)
 
-ax_hail.set_ylabel("Max Hail \n Diameter (cm)", fontsize=15, fontweight="bold")
+ax_hail.set_ylabel("Max Hail \n Diameter (cm)", fontsize=13, fontweight="bold")
 #ax_hail.set_xlabel("Pathway Rank", fontsize=13, fontweight="bold")
-ax_hail.set_title("b) Top 50 Most Intense Hail Events", fontsize=16, fontweight="bold")
+ax_hail.set_title("b) Top 50 Most Intense Hail Events", fontsize=14, fontweight="bold")
 ax_hail.set_xticks(range(len(top_hail_events)))
 # Set x-axis labels to rankings (convert pathway to short class names)
 rankings_hail = []
@@ -1554,105 +1336,16 @@ for pathway in top_hail_events["pathway"].values:
         except:
             short_names.append(state)
     rankings_hail.append(" → ".join(short_names))
-ax_hail.set_xticklabels(rankings_hail, rotation=45, ha="right", fontsize=12)
+ax_hail.set_xticklabels(rankings_hail, rotation=45, ha="right", fontsize=10)
 ax_hail.set_yticks([0, 10, 20])
-ax_hail.tick_params(axis="y", labelsize=13)
-ax_hail.tick_params(axis="x", labelsize=13)
-style_clean_axis(ax_hail, grid_axis="y")
-
-# ==========================================================
-# NEW SUBPLOTS: Cloud properties and time-aligned occurrences
-# ==========================================================
-
-# --- Cloud Properties Histogram (bottom left) ---
-ax_cloud = fig.add_subplot(gs[1, 0])
-
-# Get all storms data
-all_storms_df = df[df["label"].isin(SELECTED_CLASSES)].copy()
-
-# Extract cloud properties (already normalized to 0-1)
-cc_data = all_storms_df["cma"].dropna()  # Cloud cover
-cth_very_high = all_storms_df["cth_very_high"].dropna()  # CTH >= 10 km
-cot_thick = all_storms_df["cot_thick"].dropna()  # COT >= 30
-
-# Plot histograms with different line styles
-bins = np.linspace(0, 1, 31)
-ax_cloud.hist(cc_data, bins=bins, histtype="step", linewidth=2.5, 
-              label="CC", color="steelblue", linestyle="-", density=True)
-ax_cloud.hist(cth_very_high, bins=bins, histtype="step", linewidth=2.5, 
-              label="CTH10+", color="darkorange", linestyle="--", density=True)
-ax_cloud.hist(cot_thick, bins=bins, histtype="step", linewidth=2.5, 
-              label="COT30+", color="darkred", linestyle=":", density=True)
-
-ax_cloud.set_ylabel("Density Function", fontsize=15, fontweight="bold")
-ax_cloud.set_xlabel("Cloud Area Fraction", fontsize=15, fontweight="bold")
-ax_cloud.set_title("c) Cloud properties distribution", fontsize=15, fontweight="bold")
-ax_cloud.legend(title="CC / CTH10+ / COT30+", fontsize=12, title_fontsize=12, loc="upper center", ncol=3, frameon=False)
-ax_cloud.set_yscale("log")
-ax_cloud.tick_params(axis="both", labelsize=13)
-style_clean_axis(ax_cloud, grid_axis="both")
-ax_cloud.grid(True, which="major", axis="x", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-
-# --- Time-Aligned Trends (bottom right) ---
-ax_cth = fig.add_subplot(gs[1, 1])
-
-shared_xlim = (-10, 10)
-shared_xticks = np.arange(-10, 11, 2)
-
-trend_cth = stat_by_time(all_storms_df, "cth_very_high", stat="median")
-trend_cot = stat_by_time(all_storms_df, "cot_thick", stat="median")
-rain_mean = stat_by_time(all_storms_df, "precipitation99", stat="mean")
-rain_max = stat_by_time(all_storms_df, "precipitation99", stat="max")
-
-ax_cot = ax_cth.twinx()
-ax_rain = ax_cth.twinx()
-
-ax_cot.spines["right"].set_position(("axes", -0.18))
-ax_cot.spines["right"].set_visible(True)
-ax_cot.spines["left"].set_visible(False)
-ax_cot.yaxis.set_label_position("left")
-ax_cot.yaxis.tick_left()
-
-ax_cth.plot(trend_cth["t_bin"], trend_cth["cth_very_high"], color="darkorange", lw=2.8, label="CTH10+ median")
-ax_cot.plot(trend_cot["t_bin"], trend_cot["cot_thick"], color="green", lw=2.8, label="COT30+ median")
-ax_rain.plot(rain_mean["t_bin"], rain_mean["precipitation99"], color="black", lw=2.4, ls="-", label="Rain mean")
-ax_rain.plot(rain_max["t_bin"], rain_max["precipitation99"], color="black", lw=2.4, ls=":", label="Rain max")
-
-#ax_cth.set_xlabel("Aligned time (hours)", fontsize=15, fontweight="bold")
-ax_cth.set_ylabel("CTH10+ median", fontsize=15, fontweight="bold", color="darkorange")
-ax_cot.set_ylabel("COT30+ median", fontsize=15, fontweight="bold", color="green")
-ax_rain.set_ylabel("Rain rate (mm/h)", fontsize=15, fontweight="bold", color="black")
-ax_cth.set_title("d) Time-aligned Cloud and Rain Trends", fontsize=15, fontweight="bold")
-ax_cth.tick_params(axis="both", labelsize=13)
-ax_cot.tick_params(axis="y", labelsize=13)
-ax_rain.tick_params(axis="y", labelsize=13)
-
-ax_cth.set_xlim(shared_xlim)
-ax_cth.set_xticks(shared_xticks)
-ax_cth.grid(True, which="major", axis="both", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
-ax_cth.set_axisbelow(True)
-style_clean_axis(ax_cth)
-style_left_offset_axis(ax_cot, offset=55)
-style_right_twin_axis(ax_rain)
-
-ax_cth.spines["left"].set_color("darkorange")
-ax_cot.spines["right"].set_color("green")
-ax_rain.spines["right"].set_color("black")
-ax_cth.tick_params(axis="y", colors="darkorange")
-ax_cot.tick_params(axis="y", colors="green")
-ax_rain.tick_params(axis="y", colors="black")
-
-trend_handles = []
-trend_labels = []
-for axis in (ax_cth, ax_cot, ax_rain):
-    handles, labels = axis.get_legend_handles_labels()
-    trend_handles.extend(handles)
-    trend_labels.extend(labels)
-ax_cth.legend(trend_handles, trend_labels, loc="upper left", fontsize=12, frameon=False, ncol=2)
+ax_hail.tick_params(axis="y", labelsize=12)
+ax_hail.tick_params(axis="x", labelsize=12)
+ax_hail.grid(axis="y", alpha=0.3, ls="--")
+ax_hail.set_axisbelow(True)
 
 fig.tight_layout()
 fig.savefig(
-    os.path.join(OUT_DIR, "top_extremes_and_properties_by_pathway.png"),
+    os.path.join(OUT_DIR, "top_extremes_by_pathway_no_dom.png"),
     dpi=300,
     bbox_inches="tight"
 )

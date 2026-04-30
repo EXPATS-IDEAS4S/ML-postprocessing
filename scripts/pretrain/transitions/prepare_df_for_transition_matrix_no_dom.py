@@ -36,8 +36,6 @@ print(f"Number of continuous trajectories: {n_continuous} out of {len(df_sum)}")
 #filter out non continuous trajectories
 df_continuous = df[df['storm_id'].isin(df_sum[df_sum['is_continuous']==True]['storm_id'])]
 
-
-
 #get list of unique datetime values
 datetimes = df_continuous['datetime'].unique()
 print(f"Unique datetimes: {datetimes}")
@@ -47,6 +45,42 @@ report_dir = f"/home/Daniele/codes/ML_data_generator/test/essl/"
 report_file = "storm_trajectories_after_merge.csv"
 df_report = pd.read_csv(os.path.join(report_dir, report_file))
 print(df_report.columns.tolist())
+#print cluster ids, cluser lat cluster lon and day id
+print(df_report[['cluster_id', 'lat', 'lon', 'time', 'storm_id', 'merged_storm_id']].head())
+
+path_grouped = "/home/Daniele/codes/ML_data_generator/test/essl/events_grouped.csv"
+df_grouped = pd.read_csv(path_grouped)
+print(df_grouped.columns.tolist())
+print(df_grouped[['cluster_id', 'cluster_lat', 'cluster_lon', 'day_id', 'time_slot']].head())
+
+# Add columns with list of (lat, lon) per event type per cluster_id
+# Extract PRECIP and HAIL events separately
+precip_events = df_grouped[df_grouped['TYPE_EVENT'] == 'PRECIP'].copy()
+hail_events = df_grouped[df_grouped['TYPE_EVENT'] == 'HAIL'].copy()
+
+# Group by cluster_id and create list of (lat, lon) tuples for each event type
+precip_coords = precip_events.groupby('cluster_id').apply(
+    lambda x: list(zip(x['LATITUDE'], x['LONGITUDE']))
+).to_dict()
+
+hail_coords = hail_events.groupby('cluster_id').apply(
+    lambda x: list(zip(x['LATITUDE'], x['LONGITUDE']))
+).to_dict()
+
+
+# Add columns to df_report
+df_report['precip_event_coords'] = df_report['cluster_id'].map(precip_coords)
+df_report['hail_event_coords'] = df_report['cluster_id'].map(hail_coords)
+
+print(df_report.columns.tolist())
+print(df_continuous.columns.tolist())
+
+print(df_report[['time', 'storm_id', 'lat', 'lon','cluster_id']].head())
+print(df_continuous[['filename', 'lat', 'lon', 'datetime', 'storm_id']].head())
+
+#rename time columnd to datetime in df_report
+#df_report = df_report.rename(columns={'time': 'datetime'})
+
 
 df_report["mean_precip_intensity"] = np.where(
     df_report["cluster_event_type"] == "PRECIP",
@@ -87,6 +121,14 @@ def resolve_source(sources):
         return "interpolated"
     return "extrapolated"
 
+def combine_coord_lists(coord_lists):
+    """Combine lists of coordinate tuples, filtering out NaN/None values."""
+    combined = []
+    for coords in coord_lists.dropna():
+        if coords is not None:
+            combined.extend(coords)
+    return combined if combined else None
+
 
 collapsed = (
     df_report
@@ -105,12 +147,61 @@ collapsed = (
 
         mean_hail_intensity=("mean_hail_intensity", "mean"),
         max_hail_intensity=("max_hail_intensity", "max"),
+        
+        precip_event_coords=("precip_event_coords", combine_coord_lists),
+        hail_event_coords=("hail_event_coords", combine_coord_lists),
     )
     .reset_index()
     .sort_values(["merged_storm_id", "time"])
 )
 
 print(f"Collapsed from {len(df_report)} → {len(collapsed)} rows")
+print(collapsed.columns.tolist())
+
+
+# # --- Merge precip_event_coords and hail_event_coords to df_continuous ---
+# # Prepare df_report for merging
+# # Parse time to datetime and remove timezone info
+# df_report['datetime'] = pd.to_datetime(df_report['datetime']).dt.tz_localize(None)
+# df_report['lat_rounded'] = df_report['lat'].round(1)
+# df_report['lon_rounded'] = df_report['lon'].round(1)
+
+# # Prepare df_continuous for merging
+# df_continuous['lat_rounded'] = df_continuous['lat'].round(1)
+# df_continuous['lon_rounded'] = df_continuous['lon'].round(1)
+
+# #print df ordered by datetime
+# print(len(df_report))
+# print(len(df_continuous))
+
+
+# #chack how many matching rows we have on rounded lat/lon and exact datetime
+# merged = df_continuous.merge(
+#     df_report[['datetime', 'lat_rounded', 'lon_rounded']],
+#     on=['datetime', 'lat_rounded', 'lon_rounded'],
+#     how='inner'
+# )
+# print(f"Number of matching rows on rounded lat/lon and exact datetime: {len(merged)}")
+
+
+# # Merge on rounded lat/lon and exact datetime
+# merge_cols = ['lat_rounded', 'lon_rounded', 'datetime']
+# coord_cols = ['precip_event_coords', 'hail_event_coords']
+
+# df_continuous = df_continuous.merge(
+#     df_report[merge_cols + coord_cols],
+#     on=merge_cols,
+#     how='left'
+# )
+
+# # Drop temporary merge columns
+# df_continuous = df_continuous.drop(columns=['lat_rounded', 'lon_rounded'])
+
+# print("\nMerged event coordinates to df_continuous")
+# print(df_continuous[['lat', 'lon', 'datetime', 'precip_event_coords', 'hail_event_coords']].head(50))
+
+
+
 
 collapsed["datetime"] = pd.to_datetime(collapsed["time"], utc=True)
 collapsed["datetime"] = collapsed["datetime"].dt.tz_localize(None)
@@ -136,8 +227,10 @@ collapsed["filename"] = (
     + ".nc"
 )
 
+
+
 #mergee df_report on df using filename (merge the columns: 'n_precip', 'n_hail', 'max_intensity', 'mean_intensity)
-cols = ["filename", "n_precip", "n_hail", "max_precip_intensity", "mean_precip_intensity", "max_hail_intensity", "mean_hail_intensity"]
+cols = ["filename", "n_precip", "n_hail", "max_precip_intensity", "mean_precip_intensity", "max_hail_intensity", "mean_hail_intensity", "precip_event_coords", "hail_event_coords"]
 df = df_continuous.merge(
     collapsed[cols],
     on="filename",
