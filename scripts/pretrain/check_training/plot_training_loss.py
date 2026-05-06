@@ -17,7 +17,7 @@ import sys
 #import pandas as pd 
 
 # Ensure custom utilities are in path
-sys.path.append("/home/Daniele/codes/VISSL_postprocessing/")
+sys.path.append("/home/claudia/codes/ML_postprocessing/")
 from utils.plotting.check_training_utils import (
     load_json_lines,
     compute_epoch_average,
@@ -67,5 +67,5 @@ def main(config_path: str = "config.yaml"):
 
 
 if __name__ == "__main__":
-    main('/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml')
+    main('/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml')
 

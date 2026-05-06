@@ -11,7 +11,7 @@ import ast
 import re
 import numpy as np
 
-sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
+sys.path.append(os.path.abspath("/home/claudia/codes/ML_postprocessing"))
 from utils.configs import load_config
 from utils.processing.features_utils import get_num_crop
 from utils.processing.time_metrics import compute_mean_curves

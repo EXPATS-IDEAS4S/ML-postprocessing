@@ -9,12 +9,14 @@ visualization styles.
 """
 
 import os
+from pathlib import Path
 from glob import glob
 import pandas as pd
 import numpy as np
 import sys
 
-sys.path.append('/home/Daniele/codes/VISSL_postprocessing/')
+sys.path.append('/home/claudia/codes/ML_postprocessing/')
+from utils.configs import load_config
 from scripts.pretrain.embedding_visualization.plot_embedding_utils import (
     plot_average_crop_shapes,
     plot_embedding_crops_table,
@@ -35,30 +37,49 @@ from scripts.pretrain.embedding_visualization.plot_embedding_utils import (
     plot_classwise_grids,
 )
 
+CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "process_run_GRL.yaml"
+
+
+def get_visualization_config(config_path: Path = CONFIG_PATH) -> dict:
+    """Load visualization settings from YAML."""
+    config = load_config(str(config_path))
+    visualization_config = config.get("visualization", {})
+
+    if not visualization_config:
+        raise ValueError(f"Missing 'visualization' section in config: {config_path}")
+
+    return visualization_config
+
+
+VIS_CONFIG = get_visualization_config()
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-RUN_NAME = "dcv2_resnet_k8_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_convective"
-CROPS_NAME = "ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc"
-RANDOM_STATE = 3
-SAMPLING_TYPE = "all"            # Options: "all", "subsample"
-REDUCTION_METHOD = "tsne"        # Options: "tsne", "isomap"
-EPOCH = 800
-FILE_EXTENSION = "png"
-SUBSTITUTE_PATH = True
-VARIABLE_TYPE = "IR_108"      # e.g. "WV_062-IR_108"
-VIDEO = True
-N_FRAMES = 1
-RANDOM_SEEDS = [0, 8, 16, 23, 42]  # For random selection in tables
+RUN_NAME = VIS_CONFIG["run_name"]
+CROPS_NAME = VIS_CONFIG["crops_name"]
+RANDOM_STATE = VIS_CONFIG["random_state"]
+SAMPLING_TYPE = VIS_CONFIG["sampling_type"]
+REDUCTION_METHOD = VIS_CONFIG["reduction_method"]
+EPOCH = VIS_CONFIG["epochs"][0]
+FILE_EXTENSION = VIS_CONFIG["file_extension"]
+SUBSTITUTE_PATH = VIS_CONFIG["substitute_path"]
+VARIABLE_TYPE = VIS_CONFIG["variable_type"]
+VIDEO = VIS_CONFIG["video"]
+N_FRAMES = VIS_CONFIG["n_frames"]
+RANDOM_SEEDS = VIS_CONFIG["random_seed"]
 
 # Visualization settings
-VMIN, CENTER, VMAX = -60, 0, 5
-CMAP = "gray_r"  # or create_WV_IR_diff_colormap(VMIN, CENTER, VMAX)
-OUTPUT_PATH = f"/data1/fig/{RUN_NAME}/epoch_{EPOCH}/{SAMPLING_TYPE}/"
-FILENAME = f"{REDUCTION_METHOD}_pca_cosine_perp-50_{RUN_NAME}_{RANDOM_STATE}_epoch_{EPOCH}.npy"
+VMIN = VIS_CONFIG["vmin"]
+CENTER = VIS_CONFIG["center"]
+VMAX = VIS_CONFIG["vmax"]
+CMAP = VIS_CONFIG["cmap"]
+OUTPUT_PATH = os.path.join(VIS_CONFIG["output_path"], "")
 
 # Input data
-IMAGE_CROPS_PATH = f"/data1/crops/{CROPS_NAME}/img/{VARIABLE_TYPE}/"
+IMAGE_CROPS_PATH = VIS_CONFIG["image_crops_path"]
+
+FILENAME = f"{REDUCTION_METHOD}_embedding_{RUN_NAME}_epoch_{EPOCH}.png"
 LIST_IMAGE_CROPS = sorted(glob(IMAGE_CROPS_PATH + "*." + FILE_EXTENSION))
 
 # Class color mapping
