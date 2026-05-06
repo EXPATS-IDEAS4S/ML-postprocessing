@@ -70,6 +70,9 @@ def extract_datetime_from_nc(filename, dir_path, engine="netcdf4"):
         with xr.open_dataset(filepath, engine=engine) as ds:
             time_var = ds["time"].values
 
+            # close the dataset to free resources
+            ds.close()
+            
         # Ensure numpy datetime64 type
         times = [np.datetime64(t) for t in time_var]
         return times

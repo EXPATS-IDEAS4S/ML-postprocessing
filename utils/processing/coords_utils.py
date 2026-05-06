@@ -54,6 +54,8 @@ def extract_coord_from_nc(filename, dir_path, engine='netcdf4'):
         lat_max = ds['lat'].max().item()
         lon_min = ds['lon'].min().item()
         lon_max = ds['lon'].max().item()
+        # close the dataset to free resources
+        ds.close()
         
         return {
             "lat_min": round(lat_min, 3),
