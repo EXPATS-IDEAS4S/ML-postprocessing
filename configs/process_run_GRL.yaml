@@ -1,0 +1,154 @@
+# ==========================
+# Experiment Configuration
+# ==========================
+experiment:
+  run_names: #add mulitple names in case a comparison has to be done (like chacking loss)
+    - grl_2026
+    #- dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1
+    #- dcv2_ir108_ot_100x100_k9_35k_nc_vit
+  epoch: 800          # Epoch number for the main run
+  random_state: 3     # Random seed for reproducibility (tsne, sampling selection, training_run)
+  base_path: /sat_data/runs
+  path_out: /sat_data/fig #/data1/fig
+  from_crop_stats: false  # Use crop stats file instead of crop list file
+  crop_resolution: 100x100 # resolution of the crops, used for naming the output files
+  n_frames: 8 # number of frames in the crops, used for naming the output files
+  backbone: r2dplus1 # backbone used for the features, used for naming the output files
+  n_input_layers: 1_cm # 1 channel with cloud mask applied
+logging:  
+  logs_path: /home/claudia/codes/ML_postprocessing/logs
+  log_level: INFO
+
+# ==========================
+# Dimensionality Reduction
+# can be expanded, if many dim reduction methods will be implemented, consider creating a separate config for it
+# ==========================
+reduction:
+  epochs: [800] # Feature checkpoints to embed. Each listed epoch triggers a separate reduction run.
+  feature_folder: /sat_data/runs/grl_2026/features/epoch_800/
+  output_path: /sat_data/fig/grl_2026/
+  filename_suffix: ""
+  random_states: [3] # Random seeds for the reduction. Each listed seed triggers a separate reduction run.
+  n_crops: 25368
+  sampling_type: all   # Options: random, closest, farthest, all
+  methods: [tsne_opentsne]
+  method: tsne            # Options: tsne, isomap, etc., 
+  perplexity: 50
+  isomap: {
+    n_neighbors: 10,
+    n_components: 2
+    }
+  tsne_sklearn: {
+    n_components: 2,
+    perplexity: 30,
+    n_iter: 1000,
+    learning_rate: 200
+    }
+  tsne_opentsne: {
+    perplexity: 50, 
+    initialization: "pca",
+    metric: cosine
+  }
+
+
+# ==========================
+# Preparation of features samples (CSV files)
+# ==========================
+features_preparation:
+  video: True # keyword to modify features preparation in case of videos
+  crops_path: /sat_data/crops/grl_2026/1/ # path to the crops, used to extract the timestamps for the CSV file
+  base_path: /sat_data/runs
+  images_path: /sat_data/crops/grl_2026/img/ # path to images of the crops, used for visualization and metadata in the CSV file
+  output_path: /sat_data/output/grl_2026/csv/ #/data1/fig/grl_2026/
+  n_dim: 128
+  images_path: /sat_data/crops/grl_2026/img/
+  feature_file_train_inds: rank0_chunk0_train_heads_inds.npy
+  feature_file_train_features: rank0_chunk0_train_heads_features.npy
+  feature_file_test_inds: rank0_chunk0_train_heads_inds.npy
+  feature_file_test_features: rank0_chunk0_train_heads_features.npy
+
+# ==========================
+# Data / Crops Configuration / Sampling Configuration
+# ==========================
+data:
+  data_base_path: /sat_data/crops #/data1/crops
+  crops_name: grl_2026/1/ #clips_ir108_100x100_8frames_2013-2020 # name of the dataset, TODO implement the case with more runs
+  file_extension: nc   # Options: nc, tif
+  nc_engine: netcdf4   #engine for xarray, choose between {"netcdf4", "scipy", "pydap", "h5netcdf", "zarr", None}
+  sampling_type: all   # Options: random, closest, farthest, all
+  n_subsample: 1000 #70072   # Max samples per cluster. TODO: if 'all', use all samples without specifying here
+  filter_daytime: false  # Keep only 06–16 UTC
+  filter_imerg: true    # Keep only timestamps at minutes 00 or 30, as IMERG product (set to true only if precipitation is used and n_frames==1)
+  n_frames: 8 # Number of frames to consider for each crop
+
+
+
+# ==========================
+# Statistics
+# ==========================
+statistics:
+  spatial:
+    sel_vars:
+      - cth
+      - cma
+      - cot
+      - cph
+      - precipitation
+      - euclid_msg_grid
+      - RR
+    percentiles: [50, 95, 25, 75]  # percentiles to compute (IQR can be derived from 25 and 75)
+    #TODO implement something to evalaute the cloud organization (Iorg, spectral analysis, aspect_ratio, aggregation...)
+
+    # NEW: control whether spatial metrics are per-frame or aggregated
+    mode: per_frame    # compute metrics at each timestep separately (then this can be also used to check the change in time of the spatial metrics)
+      #- aggregated    # collapse all frames into one distribution
+
+
+  # Time-development statistics (multi-frame evolution across time dimension)
+  temporal:
+    enabled: true
+    metrics:
+      - cloud_cover_change   # ΔCC / Δt, relative CC change
+      - vertical_growth      # ΔCTH / Δt, max/mean option handled in code
+      - horizontal_motion    # displacement & velocity
+      - motion_direction     # azimuth angle of displacement vector
+    options:
+      normalize_by_duration: true   # normalize Δ by total time length
+      convective_ref: "max_cth"     # how to define "cloud center" (max_cth, center_of_mass, ...)
+
+  # General flags
+  include_geotime: false      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
+  time_dimension: true       # Global flag: whether time metrics should be computed at all
+  use_parallel: true        # Parallelization (logging issue with joblib)
+  n_cores: 2                 # Number of CPU cores
+
+
+# ==========================
+# visualization embeddings
+# ==========================
+visualization:
+  run_name: grl_2026
+  crops_name: grl_2026/1/
+  random_state: 3
+  sampling_type: all
+  reduction_method: tsne
+  epochs: [800]
+  file_extension: png
+  substitute_path: True
+  variable_type: IR_108
+  video: True
+  n_frames: 8
+  random_seed: [0, 8, 16, 23, 42]
+  vmin: -60
+  center: 0
+  vmax: 5
+  cmap: gray_r
+  output_path: /sat_data/fig/grl_2026/
+  image_crops_path: /sat_data/crops/grl_2026/img/
+  plot_types:
+    - embedding_crops_table
+    - average_crop_shapes
+  embedding_path: /sat_data/fig/grl_2026/tsne_opentsne_perpl-50_grl_2026_3_epoch_800.npy
+  crops_path: /sat_data/runs/grl_2026/crops_list_epoch_800.npy
+
+
