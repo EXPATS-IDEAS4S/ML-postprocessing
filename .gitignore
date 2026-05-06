@@ -9,3 +9,6 @@ __pycache__/
 
 old/
 /home/claudia/codes/.venv
+
+logs/
+*.log

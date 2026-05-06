@@ -1,14 +1,14 @@
 # Overview
 
-This repository provides tools for analyzing and visualizing the training process and feature space of VISSL machine learning models.
+This repository provides tools for analyzing and visualizing the training process and feature space of VISSL deep learning model when run with video input.
 
 
 ## Configs
 
 All configurable parameters are defined in **YAML files**:
 
-* **`process_run_config.yaml` or **`process_run_grl.yaml`**
-   Main runtime configuration (paths, variables to process, statistics options).
+* **`process_run_GRL.yaml`**
+  Main runtime configuration (paths, variables to process, statistics options) for all the different tasks listed below.
   ⚠️ Remember to update the path to this file in the main function of each script.
   *TODO*: allow passing the config path via command-line arguments.
 
@@ -24,7 +24,6 @@ All configurable parameters are defined in **YAML files**:
 
 
 
-
 ## Pretraining Analysis
 
 The repository includes scripts to evaluate self-supervised VISSL models and their feature representations:
@@ -36,6 +35,20 @@ Utilities to inspect model training and convergence:
 * **`plot_training_loss.py`** – Plots training loss (and optionally learning rate) across iterations and epochs.
 * **`plot_loss_clustering_metrics_epochs.py`** – Visualizes clustering quality of features across epochs. Features should first be extracted at multiple epochs. Clustering metrics can be computed using `compute_cluster_metrics.py` in the `k_optimization` folder.
 * Shared helper functions are in **`utils/plot_utils/check_training_utils.py`**.
+
+
+## `prepare_features`
+
+These scripts handle **feature extraction, cleaning, and organization** from training and inference datasets, preparing them for downstream analysis or dimensionality reduction.
+
+* **`create_csv_features.py`** – Loads feature vectors for a given folder of crops provided in the config, Adds metadata columns for labels, distances, centroids, images paths, timestamp and Saves the final dataset as a CSV file.
+
+* **`adapt_random_crops_filename.py`** – Adjusts or standardizes filenames for random crops to ensure consistency across datasets.
+
+* **`create_crop_list_from_buckets.py`** – Selects and outputs a list of samples (crops) from cloud storage buckets for further processing.
+
+* **`create_df_var_tsne.py`** – Extends the crop list by adding corresponding components from dimensionality reduction (e.g., t-SNE embeddings) to each sample. Planned merge with `create_crop_list_from_buckets.py` to streamline the workflow.
+
 
 ### `k_optimization`
 
@@ -62,18 +75,6 @@ Scripts for reducing the dimensionality of feature vectors for visualization or 
 * **features_utils.py**: TODO, Utils functions for preparing the feature space data before plotting
 
 
-
-## `prepare_features`
-
-These scripts handle **feature extraction, cleaning, and organization** from training and inference datasets, preparing them for downstream analysis or dimensionality reduction.
-
-* **`merge_train_test_features.py`** – Loads and merges high-dimensional feature vectors from training and test datasets. Annotates samples with metadata (e.g., case-study labels, vector types) and outputs a structured DataFrame ready for analysis. Ensures only relevant samples are included while preserving feature and index integrity.
-
-* **`adapt_random_crops_filename.py`** – Adjusts or standardizes filenames for random crops to ensure consistency across datasets.
-
-* **`create_crop_list_from_buckets.py`** – Selects and outputs a list of samples (crops) from cloud storage buckets for further processing.
-
-* **`create_df_var_tsne.py`** – Extends the crop list by adding corresponding components from dimensionality reduction (e.g., t-SNE embeddings) to each sample. Planned merge with `create_crop_list_from_buckets.py` to streamline the workflow.
 
 
 ## `cluster_analysis`
@@ -103,11 +104,12 @@ These scripts focus on **characterizing clusters/classes in the feature space** 
 
 ### 1. Check model convergence
 
-* Start by examining the **training loss curves** to ensure the model has properly converged.
+* Start by examining the **training loss curves** to ensure the model has properly converged. use the function pretrain/check_training/plot_training_loss.py
 
 ### 2. Dimensionality reduction
 
 * Compute a **dimensionality reduction** (commonly t-SNE, but other methods like Isomap can also be used).
+To do so, use the code in embedding_visualization/compute_2d_embedding.py
 
 ### 3. Crop and label selection
 
@@ -117,6 +119,9 @@ These scripts focus on **characterizing clusters/classes in the feature space** 
   * random subset
   * samples close to cluster centroids
   * samples far from cluster centroids
+
+To do so, use the code create_csv_features.py in pretrain/prepare_samples/
+
 
 ### 4. Attach features to crops
 
@@ -139,5 +144,4 @@ With the embeddings and statistics, different visualizations can be generated:
 * Scatter plots (with or without additional statistics)
 * Diurnal cycle plots
 * Distributions of single variables (statistics integration in progress)
-
 
