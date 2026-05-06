@@ -55,6 +55,11 @@ in batch mode use this:
 cd /home/claudia/codes/ML_postprocessing
 nohup conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_statistic_new.py > logs/compute_crops_statistic_new_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 PID # 30056 launched at 18:08 on wed 6 may 2026
+
+to check when reopening
+ps -fp 30056
+pgrep -P 30056
+tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_per_frame.log
 """
 import argparse
 import os, sys, io
