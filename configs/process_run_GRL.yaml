@@ -80,8 +80,8 @@ data:
   filter_daytime: false  # Keep only 06–16 UTC
   filter_imerg: true    # Keep only timestamps at minutes 00 or 30, as IMERG product (set to true only if precipitation is used and n_frames==1)
   n_frames: 8 # Number of frames to consider for each crop
-
-
+  benchmark_block_size: 250   # Number of samples to process in each day block, processing in chunks needed to avod out of memory (OOM) errors with large datasets
+  feature_csv_path: /sat_data/output/grl_2026/csv/features_grl_2026.csv # Path to the CSV file where the features will be saved, used for visualization and metadata in the CSV file
 
 # ==========================
 # Statistics
@@ -120,8 +120,8 @@ statistics:
 # ==========================
   include_geotime: false      # Include geospatial and temporal metadata (month, hour, lat_mid, lon_mid)
   time_dimension: true       # Global flag: whether time metrics should be computed at all
-  use_parallel: true        # Parallelization (logging issue with joblib)
-  n_cores: 2                 # Number of CPU cores
+  use_parallel: false        # Parallelization (logging issue with joblib)
+  n_cores: 1                 # Number of CPU cores
 
 
 # ==========================
