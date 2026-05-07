@@ -92,10 +92,10 @@ statistics:
       - cth
       - cma
       - cot
-      - cph
+      #- cph
       - precipitation
       - euclid_msg_grid
-      - RR
+      #- RR
     percentiles: [50, 95, 25, 75]  # percentiles to compute (IQR can be derived from 25 and 75)
     #TODO implement something to evalaute the cloud organization (Iorg, spectral analysis, aspect_ratio, aggregation...)
 

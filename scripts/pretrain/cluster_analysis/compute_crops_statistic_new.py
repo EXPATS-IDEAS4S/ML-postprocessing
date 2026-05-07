@@ -48,18 +48,33 @@ Notes:
 - Parallel processing significantly speeds up computations but increases memory usage.
 
 How to run in batch mode:
+------
+
+NOTE: remember to activate the conda environment with the required dependencies before running the script.
+source activate vissl
+
 - Adjust configuration parameters in the `config` dictionary.
 - Run the script using:
     conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_statistic_new.py`
 in batch mode use this:
 cd /home/claudia/codes/ML_postprocessing
 nohup conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_statistic_new.py > logs/compute_crops_statistic_new_$(date +%Y%m%d_%H%M%S).log 2>&1 &
-PID # 30056 launched at 18:08 on wed 6 may 2026
+PID #  241881 launched at 15:00 on thu 7 may 2026
 
 to check when reopening
-ps -fp 30056
-pgrep -P 30056
+------
+ps -fp 241881
+pgrep -P 241881
 tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_per_frame.log
+
+to check elapsed times
+------
+ps -o etime= -p 241881
+
+to check memory usage: RSS (resident set size, actual RAM used), VSZ (virtual memory size)
+------
+ps -o pid,etime,rss,vsz,pmem,pcpu,cmd -p 241881
+
 """
 import argparse
 import os, sys, io
@@ -345,26 +360,39 @@ def build_day_blocks(crop_requests, sel_vars, filter_imerg=False):
     """
 
     day_blocks = defaultdict(list)
+    multi_day_blocks = []
 
     for crop_request in crop_requests:
         for var in sel_vars:
-            for day_key, times_for_day in get_time_windows(
-                crop_request["times"],
-                var=var,
-                filter_imerg=filter_imerg,
-            ).items():
-                day_blocks[(var, day_key)].append(
-                    {
-                        "crop_id": crop_request["crop_id"],
-                        "crop_filename": crop_request["crop_filename"],
-                        "coords": crop_request["coords"],
-                        "times_for_day": times_for_day,
-                        "lat_min": crop_request["lat_min"],
-                        "lat_max": crop_request["lat_max"],
-                        "lon_min": crop_request["lon_min"],
-                        "lon_max": crop_request["lon_max"],
-                    }
-                )
+            # Get all days covered by this crop
+            times = crop_request["times"]
+            day_keys = sorted({str(np.datetime64(t, "D")) for t in times})
+            if len(day_keys) > 1:
+                # Multi-day crop: create a special block
+                multi_day_blocks.append({
+                    "var": var,
+                    "day_keys": day_keys,
+                    "crop_request": crop_request,
+                })
+            else:
+                # Single day: normal block
+                for day_key, times_for_day in get_time_windows(
+                    times,
+                    var=var,
+                    filter_imerg=filter_imerg,
+                ).items():
+                    day_blocks[(var, day_key)].append(
+                        {
+                            "crop_id": crop_request["crop_id"],
+                            "crop_filename": crop_request["crop_filename"],
+                            "coords": crop_request["coords"],
+                            "times_for_day": times_for_day,
+                            "lat_min": crop_request["lat_min"],
+                            "lat_max": crop_request["lat_max"],
+                            "lon_min": crop_request["lon_min"],
+                            "lon_max": crop_request["lon_max"],
+                        }
+                    )
 
     blocks = []
     for var, day_key in sorted(day_blocks.keys(), key=lambda item: (item[1], item[0])):
@@ -373,8 +401,29 @@ def build_day_blocks(crop_requests, sel_vars, filter_imerg=False):
                 "var": var,
                 "day_key": day_key,
                 "crop_requests": day_blocks[(var, day_key)],
+                "multi_day": False,
             }
         )
+
+    # Add special multi-day blocks
+    for entry in multi_day_blocks:
+        blocks.append({
+            "var": entry["var"],
+            "day_keys": entry["day_keys"],
+            "crop_requests": [
+                {
+                    "crop_id": entry["crop_request"]["crop_id"],
+                    "crop_filename": entry["crop_request"]["crop_filename"],
+                    "coords": entry["crop_request"]["coords"],
+                    "times_for_day": entry["crop_request"]["times"],
+                    "lat_min": entry["crop_request"]["lat_min"],
+                    "lat_max": entry["crop_request"]["lat_max"],
+                    "lon_min": entry["crop_request"]["lon_min"],
+                    "lon_max": entry["crop_request"]["lon_max"],
+                }
+            ],
+            "multi_day": True,
+        })
 
     return blocks
 
@@ -445,13 +494,41 @@ def build_block_context(ds_day, ds_day_cma, crop_requests):
     lon_min = min(crop_request["lon_min"] for crop_request in crop_requests)
     lon_max = max(crop_request["lon_max"] for crop_request in crop_requests)
 
-    day_time_values = np.asarray([normalize_time_value(t) for t in ds_day["time"].values])
+
+    # Detect variable type
+    is_lightning = "euclid_msg_grid" in ds_day.data_vars
+    is_precip = "precipitation" in ds_day.data_vars
+    ds_day_proc = ds_day
+
+    if is_lightning:
+        # Lightning: resample to 15-min bins by summing, label left
+        ds_day_proc = ds_day.resample(time="15min", label="left", closed="left").sum()
+        proc_time_values = np.asarray([normalize_time_value(t) for t in ds_day_proc["time"].values])
+        block_times_set = set(block_times)
+        available_times = [time_value for time_value, norm_time in zip(ds_day_proc["time"].values, proc_time_values) if norm_time in block_times_set]
+        ds_day_block = ds_day_proc.sel(time=available_times)
+    elif is_precip:
+        # Precipitation: forward-fill 30-min values to 15-min crop timestamps
+        # (Assume ds_day is 30-min, crop_times are 15-min)
+        # Align ds_day to block_times using reindex with method='ffill'
+        precip_var = "precipitation"
+        # Convert block_times to numpy datetime64[s] for matching
+        block_times_arr = np.array(block_times, dtype="datetime64[s]")
+        ds_day_proc = ds_day[precip_var]
+        # Reindex to 15-min crop times, forward-fill
+        ds_day_proc_15 = ds_day_proc.reindex(time=block_times_arr, method="ffill")
+        # Wrap back into a Dataset for compatibility
+        ds_day_block = ds_day_proc_15.to_dataset(name=precip_var)
+    else:
+        day_time_values = np.asarray([normalize_time_value(t) for t in ds_day["time"].values])
+        block_times_set = set(block_times)
+        available_times = [time_value for time_value, norm_time in zip(ds_day["time"].values, day_time_values) if norm_time in block_times_set]
+        ds_day_block = ds_day.sel(time=available_times)
+
+    # CMA block always subset as before
     cma_time_values = np.asarray([normalize_time_value(t) for t in ds_day_cma["time"].values])
     block_times_set = set(block_times)
-    available_times = [time_value for time_value, norm_time in zip(ds_day["time"].values, day_time_values) if norm_time in block_times_set]
     available_times_cma = [time_value for time_value, norm_time in zip(ds_day_cma["time"].values, cma_time_values) if norm_time in block_times_set]
-
-    ds_day_block = ds_day.sel(time=available_times)
     ds_day_cma_block = ds_day_cma.sel(time=available_times_cma)
 
     ds_day_block = ds_day_block.where(
@@ -574,38 +651,69 @@ def process_day_block(block, config, var_config, logger):
     """
     
     var = block["var"]
-    day_key = block["day_key"]
     var_meta = var_config["variables"][var]
     mode = config["statistics"]["spatial"].get("mode", "aggregated")
 
-    logger.debug("Processing shared block for %s on %s", var, day_key)
-
-    my_obj, my_obj_cma = load_daily_bucket_objects(day_key, var, var_meta, logger)
-    if my_obj is None or my_obj_cma is None:
-        empty_values = np.array([np.nan]) if mode == "aggregated" else []
-        return [
-            (crop_request["crop_id"], var, empty_values)
-            for crop_request in block["crop_requests"]
-        ]
-
-    with xr.open_dataset(io.BytesIO(my_obj)) as ds_bucket, xr.open_dataset(io.BytesIO(my_obj_cma)) as ds_cma_bucket:
-        ds_day = ds_bucket[var]
-        ds_day_cma = ds_cma_bucket["cma"]
-
-        if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
-            ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
-            ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
-
+    if block.get("multi_day", False):
+        # Multi-day crop: load and merge all required days
+        logger.debug(f"Processing multi-day block for {var} on days {block['day_keys']}")
+        ds_list = []
+        ds_cma_list = []
+        for day_key in block["day_keys"]:
+            my_obj, my_obj_cma = load_daily_bucket_objects(day_key, var, var_meta, logger)
+            if my_obj is None or my_obj_cma is None:
+                continue
+            with xr.open_dataset(io.BytesIO(my_obj)) as ds_bucket, xr.open_dataset(io.BytesIO(my_obj_cma)) as ds_cma_bucket:
+                ds = ds_bucket[var]
+                ds_cma = ds_cma_bucket["cma"]
+                if isinstance(ds.indexes["time"], xr.CFTimeIndex):
+                    ds["time"] = ds["time"].astype("datetime64[ns]")
+                    ds_cma["time"] = ds_cma["time"].astype("datetime64[ns]")
+                ds_list.append(ds)
+                ds_cma_list.append(ds_cma)
+        if not ds_list or not ds_cma_list:
+            empty_values = np.array([np.nan]) if mode == "aggregated" else []
+            return [
+                (crop_request["crop_id"], var, empty_values)
+                for crop_request in block["crop_requests"]
+            ]
+        # Concatenate along time
+        ds_day = xr.concat(ds_list, dim="time")
+        ds_day_cma = xr.concat(ds_cma_list, dim="time")
         block_context = build_block_context(ds_day, ds_day_cma, block["crop_requests"])
-
         return [
             (
                 crop_request["crop_id"],
                 var,
-                extract_block_values(block_context, var, crop_request, mode, logger, day_key),
+                extract_block_values(block_context, var, crop_request, mode, logger, ",".join(block["day_keys"])),
             )
             for crop_request in block["crop_requests"]
         ]
+    else:
+        day_key = block["day_key"]
+        logger.debug("Processing shared block for %s on %s", var, day_key)
+        my_obj, my_obj_cma = load_daily_bucket_objects(day_key, var, var_meta, logger)
+        if my_obj is None or my_obj_cma is None:
+            empty_values = np.array([np.nan]) if mode == "aggregated" else []
+            return [
+                (crop_request["crop_id"], var, empty_values)
+                for crop_request in block["crop_requests"]
+            ]
+        with xr.open_dataset(io.BytesIO(my_obj)) as ds_bucket, xr.open_dataset(io.BytesIO(my_obj_cma)) as ds_cma_bucket:
+            ds_day = ds_bucket[var]
+            ds_day_cma = ds_cma_bucket["cma"]
+            if isinstance(ds_day.indexes["time"], xr.CFTimeIndex):
+                ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
+                ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
+            block_context = build_block_context(ds_day, ds_day_cma, block["crop_requests"])
+            return [
+                (
+                    crop_request["crop_id"],
+                    var,
+                    extract_block_values(block_context, var, crop_request, mode, logger, day_key),
+                )
+                for crop_request in block["crop_requests"]
+            ]
 
 
 def combine_block_results(block_results, crop_requests, config, var_config):
@@ -640,11 +748,15 @@ def combine_block_results(block_results, crop_requests, config, var_config):
     flat_results = []
     for crop_request in crop_requests:
         for var in sel_vars:
-            stats = (
-                ["None"]
-                if var_config["variables"][var]["categorical"]
-                else config["statistics"]["spatial"]["percentiles"]
-            )
+            # For precipitation, compute percentiles, sum[mm], and fraction
+            if var == "precipitation":
+                stats = config["statistics"]["spatial"]["percentiles"] + ["sum[mm]", "prec_fraction"]
+            else:
+                stats = (
+                    ["None"]
+                    if var_config["variables"][var]["categorical"]
+                    else config["statistics"]["spatial"]["percentiles"]
+                )
             values_append = values_by_crop_var.get((crop_request["crop_id"], var), [])
             if mode == "per_frame":
                 values_append = sorted(values_append, key=lambda item: item["time"])
@@ -817,6 +929,15 @@ def compute_single_stat(values, stat, var):
     """
     if stat == "None":
         return compute_categorical_values(values, var)
+    elif stat == "sum[mm]" and var == "precipitation":
+        # True cumulated precipitation (mm): sum(mm/h * delta_t_hours)
+        # By default, assume 30min (0.5h) time step for precipitation (IMERG)
+        delta_t = 0.5  # hours
+        return np.nansum(values) * delta_t
+    elif stat == "prec_fraction" and var == "precipitation":
+        total_pixels = len(values)
+        prec_pixels = np.sum(values > 0)
+        return prec_pixels / total_pixels if total_pixels > 0 else 0
     else:
         return compute_percentile(values, int(stat))
 
@@ -863,7 +984,9 @@ def main(
     use_parallel_override: bool = None,
     n_cores_override: int = None,
 ):
+        # ...existing code...
     
+    # load configs
     config = load_config(config_path)
     var_config = load_config(var_config_path)
 
@@ -976,27 +1099,24 @@ def main(
     )
 
     # Run processing by shared (variable, day) blocks
+    block_results = []
+    total_blocks = len(day_blocks)
     if use_parallel and day_blocks:
         num_cores = min(n_cores, os.cpu_count() - 1)
+        logger.info(f"Processing {total_blocks} day blocks in parallel mode (no per-block progress print)")
+        from joblib import Parallel, delayed
         block_results = Parallel(n_jobs=num_cores)(
             delayed(process_day_block)(block, config, var_config, logger)
             for block in day_blocks
         )
     else:
-        block_results = [
-            process_day_block(block, config, var_config, logger)
-            for block in day_blocks
-        ]
+        # Serial version with progress print every 50 blocks
+        for i, block in enumerate(day_blocks, 1):
+            block_results.append(process_day_block(block, config, var_config, logger))
+            if i % 50 == 0 or i == total_blocks:
+                print(f"Processed {i}/{total_blocks} day blocks...")
+                logger.info(f"Processed {i}/{total_blocks} day blocks...")
 
-    flat_results = combine_block_results(
-        block_results,
-        crop_requests,
-        config,
-        var_config,
-    )
-
-    # Build long-format DataFrame
-    df_results = pd.DataFrame(flat_results)
 
     # Collect stats and vars info for filename
     stats_str = "-".join(map(str, config["statistics"]["spatial"]["percentiles"]))
@@ -1006,23 +1126,73 @@ def main(
     time_flag = "timedim" if config["statistics"].get("time_dimension", False) else None
     geo_flag = "coords-datetime" if config["statistics"].get("include_geotime", False) else None
 
-    # Assemble filename parts (skip None/empty)
-    parts = [
-        "crops_stats",
-        f"vars-{vars_str}",
-        f"stats-{stats_str}",
-        f"frames-{n_frames}",
-        time_flag,
-        geo_flag,
-        run_name,
-        sampling_type,
-        str(n_subsample) + filter_suffix,
-    ]
-    filename = "_".join([p for p in parts if p]) + ".csv"
 
-    # Save
-    df_results.to_csv(os.path.join(output_path, filename), index=False)
-    logger.info(f"Crop stats for {filename} saved successfully in {output_path}.")
+    # Prepare output CSV paths for each variable
+    sel_vars = config["statistics"]["spatial"]["sel_vars"]
+    var_to_csv = {}
+    for var in sel_vars:
+        parts = [
+            "crops_stats",
+            f"var-{var}",
+            f"stats-{stats_str}",
+            f"frames-{n_frames}",
+            time_flag,
+            geo_flag,
+            run_name,
+            sampling_type,
+            str(n_subsample) + filter_suffix,
+        ]
+        filename = "_".join([p for p in parts if p]) + ".csv"
+        output_csv_path = os.path.join(output_path, filename)
+        var_to_csv[var] = output_csv_path
+        # Remove file if exists to avoid appending to old data
+        if os.path.exists(output_csv_path):
+            os.remove(output_csv_path)
+
+    # Write header for each variable file (using a sample result)
+    for var in sel_vars:
+        # Find a sample block result for this variable
+        sample_block_results = None
+        for block_result in block_results:
+            flat_results = combine_block_results(
+                [block_result],
+                crop_requests,
+                config,
+                var_config,
+            )
+            if flat_results and flat_results[0]["var"] == var:
+                sample_block_results = flat_results
+                break
+        if sample_block_results:
+            pd.DataFrame(sample_block_results).head(0).to_csv(var_to_csv[var], index=False)
+
+    # Now process and append each block's results to the correct variable file
+    for i, block_result in enumerate(block_results, 1):
+        flat_results = combine_block_results(
+            [block_result],
+            crop_requests,
+            config,
+            var_config,
+        )
+        if flat_results:
+            # Group by variable and write to the corresponding file
+            df_block = pd.DataFrame(flat_results)
+            for var in sel_vars:
+                df_var = df_block[df_block["var"] == var]
+                if not df_var.empty:
+                    df_var.to_csv(var_to_csv[var], mode='a', header=False, index=False)
+        if i % 50 == 0 or i == len(block_results):
+            try:
+                import psutil
+                process = psutil.Process(os.getpid())
+                mem_mb = process.memory_info().rss / 1024 / 1024
+                print(f"[INFO] Memory usage after {i} blocks: {mem_mb:.2f} MB")
+                logger.info(f"Memory usage after {i} blocks: {mem_mb:.2f} MB")
+            except ImportError:
+                print("[WARNING] psutil not installed, cannot print memory usage.")
+                logger.warning("psutil not installed, cannot print memory usage.")
+
+    logger.info(f"Crop stats for each variable saved successfully in {output_path}.")
 
     # # Save overall stats
     # continuous_stats = df_labels.groupby("label").agg(["mean", "std"])
