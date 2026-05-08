@@ -63,12 +63,12 @@ source activate vissl
 in batch mode use this:
 cd /home/claudia/codes/ML_postprocessing
 nohup conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_statistic_new.py > logs/compute_crops_statistic_new_$(date +%Y%m%d_%H%M%S).log 2>&1 &
-PID #  241881 launched at 15:00 on thu 7 may 2026
+PID #  457299 launched at 10:31 on fri 8 may 2026
 
 to check when reopening
 ------
-ps -fp 241881
-pgrep -P 241881
+ps -fp 457299
+pgrep -P 457299
 tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_per_frame.log
 
 to check elapsed times
@@ -82,6 +82,8 @@ ps -o pid,etime,rss,vsz,pmem,pcpu,cmd -p 241881
 """
 import argparse
 import os, sys, io
+import time
+from datetime import datetime
 from collections import OrderedDict, defaultdict
 import numpy as np
 import pandas as pd
@@ -107,6 +109,72 @@ _S3_CLIENT = None
 _MISSING_BUCKET_OBJECTS = set()
 _SUCCESS_BUCKET_OBJECTS = OrderedDict()
 _MAX_SUCCESS_BUCKET_OBJECTS = 8
+
+
+def iter_label_chunks(csv_filename, chunk_size, benchmark_rows=None):
+    """Yield crop-label rows in bounded chunks without splitting crop days."""
+    usecols = ["path", "label", "datetime"]
+    df_labels = pd.read_csv(csv_filename, usecols=lambda col: col in usecols)
+
+    if benchmark_rows is not None:
+        df_labels = df_labels.head(benchmark_rows).copy()
+
+    if "datetime" in df_labels.columns:
+        df_labels["__chunk_day"] = df_labels["datetime"].astype(str).str.slice(0, 8)
+        df_labels = df_labels.sort_values(["__chunk_day", "datetime", "path"])
+    else:
+        df_labels["__chunk_day"] = df_labels["path"].map(
+            lambda path: os.path.basename(path)[:8]
+        )
+        df_labels = df_labels.sort_values(["__chunk_day", "path"])
+
+    if chunk_size is None or chunk_size <= 0:
+        yield df_labels.drop(columns=["__chunk_day"]).reset_index(drop=True)
+        return
+
+    pending_days = []
+    pending_size = 0
+    for _, day_df in df_labels.groupby("__chunk_day", sort=False):
+        day_df = day_df.drop(columns=["__chunk_day"]).reset_index(drop=True)
+
+        if pending_days and pending_size + len(day_df) > chunk_size:
+            yield pd.concat(pending_days, ignore_index=True)
+            pending_days = []
+            pending_size = 0
+
+        pending_days.append(day_df)
+        pending_size += len(day_df)
+
+        if pending_size >= chunk_size:
+            yield pd.concat(pending_days, ignore_index=True)
+            pending_days = []
+            pending_size = 0
+
+    if pending_days:
+        yield pd.concat(pending_days, ignore_index=True)
+
+
+def format_progress_bar(current, total, width=30):
+    """Build a plain-text progress bar suitable for logging to file."""
+    if total <= 0:
+        return "Processing blocks [------------------------------] 0/0"
+    progress = current / total
+    filled = int(width * progress)
+    bar = "#" * filled + "-" * (width - filled)
+    return f"Processing blocks [{bar}] {current}/{total}"
+
+
+def format_eta(seconds):
+    """Format elapsed or remaining seconds as hh:mm:ss."""
+    total_seconds = max(0, int(round(seconds)))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def format_finish_time(timestamp):
+    """Format an estimated finish timestamp for log output."""
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def get_s3_client():
@@ -1055,9 +1123,15 @@ def main(
     logging.info(f"processing crops from {crops_path} with data format {data_format}")
     logging.info(f"output path for csv files: {output_path}")
     logging.info(f"filter daytime: {filter_daytime}, filter imerg minutes: {filter_imerg_minutes}, n_frames: {n_frames}")
+    crop_chunk_size = config["data"].get(
+        "crop_chunk_size",
+        config["data"].get("benchmark_block_size", 1000),
+    )
+
     logging.info(f"use_parallel: {use_parallel}, n_cores: {n_cores}")
     logging.info(f"n_frames: {n_frames}, sampling_type: {sampling_type}, n_subsample: {n_subsample}")
     logging.info(f"run_name: {run_name}, epoch: {epoch}")
+    logging.info(f"crop_chunk_size: {crop_chunk_size}")
     logging.info(f"variables to process: {config['statistics']['spatial']['sel_vars']}, stats to compute: {config['statistics']['spatial']['percentiles']}, mode: {config['statistics']['spatial'].get('mode', 'aggregated')}")
     logging.info("--------------------------------------------")
 
@@ -1077,34 +1151,6 @@ def main(
     csv_filename = f'{run_name}-features_backbone_{backbone}_cropres_{crop_resolution}_inputvars_{n_input_layers}_epochs_{epoch}.csv'
     csv_filename = os.path.join(output_path, csv_filename)    
 
-    # read feature csv file
-    df_labels = pd.read_csv(csv_filename)
-    if benchmark_rows is not None:
-        df_labels = df_labels.head(benchmark_rows).copy()
-        logger.info(f"Benchmark mode enabled: processing first {len(df_labels)} rows.")
-    print(df_labels)
-    
-    #print(f"Loaded {len(df_labels)} rows from crop list.")
-    logger.info(f"Loaded {len(df_labels)} rows from crop list.")
-
-    crop_requests = [
-        get_crop_metadata(row, config, crops_path)
-        for _, row in df_labels.iterrows()
-    ]
-    crop_requests_by_id = {
-        crop_request["crop_id"]: crop_request
-        for crop_request in crop_requests
-    }
-    day_blocks = build_day_blocks(
-        crop_requests,
-        config["statistics"]["spatial"]["sel_vars"],
-        filter_imerg=filter_imerg_minutes,
-    )
-    logger.info(
-        "Prepared %s shared day blocks for %s crops.",
-        len(day_blocks),
-        len(crop_requests),
-    )
     # Collect stats and vars info for filename
     stats_str = "-".join(map(str, config["statistics"]["spatial"]["percentiles"]))
     vars_str = "-".join(config["statistics"]["spatial"]["sel_vars"])
@@ -1136,74 +1182,71 @@ def main(
         if os.path.exists(output_csv_path):
             os.remove(output_csv_path)
 
-    # Run processing by shared (variable, day) blocks
-    total_blocks = len(day_blocks)
-    total_crops = len(crop_requests)
     header_written = {var: False for var in sel_vars}
     block_size = config["data"].get("benchmark_block_size", 1000)
+    run_start_time = time.time()
+    total_rows_target = benchmark_rows if benchmark_rows is not None else n_samples
 
-    if use_parallel and day_blocks:
-        block_results = []
-        num_cores = min(n_cores, os.cpu_count() - 1)
-        logger.info(f"Processing {total_blocks} day blocks in parallel mode (no per-block progress print)")
-        from joblib import Parallel, delayed
-        block_results = Parallel(n_jobs=num_cores)(
-            delayed(process_day_block)(block, config, var_config, logger)
-            for block in day_blocks
+    processed_crops = 0
+    processed_blocks = 0
+    processed_chunks = 0
+
+    for chunk_idx, df_labels in enumerate(
+        iter_label_chunks(csv_filename, crop_chunk_size, benchmark_rows=benchmark_rows),
+        1,
+    ):
+        processed_chunks = chunk_idx
+        chunk_crop_count = len(df_labels)
+        logger.info(
+            "Preparing crop metadata and shared day blocks for chunk %s (%s crops).",
+            chunk_idx,
+            chunk_crop_count,
         )
 
-        for i, block_result in enumerate(block_results, 1):
-            flat_results = combine_block_results(
-                [block_result],
-                crop_requests,
-                config,
-                var_config,
-                selected_vars=[day_blocks[i - 1]["var"]],
+        crop_requests = [
+            get_crop_metadata(row, config, crops_path)
+            for _, row in df_labels.iterrows()
+        ]
+        crop_requests_by_id = {
+            crop_request["crop_id"]: crop_request
+            for crop_request in crop_requests
+        }
+        day_blocks = build_day_blocks(
+            crop_requests,
+            config["statistics"]["spatial"]["sel_vars"],
+            filter_imerg=filter_imerg_minutes,
+        )
+        total_blocks = len(day_blocks)
+        processed_crops += chunk_crop_count
+        processed_blocks += total_blocks
+
+        logger.info(
+            "Prepared %s shared day blocks for chunk %s (%s crops processed so far).",
+            total_blocks,
+            chunk_idx,
+            processed_crops,
+        )
+
+        if use_parallel and day_blocks:
+            num_cores = max(1, min(n_cores, max(1, (os.cpu_count() or 1) - 1)))
+            logger.info(
+                "Processing %s day blocks in parallel mode for chunk %s.",
+                total_blocks,
+                chunk_idx,
             )
-            if flat_results:
-                df_block = pd.DataFrame(flat_results)
-                for var in sel_vars:
-                    df_var = df_block[df_block["var"] == var]
-                    if not df_var.empty:
-                        write_header = not header_written[var]
-                        df_var.to_csv(var_to_csv[var], mode="a", header=write_header, index=False)
-                        header_written[var] = True
-            if i % 50 == 0 or i == len(block_results):
-                try:
-                    import psutil
-                    process = psutil.Process(os.getpid())
-                    mem_mb = process.memory_info().rss / 1024 / 1024
-                    print(f"[INFO] Memory usage after {i} blocks: {mem_mb:.2f} MB")
-                    logger.info(f"Memory usage after {i} blocks: {mem_mb:.2f} MB")
-                except ImportError:
-                    print("[WARNING] psutil not installed, cannot print memory usage.")
-                    logger.warning("psutil not installed, cannot print memory usage.")
-    else:
-        for day_idx, block in enumerate(day_blocks, 1):
-            crops_in_block = block["crop_requests"]
-            n_crops = len(crops_in_block)
-            n_subblocks = max(1, (n_crops + block_size - 1) // block_size)
-            logger.info("Processing block %s/%s", day_idx, total_blocks)
+            block_results = Parallel(n_jobs=num_cores)(
+                delayed(process_day_block)(block, config, var_config, logger)
+                for block in day_blocks
+            )
 
-            for sub_idx, start in enumerate(range(0, n_crops, block_size), 1):
-                end = min(start + block_size, n_crops)
-                subblock_crops = crops_in_block[start:end]
-                block_copy = dict(block)
-                block_copy["crop_requests"] = subblock_crops
-
-                block_result = process_day_block(block_copy, config, var_config, logger)
-                full_subblock_requests = [
-                    crop_requests_by_id[crop_request["crop_id"]]
-                    for crop_request in subblock_crops
-                ]
+            for i, block_result in enumerate(block_results, 1):
                 flat_results = combine_block_results(
                     [block_result],
-                    full_subblock_requests,
+                    crop_requests,
                     config,
                     var_config,
-                    selected_vars=[block_copy["var"]],
+                    selected_vars=[day_blocks[i - 1]["var"]],
                 )
-
                 if flat_results:
                     df_block = pd.DataFrame(flat_results)
                     for var in sel_vars:
@@ -1212,11 +1255,78 @@ def main(
                             write_header = not header_written[var]
                             df_var.to_csv(var_to_csv[var], mode="a", header=write_header, index=False)
                             header_written[var] = True
+                if i % 50 == 0 or i == len(block_results):
+                    try:
+                        import psutil
+                        process = psutil.Process(os.getpid())
+                        mem_mb = process.memory_info().rss / 1024 / 1024
+                        logger.info(
+                            "Memory usage after %s blocks in chunk %s: %.2f MB",
+                            i,
+                            chunk_idx,
+                            mem_mb,
+                        )
+                    except ImportError:
+                        logger.warning("psutil not installed, cannot print memory usage.")
+        else:
+            for day_idx, block in enumerate(day_blocks, 1):
+                crops_in_block = block["crop_requests"]
+                n_crops = len(crops_in_block)
+                logger.info(
+                    "Chunk %s: %s",
+                    chunk_idx,
+                    format_progress_bar(day_idx, total_blocks),
+                )
+
+                for start in range(0, n_crops, block_size):
+                    end = min(start + block_size, n_crops)
+                    subblock_crops = crops_in_block[start:end]
+                    block_copy = dict(block)
+                    block_copy["crop_requests"] = subblock_crops
+
+                    block_result = process_day_block(block_copy, config, var_config, logger)
+                    full_subblock_requests = [
+                        crop_requests_by_id[crop_request["crop_id"]]
+                        for crop_request in subblock_crops
+                    ]
+                    flat_results = combine_block_results(
+                        [block_result],
+                        full_subblock_requests,
+                        config,
+                        var_config,
+                        selected_vars=[block_copy["var"]],
+                    )
+
+                    if flat_results:
+                        df_block = pd.DataFrame(flat_results)
+                        for var in sel_vars:
+                            df_var = df_block[df_block["var"] == var]
+                            if not df_var.empty:
+                                write_header = not header_written[var]
+                                df_var.to_csv(var_to_csv[var], mode="a", header=write_header, index=False)
+                                header_written[var] = True
+
+        elapsed_seconds = time.time() - run_start_time
+        crops_per_second = processed_crops / elapsed_seconds if elapsed_seconds > 0 else 0.0
+        remaining_crops = max(total_rows_target - processed_crops, 0)
+        eta_seconds = remaining_crops / crops_per_second if crops_per_second > 0 else 0.0
+        estimated_finish_timestamp = time.time() + eta_seconds
+        logger.info(
+            "Progress summary after chunk %s: %s/%s crops, elapsed %s, throughput %.2f crops/s, ETA %s, estimated finish %s.",
+            chunk_idx,
+            processed_crops,
+            total_rows_target,
+            format_eta(elapsed_seconds),
+            crops_per_second,
+            format_eta(eta_seconds),
+            format_finish_time(estimated_finish_timestamp),
+        )
 
     logger.info(
-        "Processed %s blocks covering %s crops. Crop stats for each variable saved successfully in %s.",
-        total_blocks,
-        total_crops,
+        "Processed %s blocks covering %s crops in %s chunk(s). Crop stats for each variable saved successfully in %s.",
+        processed_blocks,
+        processed_crops,
+        processed_chunks,
         output_path,
     )
 

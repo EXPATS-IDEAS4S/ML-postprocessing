@@ -120,7 +120,17 @@ To do so, use the code in embedding_visualization/compute_2d_embedding.py
   * samples close to cluster centroids
   * samples far from cluster centroids
 
-To do so, use the code create_csv_features.py in pretrain/prepare_samples/
+To do so, use the code create_csv_features.py in pretrain/prepare_samples/create_csv_features.py
+
+### 4. calculate physical properties of the crops
+
+* Run the code cluster_analysis/compute_crops_stats_to_csv.py to derive cloud and precipitation properties of the crops. Depending on the 
+selected variables specified in the statistics in config yaml (process_run_GRL.yaml), the code calculates:
+    * cot, cth percentiles 
+    * cma fraction
+    * lightning count
+    * precipitation mean rain rate percentiles [mm/h] and cumulated precipitation over 15 min [mm]
+and stores the statistical values of each variable in a separate csv file in the output_path indicated in the config
 
 
 ### 4. Attach features to crops
@@ -133,9 +143,6 @@ To do so, use the code create_csv_features.py in pretrain/prepare_samples/
 * If images are available, visualize the feature space with **image crops overlaid**.
 * For videos, additional preprocessing steps are required.
 
-### 6. Compute sample statistics 
-
-* Enrich the analysis with **ancillary data** to compute sample-level statistics.
 
 ### 7. Cluster characterization plots
 
