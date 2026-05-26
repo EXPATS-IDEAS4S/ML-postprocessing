@@ -69,7 +69,7 @@ to check when reopening
 ------
 ps -fp 457299
 pgrep -P 457299
-tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_per_frame.log
+tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_<run_mode>_<timestamp>.log
 
 to check elapsed times
 ------
@@ -1064,15 +1064,23 @@ def main(
 
     # Configure logging
     level = config["logging"]["log_level"]
+    logs_path = config["logging"]["logs_path"]
+    run_mode = f"benchmark_{benchmark_rows}" if benchmark_rows is not None else "full"
+    log_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    processing_log_path = os.path.join(
+        logs_path,
+        f"processing_crops_stats_{run_mode}_{log_timestamp}.log",
+    )
     logging.basicConfig(
         level=level,  # DEBUG, INFO, WARNING, ERROR, CRITICAL
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
             logging.StreamHandler(),                       # Print to console
-            logging.FileHandler(f"{config['logging']['logs_path']}/processing_crops_stats_per_frame.log", mode="w")  # Save to file
+            logging.FileHandler(processing_log_path, mode="w")  # Save to a per-run file
         ]
     )
     logger = logging.getLogger(__name__)
+    logger.info("Detailed processing log will be written to %s", processing_log_path)
 
     # read all the config parameters
     run_name = config["experiment"]["run_names"][0] # name of the run, used to read the right files and save the output

@@ -10,7 +10,7 @@ experiment:
   random_state: 3     # Random seed for reproducibility (tsne, sampling selection, training_run)
   base_path: /sat_data/runs
   path_out: /sat_data/fig #/data1/fig
-  from_crop_stats: false  # Use crop stats file instead of crop list file
+  from_crop_stats: True  # Use crop stats file instead of crop list file
   crop_resolution: 100x100 # resolution of the crops, used for naming the output files
   n_frames: 8 # number of frames in the crops, used for naming the output files
   backbone: r2dplus1 # backbone used for the features, used for naming the output files
@@ -144,7 +144,7 @@ visualization:
   center: 0
   vmax: 5
   cmap: gray_r
-  output_path: /sat_data/fig/grl_2026/
+  output_path: /sat_data/output/grl_2026/csv/ #/data1/fig/grl_2026/
   image_crops_path: /sat_data/crops/grl_2026/img/
   plot_types:
     - embedding_crops_table

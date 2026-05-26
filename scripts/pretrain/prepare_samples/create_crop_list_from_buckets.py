@@ -11,6 +11,11 @@ Sampling strategies:
   - 'closest'  → nearest samples to cluster centroid
   - 'farthest' → farthest samples from cluster centroid
   - 'all'      → all available samples
+
+
+how to run:
+souce activate vissl 
+python prepare_samples/create_crop_list_from_buckets.py 
 """
 
 import os
@@ -18,7 +23,7 @@ import numpy as np
 import pandas as pd
 import sys
 
-sys.path.append("/home/Daniele/codes/VISSL_postprocessing")
+sys.path.append("/home/claudia/codes/ML_postprocessing")
 from utils.processing.features_utils import load_dataframes, apply_filters, get_num_crop
 from utils.configs import load_config
 
@@ -128,5 +133,5 @@ def main(config_path: str = "config.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = "/home/Daniele/codes/VISSL_postprocessing/configs/process_run_config.yaml"
+    config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
     main(config_path)

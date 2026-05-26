@@ -14,9 +14,13 @@ from glob import glob
 import pandas as pd
 import numpy as np
 import sys
+import pdb
+from tqdm import tqdm
 
 sys.path.append('/home/claudia/codes/ML_postprocessing/')
+sys.path.append("/home/claudia/codes/ML_postprocessing")
 from utils.configs import load_config
+
 from scripts.pretrain.embedding_visualization.plot_embedding_utils import (
     plot_average_crop_shapes,
     plot_embedding_crops_table,
@@ -37,50 +41,7 @@ from scripts.pretrain.embedding_visualization.plot_embedding_utils import (
     plot_classwise_grids,
 )
 
-CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "process_run_GRL.yaml"
 
-
-def get_visualization_config(config_path: Path = CONFIG_PATH) -> dict:
-    """Load visualization settings from YAML."""
-    config = load_config(str(config_path))
-    visualization_config = config.get("visualization", {})
-
-    if not visualization_config:
-        raise ValueError(f"Missing 'visualization' section in config: {config_path}")
-
-    return visualization_config
-
-
-VIS_CONFIG = get_visualization_config()
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-RUN_NAME = VIS_CONFIG["run_name"]
-CROPS_NAME = VIS_CONFIG["crops_name"]
-RANDOM_STATE = VIS_CONFIG["random_state"]
-SAMPLING_TYPE = VIS_CONFIG["sampling_type"]
-REDUCTION_METHOD = VIS_CONFIG["reduction_method"]
-EPOCH = VIS_CONFIG["epochs"][0]
-FILE_EXTENSION = VIS_CONFIG["file_extension"]
-SUBSTITUTE_PATH = VIS_CONFIG["substitute_path"]
-VARIABLE_TYPE = VIS_CONFIG["variable_type"]
-VIDEO = VIS_CONFIG["video"]
-N_FRAMES = VIS_CONFIG["n_frames"]
-RANDOM_SEEDS = VIS_CONFIG["random_seed"]
-
-# Visualization settings
-VMIN = VIS_CONFIG["vmin"]
-CENTER = VIS_CONFIG["center"]
-VMAX = VIS_CONFIG["vmax"]
-CMAP = VIS_CONFIG["cmap"]
-OUTPUT_PATH = os.path.join(VIS_CONFIG["output_path"], "")
-
-# Input data
-IMAGE_CROPS_PATH = VIS_CONFIG["image_crops_path"]
-
-FILENAME = f"{REDUCTION_METHOD}_embedding_{RUN_NAME}_epoch_{EPOCH}.png"
-LIST_IMAGE_CROPS = sorted(glob(IMAGE_CROPS_PATH + "*." + FILE_EXTENSION))
 
 # Class color mapping
 COLORS_PER_CLASS = {
@@ -105,9 +66,8 @@ COLORS_PER_CLASS = {
 # =============================================================================
 # FUNCTIONS
 # =============================================================================
-def load_labels() -> pd.DataFrame:
+def load_labels(csv_path: str) -> pd.DataFrame:
     """Load precomputed labels and dimensionality-reduced features."""
-    csv_path = f"{OUTPUT_PATH}merged_tsne_crop_stats_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}.csv"
     df = pd.read_csv(csv_path)
     df = df.loc[:, ~df.columns.str.contains("^color")]  # drop pre-existing color cols
     #print how many rows per label are there
@@ -229,20 +189,107 @@ def substitute_paths_and_plot(df_labels: pd.DataFrame):
             zoom=0.33,
         )
 
+def create_expanded_csv(config):
+    """"
+    Create an expanded CSV by merging the original tsne features CSV with the list of image crops.
+    This is necessary for video frame-wise plotting when the original CSV does not contain explicit frame indices.
+    input: config dictionary with necessary parameters
+    output: expanded CSV file saved to disk and returned as DataFrame
+
+    """
+
+    # list all images in the crops directory
+    images_dir = config["visualization"]["image_crops_path"]
+    LIST_IMAGE_CROPS = sorted(glob(os.path.join(images_dir, "*.png")))
+    print(f"Found {len(LIST_IMAGE_CROPS)} image crops in {images_dir}")
+
+
+    # read feature csv file merged_tsne_crop_stats_grl_2026_all_3_epoch_800.csv
+    csv_path = OUTPUT_PATH
+    ds_features_tsne = pd.read_csv(os.path.join(csv_path, f"merged_tsne_crop_stats_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}.csv"))
+
+    ds_features_tsne["crop_key"] = ds_features_tsne["path"].map(
+        lambda path: os.path.splitext(os.path.basename(path))[0]
+    )
+
+    image_keys = []
+    for image_path in tqdm(LIST_IMAGE_CROPS, desc="Indexing image paths"):
+        image_name = os.path.splitext(os.path.basename(image_path))[0]
+        image_keys.append(image_name.rsplit("_t", 1)[0])
+
+    image_index_df = pd.DataFrame(
+        {
+            "crop_key": image_keys,
+            "image_path": LIST_IMAGE_CROPS,
+        }
+    )
+
+    df_expanded = ds_features_tsne.merge(image_index_df, on="crop_key", how="left")
+    df_expanded = df_expanded.drop(columns=["crop_key"])
+
+    n_unmatched = df_expanded["image_path"].isna().sum()
+    if n_unmatched:
+        print(f"Warning: {n_unmatched} expanded rows do not have a matching image path")
+
+    df_expanded = df_expanded.dropna(subset=["image_path"])
+    expanded_csv = os.path.join(
+        OUTPUT_PATH,
+        f"merged_tsne_crop_stats_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}_expanded.csv",
+    )
+    df_expanded.to_csv(expanded_csv, index=False)
+    print(f"Saved expanded DataFrame with {len(df_expanded)} rows to {expanded_csv}")
+    return df_expanded
 
 # =============================================================================
 # MAIN
 # =============================================================================
 def main():
-    print(f"n samples: {len(LIST_IMAGE_CROPS)}")
+    global RUN_NAME, SAMPLING_TYPE, RANDOM_STATE, EPOCH, OUTPUT_PATH
+    global VIDEO, VARIABLE_TYPE, CMAP, FILENAME, LIST_IMAGE_CROPS
+    # read config parameters
+    config = load_config(config_path)
+    # run name
+    RUN_NAME = config["experiment"]["run_names"][0]
+    # sampling type    
+    SAMPLING_TYPE = config["data"]["sampling_type"]
+    # random state    
+    RANDOM_STATE = config["experiment"]["random_state"]
+    # epoch    
+    EPOCH = config["experiment"]["epoch"]
+    # output path    
+    OUTPUT_PATH = os.path.join(config["visualization"]["output_path"], "")
+    # video mode
+    VIDEO = config["visualization"]["video"]
+    # variable type for grid coloring
+    VARIABLE_TYPE = config["visualization"]["variable_type"]
+    # colormap for grid coloring
+    CMAP = config["visualization"]["cmap"]
+    # filename for main embedding plot
+    FILENAME = f"embedding_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}.png"
 
-    df_labels = load_labels()
+
+    # check if expanded CSV exists, if not create it by merging tsne features with image paths
+    expanded_csv = os.path.join(
+        os.path.dirname(OUTPUT_PATH),
+        f"merged_tsne_crop_stats_{RUN_NAME}_{SAMPLING_TYPE}_{RANDOM_STATE}_epoch_{EPOCH}_expanded.csv",
+    )
+    if not os.path.exists(expanded_csv):
+        print(f"Expanded CSV not found at {expanded_csv}. Attempting to create it by merging tsne features with image paths.")
+        expanded_csv = create_expanded_csv(config)
+    else:
+        print(f"Expanded CSV already exists at {expanded_csv}. Skipping creation.")
+
+    # load labels and prepare colors for plotting
+    df_labels = load_labels(expanded_csv)
+
+    # prepare colors for plotting
     df_prepared = prepare_colors(df_labels)
 
     #plot_main_embeddings(df_prepared)
     if VIDEO:
         plot_video_frames(df_labels)
 
-
 if __name__ == "__main__":
+    config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
+
     main()

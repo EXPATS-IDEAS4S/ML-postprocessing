@@ -584,6 +584,8 @@ def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, gr
     base_filename = os.path.splitext(filename)[0]
     save_path = os.path.join(output_path, base_filename + '_'+ variable_type + '_grid.png')
     fig.savefig(save_path, bbox_inches='tight', dpi=300)
+    print("Saved:", save_path)
+    
     plt.close()
 
 
