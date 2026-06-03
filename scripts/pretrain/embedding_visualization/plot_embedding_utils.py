@@ -525,6 +525,8 @@ def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, gr
     placing one image per grid bin based on minimal distance to bin center.
     """
     fig, ax = plt.subplots(figsize=(10, 10))
+    fig.patch.set_alpha(0)
+    ax.set_facecolor("none")
 
     # Normalize Component_1 and Component_2
     x = df['Component_1'].values
@@ -583,7 +585,7 @@ def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, gr
     plt.tight_layout()
     base_filename = os.path.splitext(filename)[0]
     save_path = os.path.join(output_path, base_filename + '_'+ variable_type + '_grid.png')
-    fig.savefig(save_path, bbox_inches='tight', dpi=300)
+    fig.savefig(save_path, bbox_inches='tight', dpi=300, transparent=True)
     print("Saved:", save_path)
     
     plt.close()
@@ -681,6 +683,7 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
     num_labels = len(labels)
     
     fig, axes = plt.subplots(n, num_labels, figsize=(num_labels * 2, n * 2))
+    fig.patch.set_alpha(0)
     fig.suptitle(f"Crops Sorted by {selection.capitalize()} Distance from Centroid", 
                  fontsize=14, fontweight="bold")
 
@@ -697,6 +700,7 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
 
         for i in range(n):
             ax = axes[i, j]
+            ax.set_facecolor("none")
             if i < len(subset):
                 img_path = subset.loc[i, 'path']
                 if img_path and os.path.exists(img_path):
@@ -729,7 +733,7 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     seed_suffix = f"_rs-{random_seed}" if random_seed is not None else ""
     output_file = os.path.join(output_path, f"{filename.split('.')[0]}_{n}_{selection}_crops_table_transposed{seed_suffix}.png")
-    plt.savefig(output_file, bbox_inches='tight', dpi=300)
+    plt.savefig(output_file, bbox_inches='tight', dpi=300, transparent=True)
     plt.close()
 
     print(f"✅ Saved plot: {output_file}")
