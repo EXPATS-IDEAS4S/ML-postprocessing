@@ -18,6 +18,8 @@ The metadata file provides, for the selected variable:
 - `vmin` and `vmax` for the x-axis limits and histogram bins
 - `categorical` to decide whether integer-like categorical bins should be used
 
+possible variable names to plot are those defined in the metadata file, e.g. `cth`, `ctt`, `çma`, `precipitation`, `euclid`
+
 Current input data pattern:
 /sat_data/output/grl_2026/csv/crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv
 
@@ -47,6 +49,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -65,6 +68,10 @@ from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv
 VARIABLE_METADATA_PATH = Path(REPO_ROOT) / "configs" / "variables_metadata.yaml"
 CTH_SCALE_TO_KM = 0.001
 HISTOGRAM_LINEWIDTH = 3.0
+AUTO_VMAX_QUANTILE = 0.995
+VALUE_COLUMN_ALIASES = {
+    "sum": "sum[mm]",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,17 +110,63 @@ def format_axis_label(metadata: dict) -> str:
     return long_name
 
 
-def build_histogram_bins(metadata: dict):
-    vmin = metadata.get("vmin")
-    vmax = metadata.get("vmax")
+def resolve_plot_range(values: np.ndarray, metadata: dict, drop_zeros: bool = True) -> Tuple[float, float]:
+    x_min = metadata.get("vmin")
+    x_max = metadata.get("vmax")
 
-    if metadata.get("categorical") and vmin is not None and vmax is not None:
-        return np.arange(vmin, vmax + 2) - 0.5
+    if values.size == 0:
+        raise ValueError("Cannot resolve plot range from an empty value array.")
 
-    if vmin is not None and vmax is not None:
-        return np.linspace(vmin, vmax, 51)
+    data_min = float(np.nanmin(values))
 
-    return 50
+    if drop_zeros and data_min > 0:
+        if x_min is None or x_min <= 0:
+            x_min = data_min
+
+    if x_min is None:
+        if metadata.get("direction") == "incr":
+            x_min = data_min
+        else:
+            x_min = data_min
+
+    if x_max is None:
+        x_max = float(np.nanquantile(values, AUTO_VMAX_QUANTILE))
+
+    return float(x_min), float(x_max)
+
+
+def build_histogram_bins(x_min: float, x_max: float):
+    if x_max <= x_min:
+        return 50
+    return np.linspace(x_min, x_max, 51)
+
+
+def clip_values_for_plot(values: np.ndarray, x_min: float, x_max: float) -> np.ndarray:
+    return values[(values >= x_min) & (values <= x_max)]
+
+
+def prepare_values(series, value_scale: float, drop_zeros: bool = True) -> np.ndarray:
+    values = series.dropna().to_numpy(dtype=float) * value_scale
+    if drop_zeros:
+        values = values[values != 0]
+    return values
+
+
+def get_value_column(df, metadata: dict, percentile: str) -> str:
+    requested_column = VALUE_COLUMN_ALIASES.get(percentile, percentile)
+
+    if requested_column in df.columns:
+        return requested_column
+
+    if metadata.get("categorical"):
+        if "None" in df.columns:
+            return "None"
+        raise ValueError("Categorical variable expected a 'None' column in the CSV.")
+
+    available_columns = ", ".join(df.columns.tolist())
+    raise ValueError(
+        f"Requested value column '{percentile}' not found in CSV. Available columns: {available_columns}"
+    )
 
 
 
@@ -121,9 +174,6 @@ def main(variable_name: str = "cth", percentile: str = "50"):
     metadata = load_variable_metadata(variable_name)
     value_scale = get_value_scale(variable_name, metadata)
     x_label = format_axis_label(metadata)
-    histogram_bins = build_histogram_bins(metadata)
-    x_min = metadata.get("vmin")
-    x_max = metadata.get("vmax")
 
     # read csv file
     output_dir = '/sat_data/output/grl_2026/figs/'
@@ -135,20 +185,38 @@ def main(variable_name: str = "cth", percentile: str = "50"):
     print("Column titles:", df.columns.tolist())
     # select data for the variable of interest
     df_var = df[df['var'] == variable_name]
+    value_column = get_value_column(df_var, metadata, percentile)
+    if value_column == "None":
+        value_label = "value"
+    elif value_column.isdigit():
+        value_label = f"{value_column}th perc"
+    else:
+        value_label = value_column
+    pooled_values = prepare_values(df_var[value_column], value_scale)
+
+    if pooled_values.size == 0:
+        raise ValueError(f"No nonzero values available to plot for variable '{variable_name}'.")
+
+    x_min, x_max = resolve_plot_range(pooled_values, metadata)
+    histogram_bins = build_histogram_bins(x_min, x_max)
+
+    print(f"Using shared x-range [{x_min:.3f}, {x_max:.3f}] for all {variable_name} histograms")
+    print("Dropped zero-valued samples before calculating histogram ranges and densities")
 
     # loop on class groups and plot distributions for each class in the group in the same plot
     for class_name, class_ids in class_groups.items():
         print(f"Processing class group: {class_name} with classes {class_ids}")
         plt.figure(figsize=(10, 8))
-        # plot distributions of 50th percentile of cth for each class in the group
+        # plot distributions for each class in the group
         for class_id in class_ids:
 
-            # read values of 50th percentile of cth for the class
+            # read values for the selected class
             df_class = df_var[(df_var['label'] == class_id)]
-            values = df_class[percentile].dropna().to_numpy(dtype=float) * value_scale
+            values = prepare_values(df_class[value_column], value_scale)
+            values = clip_values_for_plot(values, x_min, x_max)
 
             if values.size == 0:
-                print(f"Skipping class {class_id} in group {class_name}: no values for percentile {percentile}")
+                print(f"Skipping class {class_id} in group {class_name}: no values for {value_label}")
                 continue
 
             # plot distribution of 50th percentile of cth for the class
@@ -161,11 +229,10 @@ def main(variable_name: str = "cth", percentile: str = "50"):
              color=colors_per_class1_names[str(class_id)])
             # add legend outside the plot
             plt.legend(frameon=False, fontsize=18)
-            if x_min is not None and x_max is not None:
-                plt.xlim(x_min, x_max)
+            plt.xlim(x_min, x_max)
             plt.xticks(fontsize=20)
             plt.yticks(fontsize=20)
-            plt.xlabel(f'{x_label} - {percentile}th perc', fontsize=20)
+            plt.xlabel(f'{x_label} - {value_label}', fontsize=20)
             plt.ylabel('Density', fontsize=20)
             plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
             # remove top and right spines
@@ -191,10 +258,11 @@ def main(variable_name: str = "cth", percentile: str = "50"):
     for class_id in range(15):
         print(f"Processing class: {class_id}")
         df_class = df_var[(df_var['label'] == class_id)]
-        values = df_class[percentile].dropna().to_numpy(dtype=float) * value_scale
+        values = prepare_values(df_class[value_column], value_scale)
+        values = clip_values_for_plot(values, x_min, x_max)
 
         if values.size == 0:
-            print(f"Skipping class {class_id}: no values for percentile {percentile}")
+            print(f"Skipping class {class_id}: no values for {value_label}")
             continue
 
         plt.figure(figsize=(10, 8))
@@ -205,11 +273,10 @@ def main(variable_name: str = "cth", percentile: str = "50"):
             histtype='step',
             linewidth=HISTOGRAM_LINEWIDTH,
             color=colors_per_class1_names[str(class_id)])
-        if x_min is not None and x_max is not None:
-            plt.xlim(x_min, x_max)
+        plt.xlim(x_min, x_max)
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
-        plt.xlabel(f'{x_label} - {percentile}th perc', fontsize=20)
+        plt.xlabel(f'{x_label} - {value_label}', fontsize=20)
         plt.ylabel('Density', fontsize=20)
         plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
         # remove top and right spines
