@@ -139,7 +139,8 @@ visualization:
   variable_type: IR_108
   video: True
   n_frames: 8
-  random_seed: [0, 8, 16, 23, 42]
+  selection: random # Options: random, closest, farthest, all for tsne visualization, TODO implement the case with more runs
+  random_seed: [16]
   vmin: -60
   center: 0
   vmax: 5
