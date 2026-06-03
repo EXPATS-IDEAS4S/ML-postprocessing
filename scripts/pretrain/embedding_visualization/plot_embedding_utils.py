@@ -587,6 +587,7 @@ def plot_embedding_crops_grid(df, output_path, filename, variable_type, cmap, gr
     print("Saved:", save_path)
     
     plt.close()
+    return save_path
 
 
 
@@ -646,7 +647,7 @@ def plot_embedding_crops_binned_grid(df, output_path, filename, grid_size=10, zo
     print("Saved:", save_path)
 
 
-def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, selection="closest", random_seed=None):
+def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, selection="closest", random_seed=None, label_subsets=None):
     """
     Plots crops in a table format where each column corresponds to a label,
     and 'n' images (rows) are selected based on the specified selection method.
@@ -658,7 +659,25 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
         n (int): Number of crops to display per label.
         selection (str): Method of selection - "closest", "farthest", or "random".
     """
-    labels = sorted(df['label'].unique())
+    if label_subsets is None:
+        # Backward-compatible path: older callers still pass the full frame DataFrame,
+        # so build the per-label subsets here when they were not prepared upstream.
+        label_subsets = {}
+        for label, label_df in df.groupby('label', sort=True):
+            subset = label_df.sort_values(by='distance', ascending=True)
+
+            if selection == "closest":
+                subset = subset.tail(n)
+            elif selection == "farthest":
+                subset = subset.head(n)
+            elif selection == "random":
+                subset = subset.sample(n=min(n, len(subset)), random_state=random_seed)
+            else:
+                raise ValueError("Invalid selection method. Choose 'closest', 'farthest', or 'random'.")
+
+            label_subsets[label] = subset.reset_index(drop=True)
+
+    labels = sorted(label_subsets.keys())
     num_labels = len(labels)
     
     fig, axes = plt.subplots(n, num_labels, figsize=(num_labels * 2, n * 2))
@@ -672,19 +691,9 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
         axes = np.expand_dims(axes, axis=1)
 
     for j, label in enumerate(labels):
-        subset = df[df['label'] == label].sort_values(by='distance', ascending=True)
-
-        # Select crops based on the specified method
-        if selection == "closest":
-            subset = subset.tail(n)
-        elif selection == "farthest":
-            subset = subset.head(n)
-        elif selection == "random":
-            subset = subset.sample(n=min(n, len(subset)), random_state=random_seed)
-        else:
-            raise ValueError("Invalid selection method. Choose 'closest', 'farthest', or 'random'.")
-
-        subset = subset.reset_index(drop=True)
+        # In the optimized video path this subset was already selected upstream, so the
+        # renderer only has to open the chosen images and place them in the grid.
+        subset = label_subsets[label]
 
         for i in range(n):
             ax = axes[i, j]
@@ -696,6 +705,18 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
                 else:
                     print(f"Missing image: {img_path}")
                     ax.imshow(np.zeros((10, 10)), cmap='gray')  # Placeholder
+
+                if 'distance_normalized' in subset.columns:
+                    distance_text = f"d={subset.loc[i, 'distance_normalized']:.2f}"
+                    ax.text(
+                        0.5,
+                        -0.08,
+                        distance_text,
+                        transform=ax.transAxes,
+                        ha='center',
+                        va='top',
+                        fontsize=11,
+                    )
             ax.axis('off')
 
             # Add row number on the left of first column
@@ -706,11 +727,13 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
         axes[0, j].set_title(f"Label {label}", fontsize=12, fontweight="bold")
 
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    output_file = os.path.join(output_path, f"{filename.split('.')[0]}_{n}_{selection}_crops_table_transposed_rs-{random_seed}.png")
+    seed_suffix = f"_rs-{random_seed}" if random_seed is not None else ""
+    output_file = os.path.join(output_path, f"{filename.split('.')[0]}_{n}_{selection}_crops_table_transposed{seed_suffix}.png")
     plt.savefig(output_file, bbox_inches='tight', dpi=300)
     plt.close()
 
     print(f"✅ Saved plot: {output_file}")
+    return output_file
 
 
 def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closest"):
