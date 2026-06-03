@@ -1,200 +1,206 @@
 """
-Code to calculate the occurrence of different classes across the day. 
-We select the time to associate to each video by calculating the mean time of the 8 frames. 
-We then group by time in the hours of the day (0-23) and calculate the occurrence of each class
+Plot the diurnal cycle of class occurrence for the grl_2026 video dataset.
+
+Purpose:
+This script computes how often each class occurs at each hour of the day.
+It uses the cth crop-statistics CSV only as a source of:
+- the video identifier (`crop`)
+- the class label (`label`)
+- the timestamp of each frame (`time`)
+
+Input file:
+/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv
+
+How the calculation works:
+1. Read the cth CSV.
+2. Group rows by `crop`, where each crop represents one 8-frame video.
+3. Keep only videos with exactly 8 frames.
+4. Compute the mean timestamp of the 8 frames to assign one representative time to each video.
+5. Extract the hour of day from that mean timestamp.
+6. Count class occurrences for each hour.
+7. Normalize occurrences within each hour so the class fractions at a given hour sum to 1.
+
+Plot style:
+- hour-binned histogram-style diurnal cycles
+- thick solid step lines
+- class colors taken from `utils.plotting.class_colors`
+
+Output directory:
+/sat_data/output/grl_2026/figs/
+
+Generated outputs:
+- overall class plot:
+    class_occurrence_diurnal_cycle.png
+- class-group plots with member classes:
+    {group_name}_diurnal_cycle.png
+- single-class plots:
+    class_{label}_diurnal_cycle.png
+
+Example call:
+python cluster_analysis/classes_diurnal_cycle.py
+
 Author: Claudia Acquistapace
 Date: 10 sept 2025
-
+Modified: 3 June 2026
 """
 
-import sys 
 import os
-from turtle import color
-import pandas as pd
+import sys
+
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 import pandas as pd
-import pdb
-from array import array
 
-sys.path.append(os.path.abspath("/Users/claudia/Documents/ML-postprocessing"))
+# Add the repository root so top-level packages such as `utils` resolve
+# regardless of the directory from which this script is launched.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
 
 from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
-
 from utils.plotting.class_colors import colors_per_class1_names, class_groups
 
+CSV_FILE = "/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv"
+OUTPUT_DIR = "/sat_data/output/grl_2026/figs/"
+EXPECTED_FRAMES_PER_VIDEO = 8
+DIURNAL_LINEWIDTH = 4.0
+INVALID_LABELS = {-100}
 
-# csv file with 2D+1 output
-csv_file = '/Users/claudia/Documents/data_ml_spacetime/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
-output_dir = '/Users/claudia/Documents/data_ml_spacetime/figs/'
+
+def style_axis(ax):
+    ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(1.5)
+    ax.spines["bottom"].set_linewidth(1.5)
+    ax.tick_params(width=1.5, length=7)
+
+
+def plot_hourly_histogram(ax, hours, values, color, label):
+    line_color = color if color is not None else "C0"
+    ax.step(
+        hours,
+        values,
+        where="mid",
+        color=line_color,
+        linewidth=DIURNAL_LINEWIDTH,
+        label=label,
+    )
+
 
 def main():
-
-    # read csv file
-    df = read_csv_to_dataframe(csv_file)
+    df = read_csv_to_dataframe(CSV_FILE)
     print("Column titles:", df.columns.tolist())
 
-    # select one variable to be sure to select 8 frames
-    df8 = df[df['var'] == 'cth']
-    
+    video_df = derive_time_class(df)
+    video_df = video_df[~video_df["label"].isin(INVALID_LABELS)].copy()
+    print("Number of videos with 8 frames:", len(video_df))
+    print(video_df.head())
 
-    # find all values of crop_index in df
-    crop_indices = df8['crop_index'].unique()
-    print("Number of unique crop indices (videos):", len(crop_indices))
-
-    # loop on crop indeces and calculate mean time for each video
-    times, labels = derive_time_class(df8, crop_indices)
-    print("Times shape:", times.shape)
-    print("Labels shape:", labels.shape)
-
-    print("Number of videos with 8 frames:", len(times))
-    print("First 5 times:", times[:5])
-    print("First 5 labels:", labels[:5])
-
-
-    # create a new dataframe with times and labels
-    df_times = pd.DataFrame({'time': times, 'label': labels})
-    # ensure 'time' column is in datetime format before extracting hour
-    df_times['time'] = pd.to_datetime(df_times['time'])
-    df_times['hour'] = df_times['time'].dt.hour
-    print(df_times.head())
-
-    # group by hour and label and count occurrences
-    df_grouped = df_times.groupby(['hour', 'label']).size().unstack(fill_value=0)
-    print(df_grouped.head())    
-    # normalize by total occurrences per hour
-    df_grouped = df_grouped.div(df_grouped.sum(axis=1), axis=0)
+    df_grouped = build_hourly_occurrence(video_df)
     print(df_grouped.head())
 
-    # plot occurrence of each class across the day
-    plt.figure(figsize=(10, 6))
+    plot_all_classes(df_grouped)
+    plot_single_class_groups(df_grouped)
+    plot_single_classes(df_grouped)
+
+
+def build_hourly_occurrence(df_times: pd.DataFrame) -> pd.DataFrame:
+    df_grouped = df_times.groupby(["hour", "label"]).size().unstack(fill_value=0)
+    df_grouped = df_grouped.reindex(range(24), fill_value=0)
+    return df_grouped.div(df_grouped.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
+
+
+def plot_all_classes(df_grouped: pd.DataFrame):
+    fig, ax = plt.subplots(figsize=(12, 7))
+    hours = df_grouped.index.to_numpy()
+
     for label in df_grouped.columns:
-        plt.plot(df_grouped.index, 
-                 df_grouped[label],
-                 linewidth=3,
-                label=f'Class {label}')
-        
-    plt.xlabel('Hour of the day', fontsize=16)
-    plt.ylabel('Occurrence', fontsize=16)
-    plt.title('Occurrence of each class across the day', fontsize=16)
-    plt.xticks(range(0, 24, 2), fontsize=14)
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'class_occurrence_diurnal_cycle.png'))
-    plt.close()
+        color = colors_per_class1_names.get(str(label), None)
+        plot_hourly_histogram(ax, hours, df_grouped[label].to_numpy(), color, f"Class {label}")
 
-    # plot of diurnal cycles for class groups
+    ax.set_xlabel("Hour of the day", fontsize=16)
+    ax.set_ylabel("Normalized occurrence", fontsize=16)
+    ax.set_title("Occurrence of each class across the day", fontsize=16)
+    ax.set_xticks(range(0, 24, 2))
+    ax.legend(frameon=False, fontsize=11, ncol=3)
+    style_axis(ax)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUTPUT_DIR, "class_occurrence_diurnal_cycle.png"), transparent=True)
+    plt.close(fig)
 
-    # read class groups from utils/plotting/class_colors.py
+
+def plot_single_classes(df_grouped: pd.DataFrame):
+    hours = df_grouped.index.to_numpy()
+
+    for label in df_grouped.columns:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        plot_hourly_histogram(
+            ax,
+            hours,
+            df_grouped[label].to_numpy(),
+            colors_per_class1_names.get(str(label), None),
+            f"Class {label}",
+        )
+        ax.set_xlabel("Hour of the day [hh]", fontsize=16)
+        ax.set_ylabel("Normalized occurrence", fontsize=16)
+        ax.set_title(f"Occurrence of Class {label} across the day", fontsize=16)
+        ax.set_xticks(range(24))
+        style_axis(ax)
+        fig.tight_layout()
+        fig.savefig(os.path.join(OUTPUT_DIR, f"class_{label}_diurnal_cycle.png"), transparent=True)
+        plt.close(fig)
+
+
+def plot_single_class_groups(df_grouped: pd.DataFrame):
+    hours = df_grouped.index.to_numpy()
+
     for group_name, group_labels in class_groups.items():
-        print(group_name, group_labels)
+        fig, ax = plt.subplots(figsize=(8, 5))
+        has_any_label = False
 
-
-        # plot diurnal cycle for each element of the group
-        plt.figure(figsize=(10, 6))
         for label in group_labels:
-            # plot class using the color defined in utils/plotting/class_colors.py
-            if str(label) in colors_per_class1_names:
-                plt.plot(df_grouped.index, 
-                         df_grouped[label], 
-                         label=f'Class {label}', 
-                         linewidth=4,
-                         color=colors_per_class1_names[str(label)])
-            else:
-                plt.plot(df_grouped.index, 
-                         df_grouped[label], 
-                         marker='o', 
-                         markersize=10, 
-                         label=f'Class {label}')
+            if label not in df_grouped.columns:
+                continue
+            has_any_label = True
+            plot_hourly_histogram(
+                ax,
+                hours,
+                df_grouped[label].to_numpy(),
+                colors_per_class1_names.get(str(label), None),
+                f"Class {label}",
+            )
 
-        plt.xlabel('Hour of the day', fontsize=20)
-        plt.ylabel('Occurrence', fontsize=20)
-        plt.title('Occurrence of class groups across the day', fontsize=20)
-        plt.xticks(range(0, 24), fontsize=16)
-        plt.legend(fontsize=16)
-        plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
-        # enlarge fonts of all texts
-        plt.rcParams.update({'font.size': 20})
-        # enlarge xticks and yticks fonts
-        plt.xticks(fontsize=18)
-        plt.yticks(fontsize=18)
-        plt.tight_layout()
-        # remove upper and right spines
-        plt.gca().spines['top'].set_visible(False)
-        plt.gca().spines['right'].set_visible(False)
-        plt.tight_layout()
-        plt.savefig(os.path.join(output_dir,
-                                 f'{group_name}_class_groups_occurrence_diurnal_cycle.png'), 
-                                 transparent=True)
+        if not has_any_label:
+            plt.close(fig)
+            continue
+
+        ax.set_xlabel("Hour of the day [hh]", fontsize=16)
+        ax.set_ylabel("Normalized occurrence", fontsize=16)
+        ax.set_title(f"Occurrence of {group_name} classes across the day", fontsize=16)
+        ax.set_xticks(range(24))
+        ax.legend(frameon=False, fontsize=11)
+        style_axis(ax)
+        fig.tight_layout()
+        fig.savefig(os.path.join(OUTPUT_DIR, f"{group_name}_diurnal_cycle.png"), transparent=True)
+        plt.close(fig)
 
 
-    # plot single diurnal cycle for each class
-    for label in df_grouped.columns:
-        plt.figure(figsize=(8, 5))
-        plt.plot(df_grouped.index, 
-                 df_grouped[label], 
-                 marker='o', 
-                 markersize=10, 
-                 color='C'+str(label))
-        plt.xlabel('Hour of the day [hh]')
-        plt.ylabel('Normalized Occurrence')
-        plt.title(f'Occurrence of Class {label} across the day')
-        plt.xticks(range(0, 24))
-        plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
-        
-        plt.tight_layout()
-        # remove upper and right spines
-        plt.gca().spines['top'].set_visible(False)
-        plt.gca().spines['right'].set_visible(False)
+def derive_time_class(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one row per video with mean time, label, and hour."""
+    df_local = df.copy()
+    df_local["time"] = pd.to_datetime(df_local["time"])
 
-        # make axis thicker
-        plt.gca().spines['left'].set_linewidth(1.5)
-        plt.gca().spines['bottom'].set_linewidth(1.5)
-        # make ticks thicker
-        plt.gca().tick_params(width=1.5, length=7, labelsize=12)
-        
-        plt.savefig(os.path.join(output_dir, f'class_{label}_diurnal_cycle.png'), transparent=True)
-        plt.close()
+    grouped = df_local.groupby("crop")
+    video_df = grouped.agg(
+        n_frames=("time", "size"),
+        time=("time", "mean"),
+        label=("label", "first"),
+    )
 
-    
-
-
-
-def derive_time_class(df, crop_indices):
-    """
-    Derive mean time for each video and calculate occurrence of each class across the day
-    
-    Parameters
-    ----------
-    df : pandas dataframe
-        
-        Dataframe with columns: 'crop_index', 'datetime', 'label'
-    crop_indices : array-like
-        Array of unique crop indices (videos)
-    
-    Returns
-    -------
-    array of video mean times and classification labels"""
-    mean_times = []
-    labels = [] 
-
-    for crop_index in crop_indices:
-        df_crop = df[df['crop_index'] == crop_index]
-
-        if len(df_crop) != 8:
-            continue  # skip if not 8 frames
-        # convert datetime to pandas datetime
-        df_crop['datetime'] = pd.to_datetime(df_crop['time'])
-        # calculate mean time
-        mean_time = df_crop['datetime'].mean()
-        mean_times.append(mean_time)
-        # get label (assuming all frames have the same label)
-        label = df_crop['label'].iloc[0]
-        labels.append(label)
-
-    return np.array(mean_times), np.array(labels)
+    video_df = video_df[video_df["n_frames"] == EXPECTED_FRAMES_PER_VIDEO].copy()
+    video_df["hour"] = video_df["time"].dt.hour
+    return video_df.reset_index(drop=True)
 
 if __name__ == "__main__":
     main()
