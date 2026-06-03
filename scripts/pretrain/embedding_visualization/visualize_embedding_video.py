@@ -295,7 +295,7 @@ def select_label_subsets(
 
 
 def create_animation_from_frames(frame_paths: List[str]) -> None:
-    """Create a GIF and, when OpenCV is available, an MP4 from ordered frame PNGs."""
+    """Create a transparent GIF and, when OpenCV is available, an MP4 from ordered frame PNGs."""
     if not frame_paths:
         return
 
@@ -303,13 +303,16 @@ def create_animation_from_frames(frame_paths: List[str]) -> None:
     animation_stem = re.sub(r"_frame\d+", "", os.path.splitext(first_frame)[0])
     output_gif = os.path.join(OUTPUT_PATH, f"{animation_stem}.gif")
 
-    gif_frames = [Image.open(frame_path).convert("RGB") for frame_path in frame_paths]
-    gif_frames[0].save(
+    gif_frames = [Image.open(frame_path).convert("RGBA") for frame_path in frame_paths]
+    gif_palette_frames = [frame.convert("P", palette=Image.ADAPTIVE) for frame in gif_frames]
+    gif_palette_frames[0].save(
         output_gif,
         save_all=True,
-        append_images=gif_frames[1:],
+        append_images=gif_palette_frames[1:],
         duration=1000,
         loop=0,
+        transparency=0,
+        disposal=2,
     )
     print(f"Saved animation GIF to {output_gif}")
 
@@ -319,7 +322,7 @@ def create_animation_from_frames(frame_paths: List[str]) -> None:
         print("OpenCV not available, skipping MP4 creation")
         return
 
-    mp4_frames = [np.array(frame) for frame in gif_frames]
+    mp4_frames = [np.array(frame.convert("RGB")) for frame in gif_frames]
     height, width = mp4_frames[0].shape[:2]
     output_mp4 = os.path.join(OUTPUT_PATH, f"{animation_stem}.mp4")
     video_writer = cv2.VideoWriter(
