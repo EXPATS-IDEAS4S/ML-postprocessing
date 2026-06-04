@@ -4,21 +4,87 @@ from turtle import color
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import MaxNLocator, FormatStrFormatter
 import xarray as xr
 import pandas as pd
 import pdb
 import sys
 from array import array
-sys.path.append(os.path.abspath("/Users/claudia/Documents/ML-postprocessing"))
+import argparse
+from pathlib import Path
+from typing import Tuple
+
+import sys
+import os
+from turtle import color
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import xarray as xr
+import pandas as pd
+import pdb
+
+
+
+# Add the repository root so top-level packages such as `utils` resolve
+# regardless of the directory from which this script is launched.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.append(REPO_ROOT)
+
 from utils.plotting.class_colors import colors_per_class1_names, class_groups
 
+VARIABLE_METADATA_PATH = Path(REPO_ROOT) / "configs" / "variables_metadata.yaml"
+CTH_SCALE_TO_KM = 0.001
+HISTOGRAM_LINEWIDTH = 3.0
+AUTO_VMAX_QUANTILE = 0.995
+VALUE_COLUMN_ALIASES = {
+    "sum": "sum[mm]",
+}
+PERCENTILE_COLUMNS = ("25", "50", "75", "95", "99")
+PRECIPITATION_VALUE_COLUMNS = ("50", "95", "sum[mm]", "prec_fraction")
+CMA_VALUE_COLUMNS = ("categorical", "None")
+SCALAR_VARIABLE_COLUMNS = {
+    "cma": "categorical",
+    "euclid_msg_grid": "lightning_count",
+}
+SPARSE_AWARE_DIAGNOSTIC_COLUMNS = {
+    "euclid_msg_grid": "lightning_nonzero_fraction",
+}
+CONDITIONAL_MEAN_DIAGNOSTIC_COLUMNS = {
+    "euclid_msg_grid": "lightning_mean_nonzero",
+}
+
+from utils.plotting.class_colors import colors_per_class1_names, class_groups
+from utils.configs import load_config
 
 
-# csv file with 2D+1 output
-csv_file = '/Users/claudia/Documents/data_ml_spacetime/crops_stats_vars-cth-cma-cot-cph_stats-50-99-25-75_frames-8_timedim_coords-datetime_dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1_closest_1000_debug.csv'
-output_dir = '/Users/claudia/Documents/data_ml_spacetime/figs/'
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Plot class-wise 1D variable histograms.")
+    parser.add_argument("--var", default="cth", help="Variable name as defined in variables_metadata.yaml")
+    parser.add_argument("--percentile", default="50", help="Percentile column to plot for continuous variables")
+    return parser.parse_args()
+
+
+def load_variable_metadata(variable_name: str) -> dict:
+    config = load_config(str(VARIABLE_METADATA_PATH))
+    variables = config.get("variables", {})
+
+    if variable_name not in variables:
+        available_variables = ", ".join(sorted(variables))
+        raise ValueError(
+            f"Variable '{variable_name}' not found in {VARIABLE_METADATA_PATH}. "
+            f"Available variables: {available_variables}"
+        )
+
+    return variables[variable_name]
+
 
 def main():
+
+
+    # read csv file
+    output_dir = '/sat_data/output/grl_2026/figs/'
 
     # read as arrays the content of the .py files with mean gradients for each class and each percentile
     file_path_cot = os.path.join(output_dir, f'mean_gradients_cot.npy')
@@ -29,6 +95,7 @@ def main():
     mean_grad_class_cot = read_gradient_files(file_path_cot)
     mean_grad_class_cth = read_gradient_files(file_path_cth)
     mean_grad_class_cma = read_gradient_files(file_path_cma)
+    shared_limits = compute_shared_limits(mean_grad_class_cth, mean_grad_class_cma)
 
     perc = '50'
     # plot gradients of cma and 50th perc cth for each class using colors from colors_per_class1_names
@@ -48,22 +115,27 @@ def main():
     plt.ylabel('Mean Gradient CTH', fontsize=14)
     plt.title(f'Mean Gradients of CMA vs CTH for {perc}th Percentile', fontsize=16)
     plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
+    apply_shared_limits(plt.gca(), shared_limits)
     plt.legend(title='Classes', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, f'gradient_scatter_cma_cth_perc{perc}.png'), dpi=300)
     plt.close()
 
-    class_name = 'Convective'
-    class_ids = [2, 3, 4]
-    plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mean_grad_class_cma, class_ids, class_name)
-    class_name = 'Overcast'
-    class_ids = [5, 6, 7]
-    plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mean_grad_class_cma, class_ids, class_name)
-    class_name = 'Broken'
-    class_ids = [0, 1, 8]
-    plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mean_grad_class_cma, class_ids, class_name)
+    # read class name and class_ids from class_groups
+    for class_name, class_ids in class_groups.items():
+        print(f"Plotting gradients for class group: {class_name} with class ids: {class_ids}")
+        plot_scatter_gradcth_gradcma_all_perc_grouped_class(
+            mean_grad_class_cth,
+            mean_grad_class_cma,
+            class_ids,
+            class_name,
+            output_dir,
+            shared_limits,
+        )
 
-def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mean_grad_class_cma, class_ids, class_name):
+
+
+def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mean_grad_class_cma, class_ids, class_name, output_dir='/sat_data/output/grl_2026/figs/', shared_limits=None):
     """
     plotting function to create a scatter plot of mean gradients of cth vs cma for selected classes across all percentiles
     Inputs:
@@ -84,7 +156,7 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
     # use markers to distinguish percentiles
 
     markers = ['o', 's', 'X', 'D']
-    percentiles = ['25', '50', '75', '99']
+    percentiles = ['25', '50', '75', '95']
     for class_id in class_ids:
         for i, perc in enumerate(percentiles):
             plt.scatter(mean_grad_class_cma[class_id],
@@ -128,20 +200,58 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.xlabel('Mean Gradient cloud cover', fontsize=18)
     plt.ylabel('Mean Gradient CTH', fontsize=18)
-    # set less xticks on x axis to avoid that they overlap
-    plt.xticks(np.arange(-0.005, 0.005, 0.0025), fontsize=18)
+    if shared_limits is not None:
+        apply_shared_limits(plt.gca(), shared_limits)
+    plt.xticks(fontsize=18)
     plt.yticks(fontsize=18)
     # remove top and right spines
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
-    # fix x and y lims
-    plt.xlim(-0.005, 0.005)
-    plt.ylim(-30, 35)
     #plt.title(f'Mean Gradients of cloud cover vs CTH for Selected Classes', fontsize=20)
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, f'{class_name}_gradient_scatter_cma_cth.png'), dpi=300, transparent=True)
     plt.close()
     return
+
+
+def set_axis_limits_with_padding(ax, x_values, y_values, padding_ratio=0.08):
+    """Set data-driven axis limits with a small padding so all classes remain visible."""
+    x_min = min(x_values)
+    x_max = max(x_values)
+    y_min = min(y_values)
+    y_max = max(y_values)
+
+    x_span = x_max - x_min
+    y_span = y_max - y_min
+
+    x_padding = max(x_span * padding_ratio, 0.001)
+    y_padding = max(y_span * padding_ratio, 1.0)
+
+    ax.set_xlim(x_min - x_padding, x_max + x_padding)
+    ax.set_ylim(y_min - y_padding, y_max + y_padding)
+
+
+def compute_shared_limits(mean_grad_class_cth, mean_grad_class_cma):
+    """Compute one shared set of axis limits across all classes and percentiles."""
+    x_values = mean_grad_class_cma.reshape(-1).tolist()
+    y_values = mean_grad_class_cth.reshape(-1).tolist()
+
+    fig, ax = plt.subplots()
+    set_axis_limits_with_padding(ax, x_values, y_values)
+    limits = {
+        'xlim': ax.get_xlim(),
+        'ylim': ax.get_ylim(),
+    }
+    plt.close(fig)
+    return limits
+
+
+def apply_shared_limits(ax, shared_limits):
+    """Apply precomputed shared axis limits to a scatter plot."""
+    ax.set_xlim(*shared_limits['xlim'])
+    ax.set_ylim(*shared_limits['ylim'])
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+    ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
 def read_gradient_files(file_path):
 
