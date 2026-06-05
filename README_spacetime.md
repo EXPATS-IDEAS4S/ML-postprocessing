@@ -132,19 +132,13 @@ selected variables specified in the statistics in config yaml (process_run_GRL.y
     * precipitation mean rain rate percentiles [mm/h] and cumulated precipitation over 15 min [mm]
 and stores the statistical values of each variable in a separate csv file in the output_path indicated in the config
 
+### 4. Visualizing tsne
+* to visualize tsne we first need to create csv files that are needed for the tsne algorithm:
+  * run the code compute_2d_embedding.py in pretrain/embedding_visualization to create the .npy file for the embedding
+  * run the code create_df_var_tsne.py in the folder pretrain/prepare_samples to Merge T-SNE Coordinates with Cluster Labels for Cloud Crop Visualization
+  * run then visualize_embedding_video.py to generate frame images and .gf and .mp4 videos of the feature space (grid.png file) and of the classes 
 
-### 4. Attach features to crops
-
-* Combine the selected crops/labels with their **reduced feature components** (e.g., t-SNE embeddings).
-
-### 5. Visualization of the feature space
-
-* Plot the feature space as a **scatter plot of embeddings**.
-* If images are available, visualize the feature space with **image crops overlaid**.
-* For videos, additional preprocessing steps are required.
-
-
-### 7. Cluster characterization plots
+### 5. Characterization of the classes 
 
 With the embeddings and statistics, different visualizations can be generated:
 
