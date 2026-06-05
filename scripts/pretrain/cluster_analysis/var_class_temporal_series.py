@@ -24,7 +24,7 @@ Input:
 
 Output:
 - A single NumPy bundle with gradients, column names, base columns, and class labels:
-    `/sat_data/output/grl_2026/figs/mean_gradients_{variable_name}.npz`
+    `/sat_data/output/grl_2026/npz/mean_gradients_{variable_name}.npz`
 - Grouped temporal plots saved in:
     `/sat_data/output/grl_2026/figs/`
 
@@ -48,9 +48,9 @@ For `cma`:
 
 For `euclid_msg_grid`:
 - For each class and frame, the script computes:
-    - `lightning_count`: mean over all samples
-    - `lightning_count_std`: standard deviation over all samples
-    - `lightning_nonzero_fraction`: fraction of samples with count `> 0`
+    - `lightning_count`: mean of lightning events over all samples
+    - `lightning_count_std`: standard deviation of lightning events over all samples
+    - `lightning_nonzero_fraction`: fraction of lightning events samples with count `> 0`
     - `lightning_mean_nonzero`: mean computed only on samples where count `> 0`
 - This separates occurrence from intensity:
     - `lightning_nonzero_fraction` tells how often lightning is present
@@ -65,10 +65,8 @@ Author: Claudia Acquistapace
 Date: 10 sept 2025
 """
 import argparse
-import argparse
 from pathlib import Path
 from typing import Tuple
-
 import sys
 import os
 from turtle import color
@@ -76,7 +74,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
-import pandas as pd
 import pdb
 
 
@@ -120,6 +117,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_variable_metadata(variable_name: str) -> dict:
+    """"
+    Load variable metadata from the YAML configuration file and return the dictionary for the specified variable.
+    Args:
+        variable_name (str): Name of the variable to load metadata for.
+    Returns:
+        dict: Metadata dictionary for the specified variable.
+    Raises:
+        ValueError: If the variable is not found in the configuration file.
+    """
     config = load_config(str(VARIABLE_METADATA_PATH))
     variables = config.get("variables", {})
 
@@ -137,13 +143,15 @@ def main(variable_name: str = "cth"):
     # reading metadata for the variable to plot and get value scale and axis label
     metadata = load_variable_metadata(variable_name)
 
-    # read csv file
-    output_dir = '/sat_data/output/grl_2026/figs/'
+    # set output directories
+    output_dir = '/sat_data/output/grl_2026/npz/'
+    fig_output_dir = '/sat_data/output/grl_2026/figs/'
 
-    # read variable to plot and then read the correpsonding csv file
+    # read variable to plot from the correpsonding csv file
     csv_file = f'/sat_data/output/grl_2026/csv/crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv'
-
     df = read_csv_to_dataframe(csv_file)
+
+    # normalize variable-specific column names for downstream processing
     df = normalize_variable_columns(df, variable_name)
     print("Column titles:", df.columns.tolist())
     print("Reading CSV file...")
@@ -162,19 +170,20 @@ def main(variable_name: str = "cth"):
     # loop on classes and plot temporal series of mean percentiles for each class and concatenate resulting dataframes
     df_all_mean = {}
 
+    # define variable string for plot titles and axis labels using metadata, or variable name if not defined in metadata
     var_name = variable_name
     var_string = metadata.get('long_name', metadata.get('label', var_name.upper()))
-    class_labels = sorted(df['label'].unique())
-    value_columns = get_value_columns(df, var_name)
-    gradient_columns = get_gradient_columns(var_name, value_columns)
+    class_labels = sorted(df['label'].unique()) # sort class labels in ascending order
+    value_columns = get_value_columns(df, var_name) # get the value columns to process for the variable (percentiles or single value column)
+    gradient_columns = get_gradient_columns(var_name, value_columns) # get the columns for which to compute gradients (value columns and optionally std and sparse-aware diagnostics)
 
     # define matrix for gradients
     # initialize mean gradients array (average of the gradient of the time series)
     if is_scalar_variable(var_name):
         mean_grad_class = np.zeros((len(class_labels), 1)) # gradient of cloud cover, one single value per class
     else:
-        mean_grad_class = np.zeros((len(class_labels), len(value_columns)))
-    all_grad_class = np.full((len(class_labels), len(gradient_columns)), np.nan)
+        mean_grad_class = np.zeros((len(class_labels), len(value_columns))) # gradient of percentiles, one value per class and per percentile
+    all_grad_class = np.full((len(class_labels), len(gradient_columns)), np.nan) # gradient of all columns, including std and sparse-aware diagnostics when present
 
     # loop on unique labels of the classes
     for label_index, label_sel in enumerate(class_labels):
@@ -195,30 +204,38 @@ def main(variable_name: str = "cth"):
                 print(f"Skipping class {label_sel}: no rows found for variable {var_name}")
                 continue
 
+            # build aggregation mapping for mean, std and sparse-aware diagnostics
             aggregation = build_extended_stats_aggregation(var_name, value_columns)
-
+            
+            # group by frame and compute mean, std and sparse-aware diagnostics for the variable value columns
             df_grouped = df_class_var.groupby('frame').agg(**aggregation).reset_index()
+            # fill NaN values in std columns with 0, since NaNs in std indicate that there is only one sample for that frame and class, and thus the gradient should be 0 since there is no variability between samples
             for value_column in value_columns:
                 std_column = get_std_column(value_column)
                 if std_column in df_grouped:
                     df_grouped[std_column] = df_grouped[std_column].fillna(0.0)
 
+            # print the value columns, the corresponding std columns and sparse-aware diagnostic columns if they exist in the grouped dataframe
             for value_column in value_columns:
                 print(df_grouped[value_column])
-                sparse_diagnostic_column = get_sparse_diagnostic_column(var_name, value_column)
+                sparse_diagnostic_column = get_sparse_diagnostic_column(var_name, value_column) # get the sparse-aware diagnostic column name for the variable and value column, if it exists
+                # if the sparse-aware diagnostic column is defined, print it as well
                 if sparse_diagnostic_column is not None:
                     print(df_grouped[sparse_diagnostic_column])
-                conditional_mean_column = get_conditional_mean_column(var_name, value_column)
+                conditional_mean_column = get_conditional_mean_column(var_name, value_column) # get the conditional mean diagnostic column name for the variable and value column, if it exists
                 if conditional_mean_column is not None:
                     print(df_grouped[conditional_mean_column])
 
+            # compute gradients for all columns and store in the all_grad_class array
             all_grad = compute_gradients_for_columns(df_grouped, gradient_columns)
             all_grad_class[label_index, :] = all_grad
 
+            # calculate mean gradient of the time series for each value column
             if is_scalar_variable(var_name):
                 mean_grad_class[label_index] = np.nanmedian(np.gradient(df_grouped[value_columns[0]]))
             else:
                 mean_grad = np.zeros(len(value_columns))
+                # calculate the mean gradient for each value column (e.g., each percentile) and store in the mean_grad_class array
                 for ind, value_column in enumerate(value_columns):
                     mean_grad[ind] = np.nanmedian(np.gradient(df_grouped[value_column]))
                 mean_grad_class[label_index, :] = mean_grad
@@ -235,20 +252,16 @@ def main(variable_name: str = "cth"):
                 print(f"Skipping class {label_sel}: no rows found for variable {var_name}")
                 continue
 
+            # group by frame and compute mean of the percentile columns for the variable
             df_grouped = (
                 df_class_var.groupby('frame')[value_columns]
                 .mean()
                 .reset_index()
             )
 
+            # compute gradients for all columns and store in the all_grad_class array
             all_grad = compute_gradients_for_columns(df_grouped, gradient_columns)
             all_grad_class[label_index, :] = all_grad
-
-            # plot temporal series of mean categorical for the class
-            #plot_temporal_series_perc_by_class(df_grouped, '25', var_name, var_string, label_sel, output_dir)
-            #plot_temporal_series_perc_by_class(df_grouped, '50', var_name, var_string, label_sel, output_dir)
-            #plot_temporal_series_perc_by_class(df_grouped, '75', var_name, var_string, label_sel, output_dir)
-            #plot_temporal_series_perc_by_class(df_grouped, '95', var_name, var_string, label_sel, output_dir)
 
             # calculate mean gradient of the time series for each percentile
             mean_grad = np.zeros(len(value_columns))
@@ -263,29 +276,55 @@ def main(variable_name: str = "cth"):
             print(" all gradients array:", mean_grad_class)
             #pdb.set_trace()
 
+        # store the grouped dataframe for the class in the df_all_mean dictionary for later plotting of temporal series by group of classes
         df_all_mean[label_sel] = df_grouped
 
     # store mean gradients for each class and each percentile in python file using numpy save
     # and also as a .py file with the array as a list
 
     print(f"Saving mean gradients for variable {var_name}...")
+    # save also time series of mean values for each class in a different .npz file 
+    np.savez(
+        os.path.join(output_dir, f'mean_values_time_series_{var_name}.npz'),
+        mean_values=df_all_mean, # save the mean values for each class
+        columns=np.array(value_columns, dtype=object), # save column names as an array of strings in the npz file
+        class_labels=np.array(class_labels), # save the class labels as an array in the npz file
+    )
 
+    # save also the mean values of the time series for each class in a .csv file for easier inspection
+    df_mean_values = pd.DataFrame({
+        'label': class_labels,
+    })  
+    grouped_stat_columns = [
+        column for column in df_all_mean[class_labels[0]].columns if column != 'frame'
+    ]
+    for value_column in grouped_stat_columns:
+        # averaging values of frame series for each class and storing in the dataframe to save as csv
+        df_mean_values[value_column] = [df_all_mean[label][value_column].values for label in class_labels]
+        df_mean_values[f'{value_column}_temporal_mean'] = [
+            df_all_mean[label][value_column].mean() for label in class_labels
+        ]
+    # store the mean values of the time series for each class in a .csv file for easier inspection 
+    # assign column name 
+    df_mean_values.to_csv(os.path.join(output_dir, f'mean_values_of_series_{var_name}.csv'), index=False)
+    
+    # save the mean gradients for each class and each percentile in a numpy file
     np.savez(
         os.path.join(output_dir, f'mean_gradients_{var_name}.npz'),
-        gradients=all_grad_class,
-        columns=np.array(gradient_columns, dtype=object),
-        base_columns=np.array(value_columns, dtype=object),
-        class_labels=np.array(class_labels),
+        gradients=all_grad_class, # save the gradients of all columns, including std and sparse-aware diagnostics when present, for all classes
+        columns=np.array(gradient_columns, dtype=object), # save column names as an array of strings in the npz file
+        base_columns=np.array(value_columns, dtype=object), # save the base value columns as an array of strings in the npz file
+        class_labels=np.array(class_labels), # save the class labels as an array in the npz file
     )
 
     # plot 50th percentile for selected group of classes normalized between min and max
     if uses_extended_column_stats(var_name):
         for column_name in get_plot_columns(var_name, value_columns):
-            plot_temporal_series_perc_by_group(df_all_mean, var_name, column_name, output_dir=output_dir)
+            plot_temporal_series_perc_by_group(df_all_mean, var_name, column_name, output_dir=fig_output_dir)
     else:
         for percentile in ('50', '75', '95'):
             if percentile in value_columns:
-                plot_temporal_series_perc_by_group(df_all_mean, var_name, percentile, output_dir=output_dir)
+                plot_temporal_series_perc_by_group(df_all_mean, var_name, percentile, output_dir=fig_output_dir)
 
 
 
@@ -500,7 +539,14 @@ def plot_temporal_series_min_max_perc_all_classes(df_all_mean, var_name, perc_se
     return
 
 def read_csv_to_dataframe(csv_file):
-    """Reads the CSV file into a pandas DataFrame."""
+    """Reads the CSV file into a pandas DataFrame.
+    If the file ends with '_debug.csv', it filters out rows where 'frame' equals -710387.
+    Args:
+        csv_file (str): Path to the CSV file.
+    Returns:
+        pd.DataFrame: The DataFrame containing the CSV data, with debug rows removed if applicable.
+    """
+
     df = pd.read_csv(csv_file)
 
     # if file ends with _debug.csv, remove all lines with frame = -710387
@@ -513,7 +559,17 @@ def read_csv_to_dataframe(csv_file):
 
 
 def get_percentile_columns(df: pd.DataFrame) -> list[str]:
-    """Return percentile columns present in the CSV in numeric order."""
+    """Return percentile columns present in the CSV in numeric order.
+    This function checks for the presence of expected percentile columns (e.g., '25', '50', '75', '95') in 
+    the DataFrame and returns a list of those that are found, sorted in numeric order.
+     If no percentile columns are found, it raises a ValueError.
+    Args:
+        df (pd.DataFrame): The input DataFrame read from the CSV file.
+    Returns:
+        list[str]: A list of percentile column names that are present in the DataFrame, sorted in numeric order.
+    Raises:
+        ValueError: If no percentile columns are found in the DataFrame.
+    """
     available_columns = [column for column in PERCENTILE_COLUMNS if column in df.columns]
     if not available_columns:
         raise ValueError("No percentile columns found in the CSV file.")
@@ -521,7 +577,16 @@ def get_percentile_columns(df: pd.DataFrame) -> list[str]:
 
 
 def get_cma_value_column(df: pd.DataFrame) -> str:
-    """Return the column containing the cloud-mask mean for cma files."""
+    """Return the column containing the cloud-mask mean for cma files.
+    This function checks for the presence of expected cloud-mask value columns (e.g., 'categorical', 'None')
+    in the DataFrame and returns the first one that is found. If no cloud-mask value column is found, it raises a ValueError.
+    Args:
+        df (pd.DataFrame): The input DataFrame read from the CSV file.
+    Returns:
+        str: The name of the cloud-mask value column.
+    Raises:
+        ValueError: If no cloud-mask value column is found in the DataFrame.
+    """
     for column in CMA_VALUE_COLUMNS:
         if column in df.columns:
             return column
@@ -529,7 +594,16 @@ def get_cma_value_column(df: pd.DataFrame) -> str:
 
 
 def get_value_columns(df: pd.DataFrame, variable_name: str) -> list[str]:
-    """Return the data columns used to compute temporal statistics for the variable."""
+    """Return the data columns used to compute temporal statistics for the variable.
+    For example, for `cma` files, return the scalar value column. For `precipitation`, return the four value columns.
+    For other variables, return the percentile columns.
+    Args:
+    df (pd.DataFrame): The input DataFrame read from the CSV file.
+    variable_name (str): The name of the variable being processed.
+    Returns:
+    list[str]: The list of column names to use for computing temporal statistics.
+    """
+
     if is_scalar_variable(variable_name):
         return [get_scalar_value_column(df, variable_name)]
     if variable_name == 'precipitation':
@@ -538,7 +612,14 @@ def get_value_columns(df: pd.DataFrame, variable_name: str) -> list[str]:
 
 
 def normalize_variable_columns(df: pd.DataFrame, variable_name: str) -> pd.DataFrame:
-    """Normalize CSV-specific column names for downstream processing."""
+    """Normalize CSV-specific column names for downstream processing.
+    For example, for `cma` files, rename the `None` column to `categorical` for consistency with the variable metadata.
+    Args:
+    df (pd.DataFrame): The input DataFrame read from the CSV file.
+    variable_name (str): The name of the variable being processed.
+    Returns:
+    pd.DataFrame: The DataFrame with normalized column names.
+    """
     if not is_scalar_variable(variable_name) or 'None' not in df.columns:
         return df
     target_column = SCALAR_VARIABLE_COLUMNS[variable_name]
@@ -553,12 +634,21 @@ def is_scalar_variable(variable_name: str) -> bool:
 
 
 def uses_extended_column_stats(variable_name: str) -> bool:
-    """Return True when the variable uses mean/std and optional sparse diagnostics for each data column."""
+    """Return True when the variable uses mean/std and optional sparse diagnostics for each data column.
+    This is true for `precipitation` and `euclid_msg_grid`, which have value columns with many zeros 
+    and benefit from additional diagnostics to separate occurrence from intensity.
+    Are also considered scalar variables, which have a single value column and a std column, but no sparse-aware diagnostics.
+    """ 
     return is_scalar_variable(variable_name) or variable_name == 'precipitation'
 
 
 def get_scalar_value_column(df: pd.DataFrame, variable_name: str) -> str:
-    """Return the scalar-value column for variables such as cma and euclid_msg_grid."""
+    """Return the scalar-value column for variables such as cma and euclid_msg_grid.
+    This function checks for the presence of the expected scalar value column for the variable 
+    (e.g., 'categorical' for 'cma', 'lightning_count' for 'euclid_msg_grid') 
+    in the DataFrame and returns it if found. If the expected column is not found,
+     it checks for any of the known aliases for scalar value columns (e.g., 'None')
+      and returns it if found. If no scalar value column is found, it raises a ValueError."""
     expected_column = SCALAR_VARIABLE_COLUMNS[variable_name]
     if expected_column in df.columns:
         return expected_column
@@ -569,7 +659,19 @@ def get_scalar_value_column(df: pd.DataFrame, variable_name: str) -> str:
 
 
 def get_scalar_value_column_name(variable_name: str) -> str:
-    """Return the normalized scalar-value column name for the variable."""
+    """Return the normalized scalar-value column name for the variable.
+    This function returns the standardized column name for the scalar value column of the variable,
+    which is defined in the SCALAR_VARIABLE_COLUMNS mapping. 
+    This is used for consistent naming of the scalar value column across different CSV files, 
+    even if they use different column names (e.g., 'None' vs 'categorical' for cma). 
+    If the variable is not defined as a scalar variable, it raises a ValueError.
+    Args:
+    variable_name (str): The name of the variable being processed.
+    Returns:
+    str: The standardized column name for the scalar value column of the variable.
+    Raises:
+    ValueError: If the variable is not defined as a scalar variable in the SCALAR_VARIABLE_COLUMNS mapping.
+    """
     return SCALAR_VARIABLE_COLUMNS[variable_name]
 
 
@@ -579,29 +681,69 @@ def get_std_column(column_name: str) -> str:
 
 
 def get_sparse_diagnostic_column(variable_name: str, column_name: str | None = None) -> str | None:
-    """Return the sparse-aware diagnostic column for variables that need one."""
+    """Return the sparse-aware diagnostic column for variables that need one.
+    For `precipitation`, this is defined for each value column as `prec_nonzero_fraction`.
+    For `euclid_msg_grid`, this is defined as `lightning_nonzero_fraction`.
+    For other variables, this is defined in the SPARSE_AWARE_DIAGNOSTIC_COLUMNS mapping.
+    Args:
+    variable_name (str): The name of the variable being processed.
+    column_name (str | None): The name of the base data column, 
+    if the sparse-aware diagnostic column is defined per data column (e.g., for precipitation). 
+    If the sparse-aware diagnostic column is not defined per data column (e.g., for euclid_msg_grid), this can be
+     left as None.
+    Returns:
+    str | None: The name of the sparse-aware diagnostic column for the variable and base data   
+        column, or None if no sparse-aware diagnostic column is defined for the variable.
+    """
+
     if variable_name == 'precipitation' and column_name is not None:
-        return f'{column_name}_nonzero_fraction'
+        return f'prec_nonzero_fraction'
     return SPARSE_AWARE_DIAGNOSTIC_COLUMNS.get(variable_name)
 
 
 def get_conditional_mean_column(variable_name: str, column_name: str | None = None) -> str | None:
-    """Return the conditional mean diagnostic column for sparse variables."""
+    """Return the conditional mean diagnostic column for sparse variables.
+    For `precipitation`, this is defined for each value column as `prec_mean_nonzero`, 
+    which is the mean over non-zero samples and thus reflects the intensity of precipitation when it occurs,
+     without being confounded by the large number of zero-precipitation samples.
+     For `euclid_msg_grid`, this is defined as `lightning_mean_nonzero`, 
+     which is the mean over samples with lightning counts > 0,
+      and thus reflects the intensity of lightning when it occurs without being confounded by the large number of samples with zero lightning counts.
+    For other variables, this is defined in the CONDITIONAL_MEAN_DIAGNOSTIC_COLUMNS mapping.
+    Args:
+        variable_name (str): The name of the variable being processed.
+        column_name (str | None): The name of the base data column, 
+        if the conditional mean diagnostic column is defined per data column (e.g., for precipitation). 
+        If the conditional mean diagnostic column is not defined per data column (e.g., for euclid_msg_grid), this can be
+         left as None.
+    Returns:
+    str | None: The name of the conditional mean diagnostic column for the variable and base data column, or None if no conditional mean diagnostic column is defined for the variable.
+    """
     if variable_name == 'precipitation' and column_name is not None:
         return f'{column_name}_mean_nonzero'
     return CONDITIONAL_MEAN_DIAGNOSTIC_COLUMNS.get(variable_name)
 
 
 def build_extended_stats_aggregation(variable_name: str, value_columns: list[str]) -> dict:
-    """Build the aggregation mapping for variables with std and sparse-aware diagnostics."""
+    """Build the aggregation mapping for variables with std and sparse-aware diagnostics.
+    For each base value column, this includes the mean, the std, and optionally the sparse-aware diagnostics.
+    Args:
+        variable_name (str): The name of the variable being processed.
+        value_columns (list[str]): The list of base data columns for the variable.
+    Returns:
+        dict: The aggregation mapping to use in the pandas groupby aggregation.
+    """ 
     aggregation = {}
+    # For each value column, compute the mean, the std, and optionally the sparse-aware diagnostics
     for value_column in value_columns:
-        aggregation[value_column] = (value_column, 'mean')
-        aggregation[get_std_column(value_column)] = (value_column, 'std')
-        sparse_diagnostic_column = get_sparse_diagnostic_column(variable_name, value_column)
+        aggregation[value_column] = (value_column, 'mean') # compute the mean of the base value column
+        aggregation[get_std_column(value_column)] = (value_column, 'std') # compute the std of the base value column
+        sparse_diagnostic_column = get_sparse_diagnostic_column(variable_name, value_column) # compute the sparse-aware diagnostic column, if applicable for the variable and value column
+        # if the sparse-aware diagnostic column is defined, compute it as the fraction of samples with value > 0
         if sparse_diagnostic_column is not None:
             aggregation[sparse_diagnostic_column] = (value_column, lambda values: (values > 0).mean())
-        conditional_mean_column = get_conditional_mean_column(variable_name, value_column)
+        conditional_mean_column = get_conditional_mean_column(variable_name, value_column) # compute the conditional mean diagnostic column, if applicable for the variable and value column
+        # if the conditional mean diagnostic column is defined, compute it as the mean over samples with value > 0, or 0 if there are no samples with value > 0 to avoid NaNs
         if conditional_mean_column is not None:
             aggregation[conditional_mean_column] = (
                 value_column,
@@ -611,7 +753,15 @@ def build_extended_stats_aggregation(variable_name: str, value_columns: list[str
 
 
 def get_plot_columns(variable_name: str, value_columns: list[str]) -> list[str]:
-    """Return the ordered list of data and diagnostic series to plot."""
+    """Return the ordered list of data and diagnostic series to plot.
+    For variables with extended stats, this includes the base value columns, the std columns, and the sparse-aware diagnostic columns.
+    For other variables, this includes only the base value columns.
+    Args:
+        variable_name (str): The name of the variable being processed.
+        value_columns (list[str]): The list of base data columns for the variable.
+    Returns:
+        list[str]: The ordered list of columns to plot.
+    """
     plot_columns = list(value_columns)
     if not uses_extended_column_stats(variable_name):
         return plot_columns
@@ -627,7 +777,15 @@ def get_plot_columns(variable_name: str, value_columns: list[str]) -> list[str]:
 
 
 def get_gradient_columns(variable_name: str, value_columns: list[str]) -> list[str]:
-    """Return the ordered list of columns whose gradients should be saved."""
+    """Return the ordered list of columns whose gradients should be saved.
+    For variables with extended stats, this includes the base value columns, the std columns, and the sparse-aware diagnostic columns.
+    For other variables, this includes only the base value columns.
+    Args:
+    variable_name (str): The name of the variable being processed.
+    value_columns (list[str]): The list of base data columns for the variable.
+    Returns:
+    list[str]: The ordered list of columns for which to compute and save gradients. 
+    """
     gradient_columns = list(value_columns)
     if not uses_extended_column_stats(variable_name):
         return gradient_columns
@@ -654,7 +812,15 @@ def compute_gradients_for_columns(df_grouped: pd.DataFrame, columns: list[str]) 
 
 
 def is_primary_value_column(variable_name: str, column_name: str) -> bool:
-    """Return True when the plotted column is a base data column with a std band."""
+    """Return True when the plotted column is a base data column with a std band.
+    This is true for the scalar value column of scalar variables, and for the value columns of precipitation.
+    For these columns, we plot a std band around the mean line in the temporal series plots, 
+    since they reflect the main variable of interest and the std provides useful information 
+    about the variability of the samples that are averaged to compute the mean.
+    For other columns such as sparse-aware diagnostics, we do not plot a std band since
+     they are derived metrics that do not directly reflect the variability of the underlying 
+     samples in the same way as the base value columns.   
+    """
     if is_scalar_variable(variable_name):
         return column_name == get_scalar_value_column_name(variable_name)
     if variable_name == 'precipitation':
@@ -663,7 +829,10 @@ def is_primary_value_column(variable_name: str, column_name: str) -> bool:
 
 
 def get_scalar_series_label(variable_name: str) -> str:
-    """Return a human-readable label for scalar time series plots."""
+    """Return a human-readable label for scalar time series plots.
+    For example, for `cma`, return 'cloud mask', and for `euclid_msg_grid`, return 'lightning counts'.
+    For other variables, return the variable name itself.
+    """
     if variable_name == 'cma':
         return 'cloud mask'
     if variable_name == 'euclid_msg_grid':
@@ -672,7 +841,21 @@ def get_scalar_series_label(variable_name: str) -> str:
 
 
 def get_column_plot_title(variable_name: str, column_name: str, group_name: str) -> str:
-    """Return the plot title for supported variables and diagnostics."""
+    """Return the plot title for supported variables and diagnostics.
+     For scalar variables, this depends on whether the column is the base value column, 
+     the sparse-aware diagnostic column, or the conditional mean diagnostic column.
+     For precipitation, this depends on the column suffix indicating whether it is a base value column,
+     the non-zero fraction diagnostic, or the conditional mean diagnostic.
+     For other variables, this is a generic title with the variable name, column name, and
+     group name.
+     Args:
+        variable_name (str): The name of the variable being processed.
+        column_name (str): The name of the data or diagnostic column being plotted.
+        group_name (str): The name of the group of classes being plotted (e.g.,
+         'convective', 'broken', 'dissipative').
+    Returns:
+        str: The title to use for the plot of the temporal series of the column for the group of classes.
+    """
     if is_scalar_variable(variable_name):
         if column_name == get_sparse_diagnostic_column(variable_name, column_name):
             return f'Temporal Series of Non-Zero {get_scalar_series_label(variable_name)} Fraction for {group_name.capitalize()} Classes'
@@ -769,4 +952,3 @@ def assign_frame_numbers(df: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     args = parse_args()
     main(variable_name=args.var)
-
