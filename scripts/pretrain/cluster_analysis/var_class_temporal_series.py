@@ -25,6 +25,11 @@ Input:
 Output:
 - A single NumPy bundle with gradients, column names, base columns, and class labels:
     `/sat_data/output/grl_2026/npz/mean_gradients_{variable_name}.npz`
+- A NumPy bundle with the mean value time series for each class:
+    `/sat_data/output/grl_2026/npz/mean_values_time_series_{variable_name}.npz`
+- A CSV file with the time series and the mean values of the time series for each class for easier inspection:
+    `/sat_data/output/grl_2026/csv/mean_values_time_series_{variable_name}.csv`
+
 - Grouped temporal plots saved in:
     `/sat_data/output/grl_2026/figs/`
 
