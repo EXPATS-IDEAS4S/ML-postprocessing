@@ -34,13 +34,7 @@ colors_per_class1_names = {
     '5': 'navajowhite',
     '6': 'orchid',
     '7': 'royalblue',
-    '8': 'crimson',
-    '9': 'goldenrod',
-    '10': 'magenta',
-    '11': 'dodgerblue',
-    '12': 'lightcoral',
-    '13': 'olive',
-    '14': 'crimson'
+    '8': 'crimson'
 }
 
 
