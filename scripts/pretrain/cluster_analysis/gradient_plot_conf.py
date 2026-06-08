@@ -26,6 +26,24 @@ Output files:
 - gradient_scatter_prec_sum_lightning_count.png: Precipitation sum vs lightning count gradients.
 - gradient_scatter_prec_fraction_lightning_mean_nonzero.png: Precipitation fraction vs lightning mean non-zero gradients.
 
+
+How to call it
+- activate vissl env with conda activate vissl
+- Run from the repository root with:
+  python scripts/pretrain/cluster_analysis/gradient_plot_conf.py
+- Ensure the required NPZ/NPY files are in place and that the output directory is writable.
+Notes:
+- The script uses colors defined in utils.plotting.class_colors for class-wise coloring.
+- Fit lines are added for class groups defined in class_groups, with colors from FIT_COLORS_BY_GROUP.
+- Axis limits are computed to be shared across classes and percentiles for better visual comparison.
+- The script is modular, with helper functions for loading data, preparing fit lines, and plotting, making it easier to extend for additional variables or diagnostics in the future.
+- The script assumes that the mean gradient NPZ files contain arrays of shape (num_classes, num_percentiles) or (num_classes,) and that the columns metadata is correctly stored for NPZ files that include it.
+- The script also assumes that the class IDs in the mean gradient arrays correspond to those defined in colors_per_class1_names and class_groups for consistent coloring and grouping in the plots.
+
+Author: Claudia Acquistapace
+date: 2026-06-08
+
+
 """
 
 import os
