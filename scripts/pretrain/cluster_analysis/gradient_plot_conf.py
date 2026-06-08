@@ -1,6 +1,34 @@
 
+"""Plot class-wise mean-gradient scatter diagnostics.
+
+Reads:
+- Mean-gradient NPZ files from /sat_data/output/grl_2026/npz/:
+  mean_gradients_cot.npz, mean_gradients_cth.npz, mean_gradients_cma.npz,
+  mean_gradients_precipitation.npz, and mean_gradients_euclid_msg_grid.npz.
+- Older all-percentile NPY gradient files from /sat_data/output/grl_2026/figs/
+  for grouped CTH/COT/CMA scatter plots.
+
+Outputs:
+- Scatter-plot PNG files saved to /sat_data/output/grl_2026/figs/.
+- Current precipitation-lightning outputs include sum[mm] vs lightning_count
+  and prec_fraction vs lightning_mean_nonzero.
+
+What it does:
+- Loads mean gradient values per cloud class.
+- Selects specific gradient columns either by position or by NPZ column name.
+- Creates scatter plots comparing cloud, precipitation, and lightning gradient
+  diagnostics across classes, with shared axis limits where useful.
+
+Output files:
+- gradient_scatter_cma_cth_perc50.png: CTH vs CMA gradients for the 50th percentile.
+- gradient_scatter_cot_cth_perc50.png: CTH vs COT gradients for the 50th percentile.
+- {class_name}_gradient_scatter_cma_cth.png: CTH vs CMA gradients across all percentiles for grouped classes.
+- gradient_scatter_prec_sum_lightning_count.png: Precipitation sum vs lightning count gradients.
+- gradient_scatter_prec_fraction_lightning_mean_nonzero.png: Precipitation fraction vs lightning mean non-zero gradients.
+
+"""
+
 import os
-from turtle import color
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,7 +44,6 @@ from typing import Tuple
 
 import sys
 import os
-from turtle import color
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -53,6 +80,11 @@ SPARSE_AWARE_DIAGNOSTIC_COLUMNS = {
 }
 CONDITIONAL_MEAN_DIAGNOSTIC_COLUMNS = {
     "euclid_msg_grid": "lightning_mean_nonzero",
+}
+FIT_COLORS_BY_GROUP = {
+    "Convection": "red",
+    "Overcast": "blue",
+    "Broken Clouds": "green",
 }
 
 from utils.plotting.class_colors import colors_per_class1_names, class_groups
@@ -92,15 +124,31 @@ def main():
     file_path_cot = os.path.join(input_dir, f'mean_gradients_cot.npz')
     file_path_cth = os.path.join(input_dir, f'mean_gradients_cth.npz')
     file_path_cma = os.path.join(input_dir, f'mean_gradients_cma.npz')
+    file_path_prec = os.path.join(input_dir, f'mean_gradients_precipitation.npz')
+    file_path_lightning = os.path.join(input_dir, f'mean_gradients_euclid_msg_grid.npz')
 
-
+    # read the 50th percentile gradients for cth and cma to compute shared axis limits \
+    # across classes and percentiles for the scatter plots
     mean_grad_class_cot = read_gradient_files(file_path_cot)
     mean_grad_class_cth = read_gradient_files(file_path_cth)
     mean_grad_class_cma = read_gradient_files(file_path_cma)
+    mean_grad_class_prec, prec_columns, _ = read_gradient_npz(file_path_prec)
+    mean_grad_class_lightning, lightning_columns, _ = read_gradient_npz(file_path_lightning)
     perc = '50'
+
+    # extract the 50th percentile gradients for cth, cot, cma, and precipitation for all classes
     mean_grad_cot_50 = get_gradient_column(mean_grad_class_cot, 0)
     mean_grad_cth_50 = get_gradient_column(mean_grad_class_cth, 0)
     mean_grad_cma = get_gradient_column(mean_grad_class_cma, 0)
+    mean_grad_prec_sum = get_gradient_column_by_name(mean_grad_class_prec, prec_columns, "sum[mm]")
+    mean_grad_prec_fraction = get_gradient_column_by_name(mean_grad_class_prec, prec_columns, "prec_fraction")
+    mean_grad_lightning_count = get_gradient_column_by_name(mean_grad_class_lightning, lightning_columns, "lightning_count")
+    mean_grad_lightning_mean_nonzero = get_gradient_column_by_name(
+        mean_grad_class_lightning,
+        lightning_columns,
+        "lightning_mean_nonzero",
+    )
+
     shared_limits = compute_shared_limits(mean_grad_cth_50, mean_grad_cma)
 
     # plot gradients of cma and 50th perc cth for each class using colors from colors_per_class1_names
@@ -112,6 +160,9 @@ def main():
                      color=colors[j % len(colors)],
                      label=f'Class {j}',
                        s=200)   
+
+    add_group_fit_lines(plt.gca(), mean_grad_cma, mean_grad_cth_50)
+
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.xlabel('Mean Gradient cloud cover', fontsize=14)
@@ -141,6 +192,7 @@ def main():
                      color=colors[j % len(colors)],
                      label=f'Class {j}',
                        s=200)   
+    add_group_fit_lines(plt.gca(), mean_grad_cot_50, mean_grad_cth_50)
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
 
@@ -162,7 +214,8 @@ def main():
     plt.close()
 
 
-    # read now old .npy files containing all percentiles for cth and cma and plot them in the same scatter plot for the classes in class_groups using the function defined below    
+    # read now old .npy files containing all percentiles for cth and cma and plot them in
+    # the same scatter plot for the classes in class_groups using the function defined below
     all_percentiles_file_path_cot = os.path.join(input_dir_npy, f'mean_gradients_cot.npy')
     all_percentiles_file_path_cth = os.path.join(input_dir_npy, f'mean_gradients_cth.npy')
     all_percentiles_file_path_cma = os.path.join(input_dir_npy, f'mean_gradients_cma.npy')
@@ -183,6 +236,25 @@ def main():
             output_dir,
             shared_limits,
         )
+
+
+    plot_class_scatter(
+        mean_grad_prec_sum,
+        mean_grad_lightning_count,
+        xlabel='Mean Gradient precipitation sum [mm]',
+        ylabel='Mean Gradient lightning count',
+        title='Mean Gradients of Precipitation Sum vs Lightning Count',
+        output_path=os.path.join(output_dir, 'gradient_scatter_prec_sum_lightning_count.png'),
+    )
+
+    plot_class_scatter(
+        mean_grad_prec_fraction,
+        mean_grad_lightning_mean_nonzero,
+        xlabel='Mean Gradient precipitation fraction',
+        ylabel='Mean Gradient lightning mean non-zero',
+        title='Mean Gradients of Precipitation Fraction vs Lightning Mean Non-Zero',
+        output_path=os.path.join(output_dir, 'gradient_scatter_prec_fraction_lightning_mean_nonzero.png'),
+    )
 
 
 
@@ -227,6 +299,13 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
                             edgecolor='black',
                          label=f'Class {class_id} - {perc}th',
                         s=300)
+    fit_handles, fit_labels = add_fit_lines(
+        plt.gca(),
+        mean_grad_cma[class_ids],
+        mean_grad_class_cth[class_ids, :],
+        class_name,
+        FIT_COLORS_BY_GROUP.get(class_name, 'black'),
+    )
     # construct a legend with three labels for the three classes without the percentiles
     handles_class = []
     labels_class = []
@@ -245,8 +324,8 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
         labels_perc.append(f'{perc}th')
     
     # combine labels to create a single legend
-    handles_combined = handles_class + handles_perc
-    labels_combined = labels_class + labels_perc
+    handles_combined = handles_class + handles_perc + fit_handles
+    labels_combined = labels_class + labels_perc + fit_labels
 
     # plot legend for classes
     plt.legend(handles_combined, 
@@ -288,6 +367,13 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
                          edgecolor='black',
                          label=f'Class {class_id} - {perc}th',
                         s=300)
+    fit_handles, fit_labels = add_fit_lines(
+        plt.gca(),
+        mean_grad_cma[class_ids],
+        mean_grad_class_cot[class_ids, :],
+        class_name,
+        FIT_COLORS_BY_GROUP.get(class_name, 'black'),
+    )
     # construct a legend with three labels for the three classes without the percentiles
     handles_class = []
     labels_class = []
@@ -306,8 +392,8 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
         labels_perc.append(f'{perc}th')
     
     # combine labels to create a single legend
-    handles_combined = handles_class + handles_perc
-    labels_combined = labels_class + labels_perc
+    handles_combined = handles_class + handles_perc + fit_handles
+    labels_combined = labels_class + labels_perc + fit_labels
 
     # plot legend for classes
     plt.legend(handles_combined, 
@@ -335,6 +421,116 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
     plt.close()
 
     return
+
+
+def add_group_fit_lines(ax, x_values, y_values):
+    """Add linear and quadratic fit lines for each configured class group."""
+    handles = []
+    labels = []
+    x_values = np.asarray(x_values)
+    y_values = np.asarray(y_values)
+    for group_name, class_ids in class_groups.items():
+        color = FIT_COLORS_BY_GROUP.get(group_name, 'black')
+        group_handles, group_labels = add_fit_lines(
+            ax,
+            x_values[class_ids],
+            y_values[class_ids],
+            group_name,
+            color,
+        )
+        handles.extend(group_handles)
+        labels.extend(group_labels)
+    return handles, labels
+
+
+def add_fit_lines(ax, x_values, y_values, label_prefix, color):
+    """Add linear and quadratic fits for the provided x/y values."""
+    x_values, y_values = prepare_fit_values(x_values, y_values)
+    if len(x_values) == 0:
+        return [], []
+
+    x_unique = np.unique(x_values)
+    if len(x_unique) < 2:
+        return [], []
+
+    x_fit = np.linspace(np.min(x_values), np.max(x_values), 100)
+    handles = []
+    labels = []
+
+    linear_fit = np.poly1d(np.polyfit(x_values, y_values, deg=1))
+    linear_handle, = ax.plot(
+        x_fit,
+        linear_fit(x_fit),
+        color=color,
+        linestyle='--',
+        linewidth=1.5,
+        label=f'{label_prefix} linear fit',
+    )
+    handles.append(linear_handle)
+    labels.append(f'{label_prefix} linear fit')
+
+    if len(x_unique) >= 3:
+        quadratic_fit = np.poly1d(np.polyfit(x_values, y_values, deg=2))
+        quadratic_handle, = ax.plot(
+            x_fit,
+            quadratic_fit(x_fit),
+            color=color,
+            linestyle=':',
+            linewidth=0.5,
+            label=f'{label_prefix} quadratic fit',
+        )
+        handles.append(quadratic_handle)
+        labels.append(f'{label_prefix} quadratic fit')
+
+    return handles, labels
+
+
+def prepare_fit_values(x_values, y_values):
+    """Return finite 1D x/y arrays, repeating x across percentile columns when needed."""
+    x_values = np.asarray(x_values, dtype=float)
+    y_values = np.asarray(y_values, dtype=float)
+
+    if y_values.ndim == 2 and x_values.ndim == 1:
+        x_values = np.repeat(x_values[:, np.newaxis], y_values.shape[1], axis=1)
+
+    x_values = x_values.reshape(-1)
+    y_values = y_values.reshape(-1)
+    finite_mask = np.isfinite(x_values) & np.isfinite(y_values)
+    return x_values[finite_mask], y_values[finite_mask]
+
+
+def plot_class_scatter(x_values, y_values, xlabel, ylabel, title, output_path):
+    """Plot one point per class for two named mean-gradient columns."""
+    shared_limits = compute_shared_limits(np.asarray(y_values), np.asarray(x_values))
+
+    plt.figure(figsize=(8, 6))
+    colors = list(colors_per_class1_names.values())
+    for j in range(len(x_values)):
+        plt.scatter(
+            x_values[j],
+            y_values[j],
+            color=colors[j % len(colors)],
+            label=f'Class {j}',
+            s=200,
+        )
+    add_group_fit_lines(plt.gca(), x_values, y_values)
+    plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
+    plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
+    plt.xlabel(xlabel, fontsize=14)
+    plt.ylabel(ylabel, fontsize=14)
+    plt.title(title, fontsize=16)
+    plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
+    apply_shared_limits(plt.gca(), shared_limits)
+    plt.legend(title='Classes', bbox_to_anchor=(1.05, 1), loc='upper left',
+               fontsize=10, frameon=False, labelspacing=1.0,
+               handletextpad=0.8, borderaxespad=0.8)
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['left'].set_linewidth(1.5)
+    plt.gca().spines['bottom'].set_linewidth(1.5)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
 
 
 def set_axis_limits_with_padding(ax, x_values, y_values, padding_ratio=0.08):
@@ -387,6 +583,14 @@ def read_gradient_files(file_path):
 
     return arr
 
+def read_gradient_npz(file_path):
+    """Read gradients and column metadata from a mean-gradient NPZ file."""
+    with np.load(file_path, allow_pickle=True) as loaded_file:
+        gradients = loaded_file['gradients']
+        columns = loaded_file['columns'].tolist()
+        class_labels = loaded_file['class_labels']
+    return gradients, columns, class_labels
+
 def get_gradient_column(gradients, column_index=0):
     """Return one gradient column as a 1D array."""
     gradients = np.asarray(gradients)
@@ -395,6 +599,14 @@ def get_gradient_column(gradients, column_index=0):
     if gradients.ndim == 2:
         return gradients[:, column_index]
     raise ValueError(f"Expected a 1D or 2D gradient array, got shape {gradients.shape}")
+
+
+def get_gradient_column_by_name(gradients, columns, column_name):
+    """Return one gradient column from an NPZ gradients array using its stored column name."""
+    if column_name not in columns:
+        available_columns = ", ".join(columns)
+        raise ValueError(f"Column '{column_name}' not found. Available columns: {available_columns}")
+    return get_gradient_column(gradients, columns.index(column_name))
 
 
 if __name__ == "__main__":
