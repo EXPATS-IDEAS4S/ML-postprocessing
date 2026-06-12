@@ -66,7 +66,8 @@ features_preparation:
   feature_file_train_features: rank0_chunk0_train_heads_features.npy
   feature_file_test_inds: rank0_chunk0_train_heads_inds.npy
   feature_file_test_features: rank0_chunk0_train_heads_features.npy
-
+  crops_test_path: /sat_data/crops/GRL_testing_crops/ # path to the test crops, used for visualization and metadata in the CSV file
+  images_test_path: /sat_data/crops/GRL_testing_crops/ # path to images of the test crops, used for visualization and metadata in the CSV file
 # ==========================
 # Data / Crops Configuration / Sampling Configuration
 # ==========================
