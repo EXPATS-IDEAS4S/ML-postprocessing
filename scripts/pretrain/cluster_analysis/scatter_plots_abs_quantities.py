@@ -37,6 +37,11 @@ TRAIN_MARKER = "o"
 TEST_MARKER = "^"
 MARKER_SIZE = 100
 LEGEND_GREY = "0.4"
+FIT_COLORS_BY_GROUP = {
+    "Convection": "red",
+    "Overcast": "blue",
+    "Broken Clouds": "green",
+}
 
 
 def read_csv_file(file_path):
@@ -83,7 +88,7 @@ def style_scatter_axis(ax):
     ax.grid(color='lightgray', linestyle='--', linewidth=0.5)
 
 
-def add_color_and_symbol_legends(ax, class_labels):
+def add_color_and_symbol_legends(ax, class_labels, fit_handles=None, fit_labels=None):
     class_handles = [
         Line2D(
             [0],
@@ -97,7 +102,15 @@ def add_color_and_symbol_legends(ax, class_labels):
         )
         for label in class_labels
     ]
-    class_legend = ax.legend(handles=class_handles, frameon=False, title="Classes", loc="best")
+    class_legend = ax.legend(
+        handles=class_handles,
+        frameon=False,
+        title="Classes",
+        bbox_to_anchor=(1.02, 1.0),
+        loc="upper left",
+        fontsize=10,
+        title_fontsize=11,
+    )
     ax.add_artist(class_legend)
 
     split_handles = [
@@ -122,7 +135,66 @@ def add_color_and_symbol_legends(ax, class_labels):
             label='Testing',
         ),
     ]
-    ax.legend(handles=split_handles, frameon=False, title="Dataset", loc="upper left")
+    dataset_legend = ax.legend(
+        handles=split_handles,
+        labels=["Training", "Testing"],
+        frameon=False,
+        title="Dataset",
+        bbox_to_anchor=(1.02, 0.36),
+        loc="upper left",
+        fontsize=10,
+        title_fontsize=11,
+    )
+    ax.add_artist(dataset_legend)
+
+    if fit_handles:
+        ax.legend(
+            handles=fit_handles,
+            labels=fit_labels,
+            frameon=False,
+            title="Fits",
+            bbox_to_anchor=(1.02, 0.14),
+            loc="upper left",
+            fontsize=9,
+            title_fontsize=10,
+        )
+
+
+def add_group_fit_lines(ax, frames, x_source, y_source, x_column, y_column, linestyle, label_suffix):
+    handles = []
+    labels = []
+
+    for group_name, class_ids in class_groups.items():
+        x_values = []
+        y_values = []
+        for class_number in class_ids:
+            x_value = get_value_for_label(frames[x_source], class_number, x_column)
+            y_value = get_value_for_label(frames[y_source], class_number, y_column)
+            if x_value is None or y_value is None:
+                continue
+            x_values.append(float(x_value))
+            y_values.append(float(y_value))
+
+        if len(x_values) < 2 or len(np.unique(x_values)) < 2:
+            continue
+
+        x_values = np.asarray(x_values)
+        y_values = np.asarray(y_values)
+        x_fit = np.linspace(np.min(x_values), np.max(x_values), 100)
+        linear_fit = np.poly1d(np.polyfit(x_values, y_values, deg=1))
+        color = FIT_COLORS_BY_GROUP.get(group_name, "black")
+        handle, = ax.plot(
+            x_fit,
+            linear_fit(x_fit),
+            color=color,
+            linestyle=linestyle,
+            linewidth=2.0,
+            label=f"{group_name} {label_suffix} fit",
+        )
+        handles.append(handle)
+        labels.append(f"{group_name} {label_suffix} fit")
+
+    return handles, labels
 
 
 def scatter_train_test_by_class(ax, train_frames, test_frames, x_source, y_source, x_column, y_column):
@@ -162,6 +234,30 @@ def scatter_train_test_by_class(ax, train_frames, test_frames, x_source, y_sourc
     return class_labels
 
 
+def add_train_test_fit_lines(ax, train_frames, test_frames, x_source, y_source, x_column, y_column):
+    train_handles, train_labels = add_group_fit_lines(
+        ax,
+        train_frames,
+        x_source,
+        y_source,
+        x_column,
+        y_column,
+        linestyle="--",
+        label_suffix="training",
+    )
+    test_handles, test_labels = add_group_fit_lines(
+        ax,
+        test_frames,
+        x_source,
+        y_source,
+        x_column,
+        y_column,
+        linestyle=":",
+        label_suffix="testing",
+    )
+    return train_handles + test_handles, train_labels + test_labels
+
+
 def main():
     
     # define output directory for plots
@@ -175,8 +271,17 @@ def main():
 
     # generate scatter plots for variable pairs
     # 1. Scatter plot of conditional mean count of lightning vs conditional mean cumulated prec over 30 min [mm]
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
     class_labels = scatter_train_test_by_class(
+        ax,
+        train_frames,
+        test_frames,
+        x_source="precipitation",
+        y_source="euclid_msg_grid",
+        x_column="sum[mm]_temporal_mean",
+        y_column="lightning_mean_nonzero_temporal_mean",
+    )
+    fit_handles, fit_labels = add_train_test_fit_lines(
         ax,
         train_frames,
         test_frames,
@@ -190,16 +295,29 @@ def main():
     ax.set_xlabel('Conditional mean cumulated prec over 30 min [mm]')
     ax.set_ylabel('Conditional mean count of lightning')
     ax.set_title('Scatter plot of conditional mean count \n of lightning vs conditional mean cumulated prec over 30 min [mm]')
-    add_color_and_symbol_legends(ax, class_labels)
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, f'scatter_cond_mean_lightning_vs_cond_mean_precipitation.png'), dpi=300)
+    add_color_and_symbol_legends(ax, class_labels, fit_handles, fit_labels)
+    fig.subplots_adjust(right=0.62)
+    fig.savefig(
+        os.path.join(output_dir, f'scatter_cond_mean_lightning_vs_cond_mean_precipitation.png'),
+        dpi=300,
+        bbox_inches='tight',
+    )
     plt.close(fig)
 
 
     # 2. Scatter plot of cma vs prec fraction
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(12, 6))
     class_labels = scatter_train_test_by_class(
+        ax,
+        train_frames,
+        test_frames,
+        x_source="precipitation",
+        y_source="cma",
+        x_column="prec_fraction_temporal_mean",
+        y_column="categorical_temporal_mean",
+    )
+    fit_handles, fit_labels = add_train_test_fit_lines(
         ax,
         train_frames,
         test_frames,
@@ -213,9 +331,13 @@ def main():
     ax.set_xlabel('Precipitation fraction')
     ax.set_ylabel('Cloud cover mean value')
     ax.set_title('Scatter plot of cloud cover mean value vs precipitation fraction')
-    add_color_and_symbol_legends(ax, class_labels)
-    fig.tight_layout()
-    fig.savefig(os.path.join(output_dir, f'scatter_cloud_cover_vs_precipitation_fraction.png'), dpi=300)
+    add_color_and_symbol_legends(ax, class_labels, fit_handles, fit_labels)
+    fig.subplots_adjust(right=0.62)
+    fig.savefig(
+        os.path.join(output_dir, f'scatter_cloud_cover_vs_precipitation_fraction.png'),
+        dpi=300,
+        bbox_inches='tight',
+    )
     plt.close(fig)
 
 if __name__ == "__main__":
