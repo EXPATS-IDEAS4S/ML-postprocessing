@@ -123,8 +123,12 @@ def main(config_path: str = "config.yaml"):
     print(n_subsample)
 
     for run_name in run_names:
+        
+        # Load features and metadata into DataFrame
         df_all = load_dataframes(base_path, data_base_path, run_name, crops_name, file_extension, epoch)
+        # Apply filters and sample clusters
         df_all = apply_filters(df_all, filter_daytime, filter_imerg_minutes, file_extension)
+        # sample clusters and save results
         df_labels = sample_clusters(df_all, sampling_type, n_subsample)
         print(f"Final number of samples: {len(df_labels)}")
         #n_samples_final = len(df_labels)
