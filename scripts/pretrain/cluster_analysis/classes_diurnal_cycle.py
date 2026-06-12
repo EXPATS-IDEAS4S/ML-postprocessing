@@ -8,8 +8,11 @@ It uses the cth crop-statistics CSV only as a source of:
 - the class label (`label`)
 - the timestamp of each frame (`time`)
 
-Input file:
-/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv
+Input files:
+- training:
+  /sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv
+- testing:
+  /sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_test_all_7045_imergmin.csv
 
 How the calculation works:
 1. Read the cth CSV.
@@ -37,15 +40,18 @@ Generated outputs:
     class_{label}_diurnal_cycle.png
 
 Example call:
-python cluster_analysis/classes_diurnal_cycle.py
+python cluster_analysis/classes_diurnal_cycle.py --mode training
+python cluster_analysis/classes_diurnal_cycle.py --mode testing
 
 Author: Claudia Acquistapace
 Date: 10 sept 2025
 Modified: 3 June 2026
 """
 
+import argparse
 import os
 import sys
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -60,11 +66,54 @@ if REPO_ROOT not in sys.path:
 from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
 from utils.plotting.class_colors import colors_per_class1_names, class_groups
 
-CSV_FILE = "/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv"
-OUTPUT_DIR = "/sat_data/output/grl_2026/figs/"
+CSV_FILES = {
+    "training": Path("/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv"),
+    "testing": Path("/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_test_all_7045_imergmin.csv"),
+}
+MODE_ALIASES = {
+    "train": "training",
+    "training": "training",
+    "test": "testing",
+    "testing": "testing",
+}
+OUTPUT_DIR = Path("/sat_data/output/grl_2026/figs")
 EXPECTED_FRAMES_PER_VIDEO = 8
 DIURNAL_LINEWIDTH = 4.0
 INVALID_LABELS = {-100}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Plot class diurnal cycles from train or test crop stats.")
+    parser.add_argument(
+        "--mode",
+        default="training",
+        choices=sorted(MODE_ALIASES),
+        help="Dataset split to plot: training/train or testing/test.",
+    )
+    return parser.parse_args()
+
+
+def normalize_mode(mode: str) -> str:
+    try:
+        return MODE_ALIASES[mode.lower()]
+    except KeyError as exc:
+        valid_modes = ", ".join(sorted(MODE_ALIASES))
+        raise ValueError(f"Invalid mode '{mode}'. Expected one of: {valid_modes}") from exc
+
+
+def resolve_csv_file(mode: str) -> Path:
+    csv_file = CSV_FILES[mode]
+    if not csv_file.exists():
+        raise FileNotFoundError(f"Missing {mode} crop statistics CSV: {csv_file}")
+    return csv_file
+
+
+def output_filename(filename: str, mode: str) -> Path:
+    if mode == "training":
+        return OUTPUT_DIR / filename
+
+    stem, ext = os.path.splitext(filename)
+    return OUTPUT_DIR / f"{stem}_{mode}{ext}"
 
 
 def style_axis(ax):
@@ -88,8 +137,14 @@ def plot_hourly_histogram(ax, hours, values, color, label):
     )
 
 
-def main():
-    df = read_csv_to_dataframe(CSV_FILE)
+def main(mode: str = "training"):
+    mode = normalize_mode(mode)
+    csv_file = resolve_csv_file(mode)
+
+    print(f"Plotting diurnal cycle for {mode} dataset")
+    print(f"Reading CSV: {csv_file}")
+
+    df = read_csv_to_dataframe(str(csv_file))
     print("Column titles:", df.columns.tolist())
 
     video_df = derive_time_class(df)
@@ -100,9 +155,9 @@ def main():
     df_grouped = build_hourly_occurrence(video_df)
     print(df_grouped.head())
 
-    plot_all_classes(df_grouped)
-    plot_single_class_groups(df_grouped)
-    plot_single_classes(df_grouped)
+    plot_all_classes(df_grouped, mode)
+    plot_single_class_groups(df_grouped, mode)
+    plot_single_classes(df_grouped, mode)
 
 
 def build_hourly_occurrence(df_times: pd.DataFrame) -> pd.DataFrame:
@@ -111,7 +166,7 @@ def build_hourly_occurrence(df_times: pd.DataFrame) -> pd.DataFrame:
     return df_grouped.div(df_grouped.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
 
 
-def plot_all_classes(df_grouped: pd.DataFrame):
+def plot_all_classes(df_grouped: pd.DataFrame, mode: str):
     fig, ax = plt.subplots(figsize=(12, 7))
     hours = df_grouped.index.to_numpy()
 
@@ -126,11 +181,11 @@ def plot_all_classes(df_grouped: pd.DataFrame):
     ax.legend(frameon=False, fontsize=11, ncol=3)
     style_axis(ax)
     fig.tight_layout()
-    fig.savefig(os.path.join(OUTPUT_DIR, "class_occurrence_diurnal_cycle.png"), transparent=True)
+    fig.savefig(output_filename("class_occurrence_diurnal_cycle.png", mode), transparent=True)
     plt.close(fig)
 
 
-def plot_single_classes(df_grouped: pd.DataFrame):
+def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
     hours = df_grouped.index.to_numpy()
 
     for label in df_grouped.columns:
@@ -148,11 +203,11 @@ def plot_single_classes(df_grouped: pd.DataFrame):
         ax.set_xticks(range(24))
         style_axis(ax)
         fig.tight_layout()
-        fig.savefig(os.path.join(OUTPUT_DIR, f"class_{label}_diurnal_cycle.png"), transparent=True)
+        fig.savefig(output_filename(f"class_{label}_diurnal_cycle.png", mode), transparent=True)
         plt.close(fig)
 
 
-def plot_single_class_groups(df_grouped: pd.DataFrame):
+def plot_single_class_groups(df_grouped: pd.DataFrame, mode: str):
     hours = df_grouped.index.to_numpy()
 
     for group_name, group_labels in class_groups.items():
@@ -182,7 +237,7 @@ def plot_single_class_groups(df_grouped: pd.DataFrame):
         ax.legend(frameon=False, fontsize=11)
         style_axis(ax)
         fig.tight_layout()
-        fig.savefig(os.path.join(OUTPUT_DIR, f"{group_name}_diurnal_cycle.png"), transparent=True)
+        fig.savefig(output_filename(f"{group_name}_diurnal_cycle.png", mode), transparent=True)
         plt.close(fig)
 
 
@@ -203,5 +258,5 @@ def derive_time_class(df: pd.DataFrame) -> pd.DataFrame:
     return video_df.reset_index(drop=True)
 
 if __name__ == "__main__":
-    main()
-
+    args = parse_args()
+    main(mode=args.mode)

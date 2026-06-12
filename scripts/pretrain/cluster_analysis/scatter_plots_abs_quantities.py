@@ -18,7 +18,9 @@ github: ML_postprocessing
 
 import os
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
+import pandas as pd
 import sys  
 import pdb
 
@@ -31,11 +33,133 @@ if REPO_ROOT not in sys.path:
 sys.path.append(os.path.abspath("/Users/claudia/Documents/ML-postprocessing"))
 from utils.plotting.class_colors import colors_per_class1_names, class_groups   
 
+TRAIN_MARKER = "o"
+TEST_MARKER = "^"
+MARKER_SIZE = 100
+LEGEND_GREY = "0.4"
+
 
 def read_csv_file(file_path):
-    import pandas as pd
     df = pd.read_csv(file_path)
     return df
+
+
+def read_mean_series_files(input_dir, suffix=""):
+    """Read mean time-series summary CSVs for either training or test."""
+    file_path_precipitation = os.path.join(input_dir, f'mean_values_of_series_precipitation{suffix}.csv')
+    file_path_euclid_msg_grid = os.path.join(input_dir, f'mean_values_of_series_euclid_msg_grid{suffix}.csv')
+    file_path_cma = os.path.join(input_dir, f'mean_values_of_series_cma{suffix}.csv')
+
+    return {
+        "precipitation": read_csv_file(file_path_precipitation),
+        "euclid_msg_grid": read_csv_file(file_path_euclid_msg_grid),
+        "cma": read_csv_file(file_path_cma),
+    }
+
+
+def get_value_for_label(df, label, column_name):
+    """Return the scalar value for a class label and column, or None when unavailable."""
+    rows = df[df["label"] == int(label)]
+    if rows.empty or column_name not in rows:
+        return None
+    value = rows.iloc[0][column_name]
+    if pd.isna(value):
+        return None
+    return value
+
+
+def get_available_class_labels(*dataframes):
+    labels = set()
+    for df in dataframes:
+        labels.update(df["label"].dropna().astype(int).tolist())
+    return sorted(label for label in labels if str(label) in colors_per_class1_names)
+
+
+def style_scatter_axis(ax):
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(1.5)
+    ax.spines['bottom'].set_linewidth(1.5)
+    ax.grid(color='lightgray', linestyle='--', linewidth=0.5)
+
+
+def add_color_and_symbol_legends(ax, class_labels):
+    class_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker='o',
+            linestyle='None',
+            markerfacecolor=colors_per_class1_names[str(label)],
+            markeredgecolor=colors_per_class1_names[str(label)],
+            markersize=8,
+            label=f'Class {label}',
+        )
+        for label in class_labels
+    ]
+    class_legend = ax.legend(handles=class_handles, frameon=False, title="Classes", loc="best")
+    ax.add_artist(class_legend)
+
+    split_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker=TRAIN_MARKER,
+            linestyle='None',
+            markerfacecolor=LEGEND_GREY,
+            markeredgecolor=LEGEND_GREY,
+            markersize=8,
+            label='Training',
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker=TEST_MARKER,
+            linestyle='None',
+            markerfacecolor=LEGEND_GREY,
+            markeredgecolor=LEGEND_GREY,
+            markersize=8,
+            label='Testing',
+        ),
+    ]
+    ax.legend(handles=split_handles, frameon=False, title="Dataset", loc="upper left")
+
+
+def scatter_train_test_by_class(ax, train_frames, test_frames, x_source, y_source, x_column, y_column):
+    class_labels = get_available_class_labels(
+        train_frames[x_source],
+        train_frames[y_source],
+        test_frames[x_source],
+        test_frames[y_source],
+    )
+
+    for class_number in class_labels:
+        class_color = colors_per_class1_names[str(class_number)]
+        print(f"Processing class {class_number} with color {class_color}")
+
+        train_x = get_value_for_label(train_frames[x_source], class_number, x_column)
+        train_y = get_value_for_label(train_frames[y_source], class_number, y_column)
+        if train_x is not None and train_y is not None:
+            ax.scatter(
+                train_x,
+                train_y,
+                color=class_color,
+                s=MARKER_SIZE,
+                marker=TRAIN_MARKER,
+            )
+
+        test_x = get_value_for_label(test_frames[x_source], class_number, x_column)
+        test_y = get_value_for_label(test_frames[y_source], class_number, y_column)
+        if test_x is not None and test_y is not None:
+            ax.scatter(
+                test_x,
+                test_y,
+                color=class_color,
+                s=MARKER_SIZE,
+                marker=TEST_MARKER,
+            )
+
+    return class_labels
 
 
 def main():
@@ -46,111 +170,53 @@ def main():
     # define input directory for .csv files with mean gradients and mean values of the time series for each class
     input_dir = '/sat_data/output/grl_2026/npz/'
 
-    # read as arrays the content of the .py files with mean gradients for each class and each percentile
-    file_path_precipitation = os.path.join(input_dir, f'mean_values_of_series_precipitation.csv')
-    file_path_euclid_msg_grid = os.path.join(input_dir, f'mean_values_of_series_euclid_msg_grid.csv')
-    file_path_cma = os.path.join(input_dir, f'mean_values_of_series_cma.csv')
-    file_path_cot = os.path.join(input_dir, f'mean_values_of_series_cot.csv')
-
-    # read csv files
-    df_precipitation = read_csv_file(file_path_precipitation)
-    df_euclid_msg_grid = read_csv_file(file_path_euclid_msg_grid)   
-    df_cma = read_csv_file(file_path_cma)
-    df_cot = read_csv_file(file_path_cot)
-
-
-    # read variables of interest from the .csv files
-    # from precipitation file, read conditional mean sum[mm] precipitation and prec_fraction
-    cond_prec_mean_sum_precipitation = df_precipitation['sum[mm]_temporal_mean']
-    prec_fraction = df_precipitation['prec_fraction_temporal_mean']
-    # from euclid_msg_grid file, read conditional mean count of lightning and lightning_fraction
-    cond_mean_count_lightning = df_euclid_msg_grid['lightning_count_temporal_mean']
-    count_non_zero_lightning = df_euclid_msg_grid['lightning_mean_nonzero_temporal_mean']
-    # from cma
-    mean_cma = df_cma['categorical_temporal_mean']
+    train_frames = read_mean_series_files(input_dir)
+    test_frames = read_mean_series_files(input_dir, suffix="_test")
 
     # generate scatter plots for variable pairs
-    from utils.plotting.class_colors import colors_per_class1_names, class_groups
-
     # 1. Scatter plot of conditional mean count of lightning vs conditional mean cumulated prec over 30 min [mm]
-    plt.figure(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 6))
+    class_labels = scatter_train_test_by_class(
+        ax,
+        train_frames,
+        test_frames,
+        x_source="precipitation",
+        y_source="euclid_msg_grid",
+        x_column="sum[mm]_temporal_mean",
+        y_column="lightning_mean_nonzero_temporal_mean",
+    )
 
-    # loop on class groups and plot distributions for each class in the group in the same plot
-    # crop colors_per_class1_names to 8 classes
-    colors_per_class1_names_cropped = {k: v for k, v in colors_per_class1_names.items() if int(k) < 8}
-
-    for class_number, class_color in colors_per_class1_names.items():
-
-        # select the value of the dataframe corresponding to the class number in the class group from the columns
-        class_rows_precipitation = cond_prec_mean_sum_precipitation[int(class_number)]
-        class_rows_euclid_msg_grid = count_non_zero_lightning[int(class_number)]
-
-        # pick the color associate to the class_id of the class group
-        class_color = colors_per_class1_names[class_number]   
-
-        print(f"Processing class group: {class_number} with color {class_color}")
-        # plot round large bullets with the color of the class group
-        plt.scatter(class_rows_precipitation, 
-                    class_rows_euclid_msg_grid, 
-                    c=class_color,
-                     s=100, 
-                     label=f'Class {class_number}')
-
-    # remove upper and right spines and make remaining thicker
-    ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    
-    plt.xlabel('Conditional mean cumulated prec over 30 min [mm]')
-    plt.ylabel('Conditional mean count of lightning')
-    plt.title('Scatter plot of conditional mean count \n of lightning vs conditional mean cumulated prec over 30 min [mm]')
-    plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
-    plt.legend(frameon=False)
-    plt.savefig(os.path.join(output_dir, f'scatter_cond_mean_lightning_vs_cond_mean_precipitation.png'), dpi=300)
-    plt.close()
+    style_scatter_axis(ax)
+    ax.set_xlabel('Conditional mean cumulated prec over 30 min [mm]')
+    ax.set_ylabel('Conditional mean count of lightning')
+    ax.set_title('Scatter plot of conditional mean count \n of lightning vs conditional mean cumulated prec over 30 min [mm]')
+    add_color_and_symbol_legends(ax, class_labels)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, f'scatter_cond_mean_lightning_vs_cond_mean_precipitation.png'), dpi=300)
+    plt.close(fig)
 
 
     # 2. Scatter plot of cma vs prec fraction
 
-    plt.figure(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 6))
+    class_labels = scatter_train_test_by_class(
+        ax,
+        train_frames,
+        test_frames,
+        x_source="precipitation",
+        y_source="cma",
+        x_column="prec_fraction_temporal_mean",
+        y_column="categorical_temporal_mean",
+    )
 
-    # loop on class groups and plot distributions for each class in the group in the same plot
-    # crop colors_per_class1_names to 8 classes
-    colors_per_class1_names_cropped = {k: v for k, v in colors_per_class1_names.items() if int(k) < 8}
-
-    for class_number, class_color in colors_per_class1_names.items():
-
-        # select the value of the dataframe corresponding to the class number in the class group from the columns
-        class_rows_precipitation = prec_fraction[int(class_number)]
-        class_rows_cma = mean_cma[int(class_number)]
-
-        # pick the color associate to the class_id of the class group
-        class_color = colors_per_class1_names[class_number]   
-
-        print(f"Processing class group: {class_number} with color {class_color}")
-        # plot round large bullets with the color of the class group
-        plt.scatter(class_rows_precipitation, 
-                    class_rows_cma, 
-                    c=class_color,
-                     s=100, 
-                     label=f'Class {class_number}')
-
-    # remove upper and right spines and make remaining thicker
-    ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_linewidth(1.5)
-    ax.spines['bottom'].set_linewidth(1.5)
-    
-    plt.xlabel('Precipitation fraction')
-    plt.ylabel('Cloud cover mean value')
-    plt.title('Scatter plot of cloud cover mean value vs precipitation fraction')
-    plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
-    plt.legend(frameon=False)
-    plt.savefig(os.path.join(output_dir, f'scatter_cloud_cover_vs_precipitation_fraction.png'), dpi=300)
-    plt.close()
+    style_scatter_axis(ax)
+    ax.set_xlabel('Precipitation fraction')
+    ax.set_ylabel('Cloud cover mean value')
+    ax.set_title('Scatter plot of cloud cover mean value vs precipitation fraction')
+    add_color_and_symbol_legends(ax, class_labels)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, f'scatter_cloud_cover_vs_precipitation_fraction.png'), dpi=300)
+    plt.close(fig)
 
 if __name__ == "__main__":
     main()

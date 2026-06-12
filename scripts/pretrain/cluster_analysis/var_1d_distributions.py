@@ -66,6 +66,8 @@ from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv
 
 
 VARIABLE_METADATA_PATH = Path(REPO_ROOT) / "configs" / "variables_metadata.yaml"
+CSV_DIR = Path("/sat_data/output/grl_2026/csv")
+FIG_DIR = Path("/sat_data/output/grl_2026/figs")
 CTH_SCALE_TO_KM = 0.001
 HISTOGRAM_LINEWIDTH = 3.0
 AUTO_VMAX_QUANTILE = 0.995
@@ -169,30 +171,75 @@ def get_value_column(df, metadata: dict, percentile: str) -> str:
     )
 
 
+def resolve_stats_csv_files(variable_name: str) -> Tuple[Path, Path]:
+    train_csv_file = (
+        CSV_DIR
+        / f"crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv"
+    )
+    test_csv_file = (
+        CSV_DIR
+        / f"crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_test_all_7045_imergmin.csv"
+    )
+
+    missing_files = [
+        str(csv_file)
+        for csv_file in (train_csv_file, test_csv_file)
+        if not csv_file.exists()
+    ]
+    if missing_files:
+        raise FileNotFoundError("Missing required crop statistics CSV(s): " + ", ".join(missing_files))
+
+    return train_csv_file, test_csv_file
+
+
+def style_distribution_axes(x_min: float, x_max: float, x_label: str, value_label: str) -> None:
+    plt.xlim(x_min, x_max)
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
+    plt.xlabel(f'{x_label} - {value_label}', fontsize=20)
+    plt.ylabel('Density', fontsize=20)
+    plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.rcParams.update({'font.size': 20})
+    plt.gca().spines['left'].set_linewidth(1.5)
+    plt.gca().spines['bottom'].set_linewidth(1.5)
+    plt.gca().tick_params(width=1.5, length=7)
+
+
 
 def main(variable_name: str = "cth", percentile: str = "50"):
     metadata = load_variable_metadata(variable_name)
     value_scale = get_value_scale(variable_name, metadata)
     x_label = format_axis_label(metadata)
 
-    # read csv file
-    output_dir = '/sat_data/output/grl_2026/figs/'
+    # Read train and test CSV files for the selected variable.
+    train_csv_file, test_csv_file = resolve_stats_csv_files(variable_name)
+    df_train = read_csv_to_dataframe(str(train_csv_file))
+    df_test = read_csv_to_dataframe(str(test_csv_file))
+    print("Training column titles:", df_train.columns.tolist())
+    print("Test column titles:", df_test.columns.tolist())
 
-    # read variable to plot and then read the correpsonding csv file
-    csv_file = f'/sat_data/output/grl_2026/csv/crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv'
-
-    df = read_csv_to_dataframe(csv_file)
-    print("Column titles:", df.columns.tolist())
     # select data for the variable of interest
-    df_var = df[df['var'] == variable_name]
-    value_column = get_value_column(df_var, metadata, percentile)
+    df_train_var = df_train[df_train['var'] == variable_name]
+    df_test_var = df_test[df_test['var'] == variable_name]
+    value_column = get_value_column(df_train_var, metadata, percentile)
+    test_value_column = get_value_column(df_test_var, metadata, percentile)
+    if test_value_column != value_column:
+        raise ValueError(
+            f"Train and test CSVs resolved different value columns: "
+            f"'{value_column}' vs '{test_value_column}'."
+        )
+
     if value_column == "None":
         value_label = "value"
     elif value_column.isdigit():
         value_label = f"{value_column}th perc"
     else:
         value_label = value_column
-    pooled_values = prepare_values(df_var[value_column], value_scale)
+    pooled_train_values = prepare_values(df_train_var[value_column], value_scale)
+    pooled_test_values = prepare_values(df_test_var[value_column], value_scale)
+    pooled_values = np.concatenate([pooled_train_values, pooled_test_values])
 
     if pooled_values.size == 0:
         raise ValueError(f"No nonzero values available to plot for variable '{variable_name}'.")
@@ -210,45 +257,45 @@ def main(variable_name: str = "cth", percentile: str = "50"):
         # plot distributions for each class in the group
         for class_id in class_ids:
 
-            # read values for the selected class
-            df_class = df_var[(df_var['label'] == class_id)]
-            values = prepare_values(df_class[value_column], value_scale)
-            values = clip_values_for_plot(values, x_min, x_max)
+            # Read train and test values for the selected class.
+            df_train_class = df_train_var[(df_train_var['label'] == class_id)]
+            train_values = prepare_values(df_train_class[value_column], value_scale)
+            train_values = clip_values_for_plot(train_values, x_min, x_max)
 
-            if values.size == 0:
-                print(f"Skipping class {class_id} in group {class_name}: no values for {value_label}")
-                continue
+            df_test_class = df_test_var[(df_test_var['label'] == class_id)]
+            test_values = prepare_values(df_test_class[value_column], value_scale)
+            test_values = clip_values_for_plot(test_values, x_min, x_max)
 
             # plot distribution of 50th percentile of cth for the class
-            plt.hist(values,
-             bins=histogram_bins,
-             density=True,
-             histtype='step',
-             linewidth=HISTOGRAM_LINEWIDTH,
-             label=f'Class {class_id}',
-             color=colors_per_class1_names[str(class_id)])
-            # add legend outside the plot
+            if train_values.size > 0:
+                plt.hist(train_values,
+                 bins=histogram_bins,
+                 density=True,
+                 histtype='step',
+                 linewidth=HISTOGRAM_LINEWIDTH,
+                 label=f'Class {class_id} train',
+                 color=colors_per_class1_names[str(class_id)])
+            else:
+                print(f"Skipping train class {class_id} in group {class_name}: no values for {value_label}")
+
+            if test_values.size > 0:
+                plt.hist(test_values,
+                 bins=histogram_bins,
+                 density=True,
+                 histtype='step',
+                 linewidth=HISTOGRAM_LINEWIDTH,
+                 linestyle=':',
+                 label=f'Class {class_id} test',
+                 color=colors_per_class1_names[str(class_id)])
+            else:
+                print(f"Skipping test class {class_id} in group {class_name}: no values for {value_label}")
+
+            style_distribution_axes(x_min, x_max, x_label, value_label)
             plt.legend(frameon=False, fontsize=18)
-            plt.xlim(x_min, x_max)
-            plt.xticks(fontsize=20)
-            plt.yticks(fontsize=20)
-            plt.xlabel(f'{x_label} - {value_label}', fontsize=20)
-            plt.ylabel('Density', fontsize=20)
-            plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
-            # remove top and right spines
-            plt.gca().spines['top'].set_visible(False)
-            plt.gca().spines['right'].set_visible(False)
-            # enlarge fonts of all texts
-            plt.rcParams.update({'font.size': 20})
-            # make axis thicker
-            plt.gca().spines['left'].set_linewidth(1.5)
-            plt.gca().spines['bottom'].set_linewidth(1.5)
-            # make ticks thicker
-            plt.gca().tick_params(width=1.5, length=7)
         plt.xticks(fontsize=20)
         plt.yticks(fontsize=20)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir,
+        plt.savefig(os.path.join(FIG_DIR,
                                   f'distribution_{variable_name}_{percentile}th_perc_{class_name}_classes.png'), 
                                   dpi=300, 
                                   transparent=True)
@@ -257,40 +304,47 @@ def main(variable_name: str = "cth", percentile: str = "50"):
     # add loop on individual classes and plot distributions for each class separately
     for class_id in range(15):
         print(f"Processing class: {class_id}")
-        df_class = df_var[(df_var['label'] == class_id)]
-        values = prepare_values(df_class[value_column], value_scale)
-        values = clip_values_for_plot(values, x_min, x_max)
+        df_train_class = df_train_var[(df_train_var['label'] == class_id)]
+        train_values = prepare_values(df_train_class[value_column], value_scale)
+        train_values = clip_values_for_plot(train_values, x_min, x_max)
 
-        if values.size == 0:
-            print(f"Skipping class {class_id}: no values for {value_label}")
+        df_test_class = df_test_var[(df_test_var['label'] == class_id)]
+        test_values = prepare_values(df_test_class[value_column], value_scale)
+        test_values = clip_values_for_plot(test_values, x_min, x_max)
+
+        if train_values.size == 0 and test_values.size == 0:
+            print(f"Skipping class {class_id}: no train or test values for {value_label}")
             continue
 
         plt.figure(figsize=(10, 8))
         # plot distributions of 50th percentile of cth for the class
-        plt.hist(values,
-            bins=histogram_bins,
-            density=True,
-            histtype='step',
-            linewidth=HISTOGRAM_LINEWIDTH,
-            color=colors_per_class1_names[str(class_id)])
-        plt.xlim(x_min, x_max)
-        plt.xticks(fontsize=20)
-        plt.yticks(fontsize=20)
-        plt.xlabel(f'{x_label} - {value_label}', fontsize=20)
-        plt.ylabel('Density', fontsize=20)
-        plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
-        # remove top and right spines
-        plt.gca().spines['top'].set_visible(False)
-        plt.gca().spines['right'].set_visible(False)
-        # enlarge fonts of all texts
-        plt.rcParams.update({'font.size': 20})
-        # make axis thicker
-        plt.gca().spines['left'].set_linewidth(1.5)
-        plt.gca().spines['bottom'].set_linewidth(1.5)
-        # make ticks thicker
-        plt.gca().tick_params(width=1.5, length=7)
+        if train_values.size > 0:
+            plt.hist(train_values,
+                bins=histogram_bins,
+                density=True,
+                histtype='step',
+                linewidth=HISTOGRAM_LINEWIDTH,
+                label='train',
+                color=colors_per_class1_names[str(class_id)])
+        else:
+            print(f"Skipping train class {class_id}: no values for {value_label}")
+
+        if test_values.size > 0:
+            plt.hist(test_values,
+                bins=histogram_bins,
+                density=True,
+                histtype='step',
+                linewidth=HISTOGRAM_LINEWIDTH,
+                linestyle=':',
+                label='test',
+                color=colors_per_class1_names[str(class_id)])
+        else:
+            print(f"Skipping test class {class_id}: no values for {value_label}")
+
+        style_distribution_axes(x_min, x_max, x_label, value_label)
+        plt.legend(frameon=False, fontsize=18)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir,
+        plt.savefig(os.path.join(FIG_DIR,
                                   f'distribution_{variable_name}_{percentile}th_perc_class_{class_id}.png'), 
                                   dpi=300, 
                                   transparent=True)

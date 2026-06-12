@@ -31,6 +31,11 @@ How to call it
 - activate vissl env with conda activate vissl
 - Run from the repository root with:
   python scripts/pretrain/cluster_analysis/gradient_plot_conf.py
+- Select which dataset split to plot with --mode:
+  python scripts/pretrain/cluster_analysis/gradient_plot_conf.py --mode train
+  python scripts/pretrain/cluster_analysis/gradient_plot_conf.py --mode test
+  python scripts/pretrain/cluster_analysis/gradient_plot_conf.py --mode both
+- The default is --mode both, which overlays training and testing points.
 - Ensure the required NPZ/NPY files are in place and that the output directory is writable.
 Notes:
 - The script uses colors defined in utils.plotting.class_colors for class-wise coloring.
@@ -50,6 +55,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator, FormatStrFormatter
 import xarray as xr
 import pandas as pd
@@ -104,15 +110,25 @@ FIT_COLORS_BY_GROUP = {
     "Overcast": "blue",
     "Broken Clouds": "green",
 }
+TRAIN_MARKER = "o"
+TEST_MARKER = "^"
+LEGEND_GREY = "0.4"
+SCATTER_SIZE = 200
 
 from utils.plotting.class_colors import colors_per_class1_names, class_groups
 from utils.configs import load_config
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot class-wise 1D variable histograms.")
+    parser = argparse.ArgumentParser(description="Plot class-wise gradient scatter diagnostics.")
     parser.add_argument("--var", default="cth", help="Variable name as defined in variables_metadata.yaml")
     parser.add_argument("--percentile", default="50", help="Percentile column to plot for continuous variables")
+    parser.add_argument(
+        "--mode",
+        choices=("train", "test", "both"),
+        default="both",
+        help="Dataset split to plot: train, test, or both.",
+    )
     return parser.parse_args()
 
 
@@ -130,7 +146,11 @@ def load_variable_metadata(variable_name: str) -> dict:
     return variables[variable_name]
 
 
-def main():
+def main(mode: str = "both"):
+    if mode not in {"train", "test", "both"}:
+        raise ValueError("mode must be one of: train, test, both")
+    plot_train = mode in {"train", "both"}
+    plot_test = mode in {"test", "both"}
 
 
     # read gradient npz files and save figures
@@ -144,6 +164,11 @@ def main():
     file_path_cma = os.path.join(input_dir, f'mean_gradients_cma.npz')
     file_path_prec = os.path.join(input_dir, f'mean_gradients_precipitation.npz')
     file_path_lightning = os.path.join(input_dir, f'mean_gradients_euclid_msg_grid.npz')
+    file_path_cot_test = os.path.join(input_dir, f'mean_gradients_cot_test.npz')
+    file_path_cth_test = os.path.join(input_dir, f'mean_gradients_cth_test.npz')
+    file_path_cma_test = os.path.join(input_dir, f'mean_gradients_cma_test.npz')
+    file_path_prec_test = os.path.join(input_dir, f'mean_gradients_precipitation_test.npz')
+    file_path_lightning_test = os.path.join(input_dir, f'mean_gradients_euclid_msg_grid_test.npz')
 
     # read the 50th percentile gradients for cth and cma to compute shared axis limits \
     # across classes and percentiles for the scatter plots
@@ -152,6 +177,11 @@ def main():
     mean_grad_class_cma = read_gradient_files(file_path_cma)
     mean_grad_class_prec, prec_columns, _ = read_gradient_npz(file_path_prec)
     mean_grad_class_lightning, lightning_columns, _ = read_gradient_npz(file_path_lightning)
+    mean_grad_class_cot_test, _, class_labels_test_cot = read_gradient_npz(file_path_cot_test)
+    mean_grad_class_cth_test, _, class_labels_test_cth = read_gradient_npz(file_path_cth_test)
+    mean_grad_class_cma_test, _, class_labels_test_cma = read_gradient_npz(file_path_cma_test)
+    mean_grad_class_prec_test, prec_columns_test, class_labels_test_prec = read_gradient_npz(file_path_prec_test)
+    mean_grad_class_lightning_test, lightning_columns_test, class_labels_test_lightning = read_gradient_npz(file_path_lightning_test)
     perc = '50'
 
     # extract the 50th percentile gradients for cth, cot, cma, and precipitation for all classes
@@ -166,20 +196,46 @@ def main():
         lightning_columns,
         "lightning_mean_nonzero",
     )
+    mean_grad_cot_50_test = get_gradient_column(mean_grad_class_cot_test, 0)
+    mean_grad_cth_50_test = get_gradient_column(mean_grad_class_cth_test, 0)
+    mean_grad_cma_test = get_gradient_column(mean_grad_class_cma_test, 0)
+    mean_grad_prec_sum_test = get_gradient_column_by_name(mean_grad_class_prec_test, prec_columns_test, "sum[mm]")
+    mean_grad_prec_fraction_test = get_gradient_column_by_name(mean_grad_class_prec_test, prec_columns_test, "prec_fraction")
+    mean_grad_lightning_count_test = get_gradient_column_by_name(mean_grad_class_lightning_test, lightning_columns_test, "lightning_count")
+    mean_grad_lightning_mean_nonzero_test = get_gradient_column_by_name(
+        mean_grad_class_lightning_test,
+        lightning_columns_test,
+        "lightning_mean_nonzero",
+    )
 
-    shared_limits = compute_shared_limits(mean_grad_cth_50, mean_grad_cma)
+    shared_limits = compute_shared_limits(
+        combine_mode_values(mean_grad_cth_50, mean_grad_cth_50_test, mode),
+        combine_mode_values(mean_grad_cma, mean_grad_cma_test, mode),
+    )
 
     # plot gradients of cma and 50th perc cth for each class using colors from colors_per_class1_names
     plt.figure(figsize=(8, 6))
-    colors = list(colors_per_class1_names.values())
-    for j in range(len(mean_grad_cth_50)):
-        plt.scatter(mean_grad_cma[j],
-                     mean_grad_cth_50[j],
-                     color=colors[j % len(colors)],
-                     label=f'Class {j}',
-                       s=200)   
+    if plot_train:
+        for j in range(len(mean_grad_cth_50)):
+            plt.scatter(mean_grad_cma[j],
+                         mean_grad_cth_50[j],
+                         color=get_class_color(j),
+                         marker=TRAIN_MARKER,
+                           s=SCATTER_SIZE)
+    if plot_test:
+        scatter_test_points(plt.gca(), mean_grad_cma_test, mean_grad_cth_50_test, class_labels_test_cma)
 
-    add_group_fit_lines(plt.gca(), mean_grad_cma, mean_grad_cth_50)
+    fit_handles, fit_labels = ([], [])
+    test_fit_handles, test_fit_labels = ([], [])
+    if plot_train:
+        fit_handles, fit_labels = add_group_fit_lines(plt.gca(), mean_grad_cma, mean_grad_cth_50)
+    if plot_test:
+        test_fit_handles, test_fit_labels = add_testing_group_fit_lines(
+            plt.gca(),
+            mean_grad_cma_test,
+            mean_grad_cth_50_test,
+            class_labels_test_cma,
+        )
 
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
@@ -188,9 +244,13 @@ def main():
     plt.title(f'Mean Gradients of CMA vs CTH for {perc}th Percentile', fontsize=16)
     plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
     apply_shared_limits(plt.gca(), shared_limits)
-    plt.legend(title='Classes', bbox_to_anchor=(1.05, 1), loc='upper left',
-               fontsize=10, frameon=False, labelspacing=1.0,
-               handletextpad=0.8, borderaxespad=0.8)
+    add_color_and_symbol_legends(
+        plt.gca(),
+        range(len(mean_grad_cth_50)),
+        fit_handles + test_fit_handles,
+        fit_labels + test_fit_labels,
+        mode=mode,
+    )
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
     plt.gca().spines['left'].set_linewidth(1.5)
@@ -200,17 +260,32 @@ def main():
     plt.close()
 
     # plot gradients of 50th perc COT and 50th perc cth for each class using colors from colors_per_class1_names
-    cot_cth_limits = compute_shared_limits(mean_grad_cth_50, mean_grad_cot_50)
+    cot_cth_limits = compute_shared_limits(
+        combine_mode_values(mean_grad_cth_50, mean_grad_cth_50_test, mode),
+        combine_mode_values(mean_grad_cot_50, mean_grad_cot_50_test, mode),
+    )
 
     plt.figure(figsize=(8, 6))
-    colors = list(colors_per_class1_names.values())
-    for j in range(len(mean_grad_cot_50)):
-        plt.scatter(mean_grad_cot_50[j],
-                     mean_grad_cth_50[j],
-                     color=colors[j % len(colors)],
-                     label=f'Class {j}',
-                       s=200)   
-    add_group_fit_lines(plt.gca(), mean_grad_cot_50, mean_grad_cth_50)
+    if plot_train:
+        for j in range(len(mean_grad_cot_50)):
+            plt.scatter(mean_grad_cot_50[j],
+                         mean_grad_cth_50[j],
+                         color=get_class_color(j),
+                         marker=TRAIN_MARKER,
+                           s=SCATTER_SIZE)
+    if plot_test:
+        scatter_test_points(plt.gca(), mean_grad_cot_50_test, mean_grad_cth_50_test, class_labels_test_cot)
+    fit_handles, fit_labels = ([], [])
+    test_fit_handles, test_fit_labels = ([], [])
+    if plot_train:
+        fit_handles, fit_labels = add_group_fit_lines(plt.gca(), mean_grad_cot_50, mean_grad_cth_50)
+    if plot_test:
+        test_fit_handles, test_fit_labels = add_testing_group_fit_lines(
+            plt.gca(),
+            mean_grad_cot_50_test,
+            mean_grad_cth_50_test,
+            class_labels_test_cot,
+        )
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
 
@@ -219,9 +294,13 @@ def main():
     #plt.title(f'Mean Gradients of COT vs CTH for {perc}th Percentile', fontsize=16)
     plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
     apply_shared_limits(plt.gca(), cot_cth_limits)
-    plt.legend(title='Classes', bbox_to_anchor=(1.05, 1), loc='upper left',
-               fontsize=10, frameon=False, labelspacing=1.0,
-               handletextpad=0.8, borderaxespad=0.8)
+    add_color_and_symbol_legends(
+        plt.gca(),
+        range(len(mean_grad_cot_50)),
+        fit_handles + test_fit_handles,
+        fit_labels + test_fit_labels,
+        mode=mode,
+    )
     # remove top and right spines and make remaining thicker
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
@@ -249,34 +328,60 @@ def main():
             mean_grad_class_cth,
             mean_grad_class_cma,
             mean_grad_class_cot,
+            mean_grad_class_cth_test,
+            mean_grad_class_cma_test,
+            mean_grad_class_cot_test,
+            class_labels_test_cth,
             class_ids,
             class_name,
             output_dir,
             shared_limits,
+            mode,
         )
 
 
     plot_class_scatter(
         mean_grad_prec_sum,
         mean_grad_lightning_count,
+        x_values_test=mean_grad_prec_sum_test,
+        y_values_test=mean_grad_lightning_count_test,
+        test_class_labels=class_labels_test_prec,
         xlabel='Mean Gradient precipitation sum [mm]',
         ylabel='Mean Gradient lightning count',
         title='Mean Gradients of Precipitation Sum vs Lightning Count',
         output_path=os.path.join(output_dir, 'gradient_scatter_prec_sum_lightning_count.png'),
+        mode=mode,
     )
 
     plot_class_scatter(
         mean_grad_prec_fraction,
         mean_grad_lightning_mean_nonzero,
+        x_values_test=mean_grad_prec_fraction_test,
+        y_values_test=mean_grad_lightning_mean_nonzero_test,
+        test_class_labels=class_labels_test_prec,
         xlabel='Mean Gradient precipitation fraction',
         ylabel='Mean Gradient lightning mean non-zero',
         title='Mean Gradients of Precipitation Fraction vs Lightning Mean Non-Zero',
         output_path=os.path.join(output_dir, 'gradient_scatter_prec_fraction_lightning_mean_nonzero.png'),
+        mode=mode,
     )
 
 
 
-def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mean_grad_class_cma, mean_grad_class_cot, class_ids, class_name, output_dir='/sat_data/output/grl_2026/figs/', shared_limits=None):
+def plot_scatter_gradcth_gradcma_all_perc_grouped_class(
+    mean_grad_class_cth,
+    mean_grad_class_cma,
+    mean_grad_class_cot,
+    mean_grad_class_cth_test,
+    mean_grad_class_cma_test,
+    mean_grad_class_cot_test,
+    test_class_labels,
+    class_ids,
+    class_name,
+    output_dir='/sat_data/output/grl_2026/figs/',
+    shared_limits=None,
+    mode="both",
+):
     """
     plotting function to create a scatter plot of mean gradients of cth vs cma for selected classes across all percentiles
     Inputs:
@@ -292,66 +397,65 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
     plt.figure(figsize=(8, 6))
     # plot for convective class from class_groups
 
-    colors = list(colors_per_class1_names.values())
-
-    # use markers to distinguish percentiles
-
-    markers = ['o', 's', 'X', 'D']
     mean_grad_cma = get_gradient_column(mean_grad_class_cma, 0)
+    mean_grad_cma_test = get_gradient_column(mean_grad_class_cma_test, 0)
     mean_grad_class_cth = np.asarray(mean_grad_class_cth)
+    mean_grad_class_cth_test = np.asarray(mean_grad_class_cth_test)
     if mean_grad_class_cth.ndim == 1:
         mean_grad_class_cth = mean_grad_class_cth[:, np.newaxis]
+    if mean_grad_class_cth_test.ndim == 1:
+        mean_grad_class_cth_test = mean_grad_class_cth_test[:, np.newaxis]
     if mean_grad_class_cma.ndim == 1:
         mean_grad_class_cma = mean_grad_class_cma[:, np.newaxis]
     if mean_grad_class_cot.ndim == 1:
         mean_grad_class_cot = mean_grad_class_cot[:, np.newaxis]
+    if mean_grad_class_cot_test.ndim == 1:
+        mean_grad_class_cot_test = mean_grad_class_cot_test[:, np.newaxis]
 
     percentiles = ['50'] if mean_grad_class_cth.shape[1] == 1 else ['25', '50', '75', '95'][:mean_grad_class_cth.shape[1]]
-    for class_id in class_ids:
-        for i, perc in enumerate(percentiles):
-            plt.scatter(mean_grad_cma[class_id],
-                         mean_grad_class_cth[class_id, i],
-                         color=colors[class_id % len(colors)],
-                         marker=markers[i % len(markers)],
-                         # set black edge color
-                            edgecolor='black',
-                         label=f'Class {class_id} - {perc}th',
-                        s=300)
-    fit_handles, fit_labels = add_fit_lines(
+    if mode in {"train", "both"}:
+        for class_id in class_ids:
+            for i, perc in enumerate(percentiles):
+                plt.scatter(mean_grad_cma[class_id],
+                             mean_grad_class_cth[class_id, i],
+                             color=get_class_color(class_id),
+                             marker=TRAIN_MARKER,
+                             # set black edge color
+                                edgecolor='black',
+                            s=300)
+    if mode in {"test", "both"}:
+        scatter_test_points_for_group(
+            plt.gca(),
+            mean_grad_cma_test,
+            mean_grad_class_cth_test,
+            test_class_labels,
+            class_ids,
+        )
+    fit_handles, fit_labels = ([], [])
+    test_fit_handles, test_fit_labels = ([], [])
+    if mode in {"train", "both"}:
+        fit_handles, fit_labels = add_selected_group_fit_lines(
+            plt.gca(),
+            mean_grad_cma,
+            mean_grad_class_cth,
+            [class_name],
+        )
+    if mode in {"test", "both"}:
+        test_fit_handles, test_fit_labels = add_testing_group_fit_lines(
+            plt.gca(),
+            mean_grad_cma_test,
+            mean_grad_class_cth_test,
+            test_class_labels,
+            [class_name],
+        )
+    add_color_and_symbol_legends(
         plt.gca(),
-        mean_grad_cma[class_ids],
-        mean_grad_class_cth[class_ids, :],
-        class_name,
-        FIT_COLORS_BY_GROUP.get(class_name, 'black'),
+        class_ids,
+        fit_handles + test_fit_handles,
+        fit_labels + test_fit_labels,
+        fontsize=12,
+        mode=mode,
     )
-    # construct a legend with three labels for the three classes without the percentiles
-    handles_class = []
-    labels_class = []
-    for class_id in class_ids:
-        # assign colors of the classes from colors_per_class1_names
-        handles_class.append(plt.Line2D([0], [0], marker='o', color='w', label=f'Class {class_id}',
-                          markerfacecolor=colors[class_id % len(colors)], markersize=10))
-        labels_class.append(f'Class {class_id}')
-
-    handles_perc = []
-    labels_perc = []
-    for i, perc in enumerate(percentiles):
-        # use the markers defined above
-        handles_perc.append(plt.Line2D([0], [0], marker=markers[i], color='w', label=f'{perc}th',
-                          markerfacecolor='gray', markeredgecolor='black', markersize=10))
-        labels_perc.append(f'{perc}th')
-    
-    # combine labels to create a single legend
-    handles_combined = handles_class + handles_perc + fit_handles
-    labels_combined = labels_class + labels_perc + fit_labels
-
-    # plot legend for classes
-    plt.legend(handles_combined, 
-               labels_combined, 
-                 bbox_to_anchor=(1.05, 1),
-                   loc='upper left', fontsize=16,
-                   frameon=False, labelspacing=1.3,
-                   handletextpad=1.0, borderaxespad=1.0)
     plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
 
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
@@ -376,50 +480,48 @@ def plot_scatter_gradcth_gradcma_all_perc_grouped_class(mean_grad_class_cth, mea
 
     # do the same plot for cma vs cot gradients for the same classes and percentiles
     plt.figure(figsize=(8, 6))
-    for class_id in class_ids:
-        for i, perc in enumerate(percentiles):
-            plt.scatter(mean_grad_cma[class_id],
-                         mean_grad_class_cot[class_id, i],
-                         color=colors[class_id % len(colors)],
-                         marker=markers[i % len(markers)],
-                         edgecolor='black',
-                         label=f'Class {class_id} - {perc}th',
-                        s=300)
-    fit_handles, fit_labels = add_fit_lines(
+    if mode in {"train", "both"}:
+        for class_id in class_ids:
+            for i, perc in enumerate(percentiles):
+                plt.scatter(mean_grad_cma[class_id],
+                             mean_grad_class_cot[class_id, i],
+                             color=get_class_color(class_id),
+                             marker=TRAIN_MARKER,
+                             edgecolor='black',
+                            s=300)
+    if mode in {"test", "both"}:
+        scatter_test_points_for_group(
+            plt.gca(),
+            mean_grad_cma_test,
+            mean_grad_class_cot_test,
+            test_class_labels,
+            class_ids,
+        )
+    fit_handles, fit_labels = ([], [])
+    test_fit_handles, test_fit_labels = ([], [])
+    if mode in {"train", "both"}:
+        fit_handles, fit_labels = add_selected_group_fit_lines(
+            plt.gca(),
+            mean_grad_cma,
+            mean_grad_class_cot,
+            [class_name],
+        )
+    if mode in {"test", "both"}:
+        test_fit_handles, test_fit_labels = add_testing_group_fit_lines(
+            plt.gca(),
+            mean_grad_cma_test,
+            mean_grad_class_cot_test,
+            test_class_labels,
+            [class_name],
+        )
+    add_color_and_symbol_legends(
         plt.gca(),
-        mean_grad_cma[class_ids],
-        mean_grad_class_cot[class_ids, :],
-        class_name,
-        FIT_COLORS_BY_GROUP.get(class_name, 'black'),
+        class_ids,
+        fit_handles + test_fit_handles,
+        fit_labels + test_fit_labels,
+        fontsize=12,
+        mode=mode,
     )
-    # construct a legend with three labels for the three classes without the percentiles
-    handles_class = []
-    labels_class = []
-    for class_id in class_ids:
-        # assign colors of the classes from colors_per_class1_names
-        handles_class.append(plt.Line2D([0], [0], marker='o', color='w', label=f'Class {class_id}',
-                          markerfacecolor=colors[class_id % len(colors)], markersize=10))
-        labels_class.append(f'Class {class_id}')
-
-    handles_perc = []
-    labels_perc = []
-    for i, perc in enumerate(percentiles):
-        # use the markers defined above
-        handles_perc.append(plt.Line2D([0], [0], marker=markers[i], color='w', label=f'{perc}th',
-                          markerfacecolor='gray', markeredgecolor='black', markersize=10))
-        labels_perc.append(f'{perc}th')
-    
-    # combine labels to create a single legend
-    handles_combined = handles_class + handles_perc + fit_handles
-    labels_combined = labels_class + labels_perc + fit_labels
-
-    # plot legend for classes
-    plt.legend(handles_combined, 
-               labels_combined, 
-                 bbox_to_anchor=(1.05, 1),
-                   loc='upper left', fontsize=16,
-                   frameon=False, labelspacing=1.3,
-                   handletextpad=1.0, borderaxespad=1.0)
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.xlabel('Mean Gradient cloud cover', fontsize=18)
@@ -459,6 +561,207 @@ def add_group_fit_lines(ax, x_values, y_values):
         handles.extend(group_handles)
         labels.extend(group_labels)
     return handles, labels
+
+
+def add_selected_group_fit_lines(ax, x_values, y_values, group_names):
+    """Add training fit lines for selected class groups."""
+    handles = []
+    labels = []
+    x_values = np.asarray(x_values)
+    y_values = np.asarray(y_values)
+    for group_name in group_names:
+        class_ids = class_groups.get(group_name, [])
+        if not class_ids:
+            continue
+        color = FIT_COLORS_BY_GROUP.get(group_name, 'black')
+        group_handles, group_labels = add_fit_lines(
+            ax,
+            x_values[class_ids],
+            y_values[class_ids],
+            group_name,
+            color,
+        )
+        handles.extend(group_handles)
+        labels.extend(group_labels)
+    return handles, labels
+
+
+def get_class_color(class_id):
+    return colors_per_class1_names.get(str(int(class_id)), f"C{int(class_id) % 10}")
+
+
+def combine_mode_values(train_values, test_values, mode):
+    values = []
+    if mode in {"train", "both"}:
+        values.append(np.asarray(train_values).reshape(-1))
+    if mode in {"test", "both"}:
+        values.append(np.asarray(test_values).reshape(-1))
+    return np.concatenate(values)
+
+
+def scatter_test_points(ax, x_values, y_values, class_labels):
+    for index, class_id in enumerate(class_labels):
+        if index >= len(x_values) or index >= len(y_values):
+            continue
+        ax.scatter(
+            x_values[index],
+            y_values[index],
+            color=get_class_color(class_id),
+            marker=TEST_MARKER,
+            s=SCATTER_SIZE,
+        )
+
+
+def scatter_test_points_for_group(ax, x_values, y_values, class_labels, class_ids):
+    class_ids = set(class_ids)
+    x_values = np.asarray(x_values)
+    y_values = np.asarray(y_values)
+    for index, class_id in enumerate(class_labels):
+        class_id = int(class_id)
+        if class_id not in class_ids or index >= len(x_values):
+            continue
+        y_row = y_values[index]
+        if np.ndim(y_row) == 0:
+            y_row = [y_row]
+        for y_value in y_row:
+            ax.scatter(
+                x_values[index],
+                y_value,
+                color=get_class_color(class_id),
+                marker=TEST_MARKER,
+                s=300,
+                edgecolor='black',
+            )
+
+
+def add_testing_group_fit_lines(ax, x_values, y_values, class_labels, group_names=None):
+    """Add dotted linear fits through testing points for selected class groups."""
+    handles = []
+    labels = []
+    group_names = list(group_names or class_groups.keys())
+
+    for group_name in group_names:
+        group_handles, group_labels = add_testing_group_fit_line(
+            ax,
+            x_values,
+            y_values,
+            class_labels,
+            group_name,
+        )
+        handles.extend(group_handles)
+        labels.extend(group_labels)
+
+    return handles, labels
+
+
+def add_testing_group_fit_line(ax, x_values, y_values, class_labels, group_name):
+    class_ids = set(class_groups.get(group_name, []))
+    selected_x = []
+    selected_y = []
+
+    x_values = np.asarray(x_values, dtype=float)
+    y_values = np.asarray(y_values, dtype=float)
+
+    for index, class_id in enumerate(class_labels):
+        class_id = int(class_id)
+        if class_id not in class_ids or index >= len(x_values) or index >= len(y_values):
+            continue
+
+        y_row = y_values[index]
+        if np.ndim(y_row) == 0:
+            y_row = [y_row]
+
+        for y_value in y_row:
+            if np.isfinite(x_values[index]) and np.isfinite(y_value):
+                selected_x.append(x_values[index])
+                selected_y.append(y_value)
+
+    if len(selected_x) < 2 or len(np.unique(selected_x)) < 2:
+        return [], []
+
+    selected_x = np.asarray(selected_x)
+    selected_y = np.asarray(selected_y)
+    x_fit = np.linspace(np.min(selected_x), np.max(selected_x), 100)
+    linear_fit = np.poly1d(np.polyfit(selected_x, selected_y, deg=1))
+    color = FIT_COLORS_BY_GROUP.get(group_name, 'black')
+    handle, = ax.plot(
+        x_fit,
+        linear_fit(x_fit),
+        color=color,
+        linestyle=':',
+        linewidth=2.5,
+        label=f'Testing {group_name} fit',
+    )
+    return [handle], [f'Testing {group_name} fit']
+
+
+def add_color_and_symbol_legends(ax, class_labels, extra_handles=None, extra_labels=None, fontsize=10, mode="both"):
+    class_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker=TRAIN_MARKER,
+            linestyle='None',
+            markerfacecolor=get_class_color(class_id),
+            markeredgecolor=get_class_color(class_id),
+            markersize=8,
+            label=f'Class {class_id}',
+        )
+        for class_id in class_labels
+    ]
+    class_legend = ax.legend(
+        handles=class_handles,
+        title='Classes',
+        bbox_to_anchor=(1.05, 1),
+        loc='upper left',
+        fontsize=fontsize,
+        frameon=False,
+        labelspacing=1.0,
+        handletextpad=0.8,
+        borderaxespad=0.8,
+    )
+    ax.add_artist(class_legend)
+
+    dataset_handles = []
+    dataset_labels = []
+    if mode in {"train", "both"}:
+        dataset_handles.append(Line2D(
+            [0],
+            [0],
+            marker=TRAIN_MARKER,
+            linestyle='None',
+            markerfacecolor=LEGEND_GREY,
+            markeredgecolor=LEGEND_GREY,
+            markersize=8,
+            label='Training',
+        ))
+        dataset_labels.append('Training')
+    if mode in {"test", "both"}:
+        dataset_handles.append(Line2D(
+            [0],
+            [0],
+            marker=TEST_MARKER,
+            linestyle='None',
+            markerfacecolor=LEGEND_GREY,
+            markeredgecolor=LEGEND_GREY,
+            markersize=8,
+            label='Testing',
+        ))
+        dataset_labels.append('Testing')
+    handles = dataset_handles + list(extra_handles or [])
+    labels = dataset_labels + list(extra_labels or [])
+    ax.legend(
+        handles,
+        labels,
+        title='Symbols',
+        bbox_to_anchor=(1.05, 0.45),
+        loc='upper left',
+        fontsize=fontsize,
+        frameon=False,
+        labelspacing=1.0,
+        handletextpad=0.8,
+        borderaxespad=0.8,
+    )
 
 
 def add_fit_lines(ax, x_values, y_values, label_prefix, color):
@@ -517,21 +820,47 @@ def prepare_fit_values(x_values, y_values):
     return x_values[finite_mask], y_values[finite_mask]
 
 
-def plot_class_scatter(x_values, y_values, xlabel, ylabel, title, output_path):
+def plot_class_scatter(
+    x_values,
+    y_values,
+    xlabel,
+    ylabel,
+    title,
+    output_path,
+    x_values_test=None,
+    y_values_test=None,
+    test_class_labels=None,
+    mode="both",
+):
     """Plot one point per class for two named mean-gradient columns."""
-    shared_limits = compute_shared_limits(np.asarray(y_values), np.asarray(x_values))
+    limit_x_values = combine_mode_values(x_values, x_values_test, mode)
+    limit_y_values = combine_mode_values(y_values, y_values_test, mode)
+    shared_limits = compute_shared_limits(limit_y_values, limit_x_values)
 
     plt.figure(figsize=(8, 6))
-    colors = list(colors_per_class1_names.values())
-    for j in range(len(x_values)):
-        plt.scatter(
-            x_values[j],
-            y_values[j],
-            color=colors[j % len(colors)],
-            label=f'Class {j}',
-            s=200,
+    if mode in {"train", "both"}:
+        for j in range(len(x_values)):
+            plt.scatter(
+                x_values[j],
+                y_values[j],
+                color=get_class_color(j),
+                marker=TRAIN_MARKER,
+                s=SCATTER_SIZE,
+            )
+    if mode in {"test", "both"} and x_values_test is not None and y_values_test is not None and test_class_labels is not None:
+        scatter_test_points(plt.gca(), x_values_test, y_values_test, test_class_labels)
+    fit_handles, fit_labels = ([], [])
+    test_fit_handles = []
+    test_fit_labels = []
+    if mode in {"train", "both"}:
+        fit_handles, fit_labels = add_group_fit_lines(plt.gca(), x_values, y_values)
+    if mode in {"test", "both"} and x_values_test is not None and y_values_test is not None and test_class_labels is not None:
+        test_fit_handles, test_fit_labels = add_testing_group_fit_lines(
+            plt.gca(),
+            x_values_test,
+            y_values_test,
+            test_class_labels,
         )
-    add_group_fit_lines(plt.gca(), x_values, y_values)
     plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.xlabel(xlabel, fontsize=14)
@@ -539,9 +868,13 @@ def plot_class_scatter(x_values, y_values, xlabel, ylabel, title, output_path):
     plt.title(title, fontsize=16)
     plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
     apply_shared_limits(plt.gca(), shared_limits)
-    plt.legend(title='Classes', bbox_to_anchor=(1.05, 1), loc='upper left',
-               fontsize=10, frameon=False, labelspacing=1.0,
-               handletextpad=0.8, borderaxespad=0.8)
+    add_color_and_symbol_legends(
+        plt.gca(),
+        range(len(x_values)),
+        fit_handles + test_fit_handles,
+        fit_labels + test_fit_labels,
+        mode=mode,
+    )
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
     plt.gca().spines['left'].set_linewidth(1.5)
@@ -628,4 +961,5 @@ def get_gradient_column_by_name(gradients, columns, column_name):
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(mode=args.mode)
