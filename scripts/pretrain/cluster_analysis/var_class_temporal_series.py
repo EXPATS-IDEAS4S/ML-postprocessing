@@ -4,12 +4,21 @@ from __future__ import annotations
 Generate class-wise temporal statistics for crop-based video sequences.
 
 What the script does:
-- Reads a CSV file containing per-frame crop statistics for one input variable.
+- Reads the training and/or testing CSV files containing per-frame crop statistics
+  for one input variable.
+- Uses `--mode train`, `--mode test`, or `--mode both` to decide whether to
+  process and plot only the training dataset, only the testing dataset, or both
+  datasets overlaid.
 - Reconstructs the frame index from the sequence identifiers and timestamps.
-- Groups samples by class and frame.
-- Computes temporal summaries for each class.
-- Calculates gradients of the class-mean time series.
-- Saves gradient arrays and grouped temporal plots.
+- Groups samples by class and frame for the selected dataset(s).
+- Computes temporal summaries for each class and selected dataset.
+- Calculates gradients of the class-mean time series for the selected dataset(s).
+- Saves training outputs with the original filenames when training is selected,
+  and testing outputs with `_test` in the filename when testing is selected.
+- Saves grouped temporal plots with training as solid class-colored lines and
+  testing as dashed class-colored lines.
+- Normalizes plotted values to 0-1 separately for the training and testing
+  datasets, for each class group and plotted variable column.
 
 Supported inputs:
 - Continuous variables with percentile columns, such as `cth` and `cot`.
@@ -17,21 +26,34 @@ Supported inputs:
 - Multi-column precipitation input stored in the `precipitation` CSV.
 
 Input:
-- A CSV file named like:
+- Training CSV, required for `--mode train` and `--mode both`, named like:
     `/sat_data/output/grl_2026/csv/crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv`
+- Testing CSV, required for `--mode test` and `--mode both`, named like:
+    `/sat_data/output/grl_2026/csv/crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_test_all_7045_imergmin.csv`
 - Required columns include sequence identifiers (`crop`, `time`, optionally `lat_mid`, `lon_mid`),
     the class label (`label`), the variable name (`var`), and either percentile columns or a single value column.
 
 Output:
-- A single NumPy bundle with gradients, column names, base columns, and class labels:
+- Training NumPy bundle with gradients, column names, base columns, and class labels:
     `/sat_data/output/grl_2026/npz/mean_gradients_{variable_name}.npz`
-- A NumPy bundle with the mean value time series for each class:
+- Testing NumPy bundle with gradients, column names, base columns, and class labels:
+    `/sat_data/output/grl_2026/npz/mean_gradients_{variable_name}_test.npz`
+- Training NumPy bundle with the mean value time series for each class:
     `/sat_data/output/grl_2026/npz/mean_values_time_series_{variable_name}.npz`
-- A CSV file with the time series and the mean values of the time series for each class for easier inspection:
-    `/sat_data/output/grl_2026/csv/mean_values_time_series_{variable_name}.csv`
+- Testing NumPy bundle with the mean value time series for each class:
+    `/sat_data/output/grl_2026/npz/mean_values_time_series_{variable_name}_test.npz`
+- CSV files with the time series and temporal means for easier inspection:
+    `/sat_data/output/grl_2026/npz/mean_values_of_series_{variable_name}.csv`
+    `/sat_data/output/grl_2026/npz/mean_values_of_series_{variable_name}_test.csv`
 
 - Grouped temporal plots saved in:
     `/sat_data/output/grl_2026/figs/`
+
+Plot mode:
+- `--mode train`: plots only training curves, using solid class-colored lines.
+- `--mode test`: plots only testing curves, using dashed class-colored lines.
+- `--mode both`: overlays training solid lines and testing dashed lines.
+- If `--mode` is not provided, the default is `both`.
 
 For continuous variables:
 - The script computes the mean 50th percentile value for each frame and class.
@@ -64,14 +86,19 @@ For `euclid_msg_grid`:
 How to run:
 - Activate the environment, then run for example:
     `conda activate vissl`
-    `python var_class_temporal_series.py --var cth`
+    `python scripts/pretrain/cluster_analysis/var_class_temporal_series.py --var cth`
+    `python scripts/pretrain/cluster_analysis/var_class_temporal_series.py --var precipitation`
+    `python scripts/pretrain/cluster_analysis/var_class_temporal_series.py --var euclid_msg_grid`
+    `python scripts/pretrain/cluster_analysis/var_class_temporal_series.py --var cth --mode train`
+    `python scripts/pretrain/cluster_analysis/var_class_temporal_series.py --var cth --mode test`
+    `python scripts/pretrain/cluster_analysis/var_class_temporal_series.py --var cth --mode both`
 
 Author: Claudia Acquistapace
 Date: 10 sept 2025
 """
 import argparse
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 import sys
 import os
 from turtle import color
@@ -122,6 +149,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot class-wise 1D variable histograms.")
     parser.add_argument("--var", default="cth", help="Variable name as defined in variables_metadata.yaml")
     parser.add_argument("--percentile", default="50", help="Percentile column to plot for continuous variables")
+    parser.add_argument(
+        "--mode",
+        default="both",
+        choices=("train", "test", "both"),
+        help="Dataset to plot: training only, testing only, or both overlaid.",
+    )
     return parser.parse_args()
 
 
@@ -148,7 +181,7 @@ def load_variable_metadata(variable_name: str) -> dict:
     return variables[variable_name]
 
 
-def resolve_stats_csv_files(variable_name: str) -> Tuple[Path, Path]:
+def resolve_stats_csv_files(variable_name: str, mode: str) -> Tuple[Optional[Path], Optional[Path]]:
     train_csv_file = (
         CSV_DIR
         / f"crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv"
@@ -158,100 +191,126 @@ def resolve_stats_csv_files(variable_name: str) -> Tuple[Path, Path]:
         / f"crops_stats_var-{variable_name}_stats-50-95-25-75_frames-8_timedim_grl_2026_test_all_7045_imergmin.csv"
     )
 
-    missing_files = [
-        str(csv_file)
-        for csv_file in (train_csv_file, test_csv_file)
-        if not csv_file.exists()
-    ]
+    selected_files = []
+    if mode in ("train", "both"):
+        selected_files.append(train_csv_file)
+    if mode in ("test", "both"):
+        selected_files.append(test_csv_file)
+
+    missing_files = [str(csv_file) for csv_file in selected_files if not csv_file.exists()]
     if missing_files:
         raise FileNotFoundError("Missing required crop statistics CSV(s): " + ", ".join(missing_files))
 
-    return train_csv_file, test_csv_file
+    return (
+        train_csv_file if mode in ("train", "both") else None,
+        test_csv_file if mode in ("test", "both") else None,
+    )
 
 
-def main(variable_name: str = "cth"):
+def main(variable_name: str = "cth", mode: str = "both"):
+    mode = mode.lower()
+    if mode not in ("train", "test", "both"):
+        raise ValueError("mode must be one of: train, test, both")
 
     # reading metadata for the variable to plot and get value scale and axis label
     metadata = load_variable_metadata(variable_name)
 
-    # read train and test csv files for the selected variable
-    train_csv_file, test_csv_file = resolve_stats_csv_files(variable_name)
-    df = read_csv_to_dataframe(str(train_csv_file))
-    df_test = read_csv_to_dataframe(str(test_csv_file))
+    # read the selected train and/or test csv files for the selected variable
+    train_csv_file, test_csv_file = resolve_stats_csv_files(variable_name, mode)
+    df = read_csv_to_dataframe(str(train_csv_file)) if train_csv_file is not None else None
+    df_test = read_csv_to_dataframe(str(test_csv_file)) if test_csv_file is not None else None
 
     # normalize variable-specific column names for downstream processing
-    df = normalize_variable_columns(df, variable_name)
-    df_test = normalize_variable_columns(df_test, variable_name)
-    print("Training column titles:", df.columns.tolist())
-    print("Test column titles:", df_test.columns.tolist())
+    if df is not None:
+        df = normalize_variable_columns(df, variable_name)
+        print("Training column titles:", df.columns.tolist())
+    if df_test is not None:
+        df_test = normalize_variable_columns(df_test, variable_name)
+        print("Test column titles:", df_test.columns.tolist())
     print("Reading CSV files...")
 
     # define variable string for plot titles and axis labels using metadata, or variable name if not defined in metadata
     var_name = variable_name
     var_string = metadata.get('long_name', metadata.get('label', var_name.upper()))
-    value_columns = get_value_columns(df, var_name) # get the value columns to process for the variable (percentiles or single value column)
-    test_value_columns = get_value_columns(df_test, var_name)
-    if test_value_columns != value_columns:
+    reference_df = df if df is not None else df_test
+    value_columns = get_value_columns(reference_df, var_name) # get the value columns to process for the variable (percentiles or single value column)
+    if df is not None and df_test is not None and get_value_columns(df_test, var_name) != value_columns:
         raise ValueError(
             f"Train and test CSVs resolved different value columns: "
-            f"{value_columns} vs {test_value_columns}"
+            f"{value_columns} vs {get_value_columns(df_test, var_name)}"
         )
     gradient_columns = get_gradient_columns(var_name, value_columns) # get the columns for which to compute gradients (value columns and optionally std and sparse-aware diagnostics)
 
-    df_all_mean, class_labels, mean_grad_class, all_grad_class = build_class_temporal_statistics(
-        df,
-        var_name,
-        value_columns,
-        gradient_columns,
-        dataset_name="training",
-    )
-    df_all_mean_test, test_class_labels, _, all_grad_class_test = build_class_temporal_statistics(
-        df_test,
-        var_name,
-        value_columns,
-        gradient_columns,
-        dataset_name="test",
-    )
+    df_all_mean = {}
+    df_all_mean_test = {}
+    class_labels = []
+    test_class_labels = []
+    all_grad_class = None
+    all_grad_class_test = None
+
+    if df is not None:
+        df_all_mean, class_labels, _, all_grad_class = build_class_temporal_statistics(
+            df,
+            var_name,
+            value_columns,
+            gradient_columns,
+            dataset_name="training",
+        )
+    if df_test is not None:
+        df_all_mean_test, test_class_labels, _, all_grad_class_test = build_class_temporal_statistics(
+            df_test,
+            var_name,
+            value_columns,
+            gradient_columns,
+            dataset_name="test",
+        )
 
     print(f"Saving mean gradients for variable {var_name}...")
-    save_mean_time_series_files(df_all_mean, class_labels, value_columns, var_name)
-    save_mean_time_series_files(df_all_mean_test, test_class_labels, value_columns, var_name, suffix="_test")
+    if df is not None:
+        save_mean_time_series_files(df_all_mean, class_labels, value_columns, var_name)
+    if df_test is not None:
+        save_mean_time_series_files(df_all_mean_test, test_class_labels, value_columns, var_name, suffix="_test")
     
     # save the mean gradients for each class and each percentile in a numpy file
-    np.savez(
-        os.path.join(NPZ_DIR, f'mean_gradients_{var_name}.npz'),
-        gradients=all_grad_class, # save the gradients of all columns, including std and sparse-aware diagnostics when present, for all classes
-        columns=np.array(gradient_columns, dtype=object), # save column names as an array of strings in the npz file
-        base_columns=np.array(value_columns, dtype=object), # save the base value columns as an array of strings in the npz file
-        class_labels=np.array(class_labels), # save the class labels as an array in the npz file
-    )
-    np.savez(
-        os.path.join(NPZ_DIR, f'mean_gradients_{var_name}_test.npz'),
-        gradients=all_grad_class_test,
-        columns=np.array(gradient_columns, dtype=object),
-        base_columns=np.array(value_columns, dtype=object),
-        class_labels=np.array(test_class_labels),
-    )
+    if all_grad_class is not None:
+        np.savez(
+            os.path.join(NPZ_DIR, f'mean_gradients_{var_name}.npz'),
+            gradients=all_grad_class, # save the gradients of all columns, including std and sparse-aware diagnostics when present, for all classes
+            columns=np.array(gradient_columns, dtype=object), # save column names as an array of strings in the npz file
+            base_columns=np.array(value_columns, dtype=object), # save the base value columns as an array of strings in the npz file
+            class_labels=np.array(class_labels), # save the class labels as an array in the npz file
+        )
+    if all_grad_class_test is not None:
+        np.savez(
+            os.path.join(NPZ_DIR, f'mean_gradients_{var_name}_test.npz'),
+            gradients=all_grad_class_test,
+            columns=np.array(gradient_columns, dtype=object),
+            base_columns=np.array(value_columns, dtype=object),
+            class_labels=np.array(test_class_labels),
+        )
+
+    df_all_mean_for_plot = df_all_mean if mode in ("train", "both") else {}
+    df_all_mean_test_for_plot = df_all_mean_test if mode in ("test", "both") else None
 
     # plot 50th percentile for selected group of classes normalized between min and max
     if uses_extended_column_stats(var_name):
         for column_name in get_plot_columns(var_name, value_columns):
             plot_temporal_series_perc_by_group(
-                df_all_mean,
+                df_all_mean_for_plot,
                 var_name,
                 column_name,
                 output_dir=str(FIG_DIR),
-                df_all_mean_test=df_all_mean_test,
+                df_all_mean_test=df_all_mean_test_for_plot,
             )
     else:
         for percentile in ('50', '75', '95'):
             if percentile in value_columns:
                 plot_temporal_series_perc_by_group(
-                    df_all_mean,
+                    df_all_mean_for_plot,
                     var_name,
                     percentile,
                     output_dir=str(FIG_DIR),
-                    df_all_mean_test=df_all_mean_test,
+                    df_all_mean_test=df_all_mean_test_for_plot,
                 )
 
 
@@ -422,6 +481,36 @@ def get_test_marker(class_id: int) -> str:
     return TEST_MARKERS[int(class_id) % len(TEST_MARKERS)]
 
 
+def get_group_value_range(data_by_label, group_labels, column_name: str) -> Tuple[float, float]:
+    """Return min/max over one dataset for one class group and column."""
+    values = []
+    for label in group_labels:
+        df_class = data_by_label.get(label)
+        if df_class is None or column_name not in df_class:
+            continue
+        values.extend(df_class[column_name].dropna().to_numpy(dtype=float))
+
+    if not values:
+        return 0.0, 1.0
+
+    values = np.asarray(values, dtype=float)
+    return float(np.nanmin(values)), float(np.nanmax(values))
+
+
+def normalize_to_unit_interval(values, value_min: float, value_max: float) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    value_range = value_max - value_min
+    if value_range == 0:
+        return np.zeros_like(values, dtype=float)
+    return (values - value_min) / value_range
+
+
+def normalized_axis_label(var_name: str, column_name: str) -> str:
+    if uses_extended_column_stats(var_name):
+        return f'Normalized {get_column_axis_label(var_name, column_name)}'
+    return f'Normalized {var_name} {column_name}th Percentile'
+
+
 def plot_temporal_series_perc_by_class(df_grouped, arg, var_name, var_string, label, output_dir):
     """
     function to plot percentiles time series or cloud cover for each class
@@ -436,7 +525,7 @@ def plot_temporal_series_perc_by_class(df_grouped, arg, var_name, var_string, la
     # plot temporal series of categorical mean variable
     plt.figure(figsize=(10, 6))
     plt.plot(df_grouped['frame'], df_grouped[arg], label=var_string, marker='o')
-    plt.title(f'Temporal Series of Mean {var_name} for Class {label}')
+    plt.title(f'Temporal Series of Mean \n {var_name} for Class {label}')
     plt.xlabel('Frame')
     plt.ylabel(f'{var_name} Mean Categorical')
     plt.legend()
@@ -467,93 +556,109 @@ def plot_temporal_series_perc_by_group(df_all_mean, var_name, perc_sel, output_d
     for group_name, group_labels in class_groups.items():
 
         print(group_name, group_labels)
+        train_value_min, train_value_max = get_group_value_range(
+            df_all_mean,
+            group_labels,
+            perc_sel_str,
+        )
+        test_value_min, test_value_max = get_group_value_range(
+            df_all_mean_test or {},
+            group_labels,
+            perc_sel_str,
+        )
 
         # plot temporal evolution of the selected percentile for the group of classes
         plt.figure(figsize=(10, 6))
         plotted_frames = None
         for i in group_labels:
-            if i not in df_all_mean:
+            df_class = df_all_mean.get(i)
+            df_class_test = (df_all_mean_test or {}).get(i)
+
+            if df_class is not None and perc_sel_str not in df_class:
+                df_class = None
+            if df_class_test is not None and perc_sel_str not in df_class_test:
+                df_class_test = None
+            if df_class is None and df_class_test is None:
                 continue
-            df_class = df_all_mean[i]
-            if perc_sel_str not in df_class:
-                continue
-            plotted_frames = df_class['frame']
+
+            plotted_frames = df_class['frame'] if df_class is not None else df_class_test['frame']
             # plot class using the color defined in utils/plotting/class_colors.py
             class_color = colors_per_class1_names.get(str(i))
             if class_color is not None:
-                if uses_extended_column_stats(var_name):
-                    plot_values = df_class[perc_sel_str]
-                else:
-                    plot_values = df_class[perc_sel_str]
-                plt.plot(df_class['frame'], 
-                         plot_values, 
-                         label=f'Class {i}', 
-                         linewidth=3,
-                         color=class_color)
+                if df_class is not None:
+                    plot_values = normalize_to_unit_interval(df_class[perc_sel_str], train_value_min, train_value_max)
+                    plt.plot(df_class['frame'], 
+                             plot_values, 
+                             label=f'Class {i}', 
+                             linewidth=3,
+                             color=class_color)
 
-                if df_all_mean_test is not None and i in df_all_mean_test:
-                    df_class_test = df_all_mean_test[i]
-                    if perc_sel_str in df_class_test:
-                        if uses_extended_column_stats(var_name):
-                            test_plot_values = df_class_test[perc_sel_str]
-                        else:
-                            test_plot_values = df_class_test[perc_sel_str]
-                        plt.plot(
-                            df_class_test['frame'],
-                            test_plot_values,
-                            linestyle='None',
-                            marker=get_test_marker(i),
-                            markersize=8,
-                            markeredgewidth=1.2,
-                            label=f'Class {i} test',
-                            color=class_color,
-                        )
+                if df_class_test is not None:
+                    test_plot_values = normalize_to_unit_interval(df_class_test[perc_sel_str], test_value_min, test_value_max)
+                    plt.plot(
+                        df_class_test['frame'],
+                        test_plot_values,
+                        linestyle='--',
+                        linewidth=3,
+                        label=f'Class {i} test',
+                        color=class_color,
+                    )
 
-                if var_name != 'cma' and is_primary_value_column(var_name, perc_sel_str):
+                if df_class is not None and var_name != 'cma' and is_primary_value_column(var_name, perc_sel_str):
                     std_column = get_std_column(perc_sel_str)
                     if std_column in df_class:
                         lower_bound = df_class[perc_sel_str] - df_class[std_column]
                         upper_bound = df_class[perc_sel_str] + df_class[std_column]
+                        lower_bound = normalize_to_unit_interval(lower_bound, train_value_min, train_value_max)
+                        upper_bound = normalize_to_unit_interval(upper_bound, train_value_min, train_value_max)
+                        lower_bound = np.clip(lower_bound, 0.0, 1.0)
+                        upper_bound = np.clip(upper_bound, 0.0, 1.0)
                         plt.fill_between(df_class['frame'], lower_bound, upper_bound, color=class_color, alpha=0.15)
             else:
-                plt.plot(df_class['frame'], 
-                         df_class[perc_sel_str], 
-                         label=f'Class {i}', 
-                         linewidth=3)
-                if df_all_mean_test is not None and i in df_all_mean_test:
-                    df_class_test = df_all_mean_test[i]
-                    if perc_sel_str in df_class_test:
-                        plt.plot(
-                            df_class_test['frame'],
-                            df_class_test[perc_sel_str],
-                            linestyle='None',
-                            marker=get_test_marker(i),
-                            markersize=8,
-                            markeredgewidth=1.2,
-                            label=f'Class {i} test',
-                        )
+                if df_class is not None:
+                    plot_values = normalize_to_unit_interval(df_class[perc_sel_str], train_value_min, train_value_max)
+                    plt.plot(df_class['frame'], 
+                             plot_values, 
+                             label=f'Class {i}', 
+                             linewidth=3)
+                if df_class_test is not None:
+                    test_plot_values = normalize_to_unit_interval(df_class_test[perc_sel_str], test_value_min, test_value_max)
+                    plt.plot(
+                        df_class_test['frame'],
+                        test_plot_values,
+                        linestyle='--',
+                        linewidth=3,
+                        label=f'Class {i} test',
+                    )
         if uses_extended_column_stats(var_name):
             plt.title(get_column_plot_title(var_name, perc_sel_str, group_name), fontsize=20)
         else:
-            plt.title(f'Temporal Series of {var_name} {perc_sel_str}th Percentile for {group_name.capitalize()} Classes', fontsize=20)
+            plt.title(
+                f'Temporal Series of {var_name} {perc_sel_str}th Percentile\n'
+                f'for {group_name.capitalize()} Classes',
+                fontsize=20,
+            )
         plt.xlabel('Frame', fontsize=20)
         # remove upper and right border
         plt.gca().spines['top'].set_visible(False)
         plt.gca().spines['right'].set_visible(False)
-        if uses_extended_column_stats(var_name):
-            plt.ylabel(get_column_axis_label(var_name, perc_sel_str), fontsize=20)
-        else:
-            plt.ylabel(f'{var_name} {perc_sel_str}th Percentile', fontsize=20)
-        plt.legend(fontsize=16)
+        plt.ylabel(normalized_axis_label(var_name, perc_sel_str), fontsize=20)
+        plt.ylim(0, 1)
+        plt.legend(
+            fontsize=14,
+            frameon=False,
+            bbox_to_anchor=(1.02, 1),
+            loc='upper left',
+        )
         plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
         if plotted_frames is None:
             plt.close()
             continue
         plt.xticks(plotted_frames, fontsize=16)
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 0.78, 1])
         plt_path = os.path.join(output_dir, 
                             f'temporal_series_{perc_sel_str}_{var_name}_{group_name}_classes.png')
-        plt.savefig(plt_path, transparent=True)
+        plt.savefig(plt_path, transparent=True, bbox_inches='tight')
         print(f"Plot saved to {plt_path}")
         plt.close()
 
@@ -978,21 +1083,42 @@ def get_column_plot_title(variable_name: str, column_name: str, group_name: str)
     """
     if is_scalar_variable(variable_name):
         if column_name == get_sparse_diagnostic_column(variable_name, column_name):
-            return f'Temporal Series of Non-Zero {get_scalar_series_label(variable_name)} Fraction for {group_name.capitalize()} Classes'
+            return (
+                f'Temporal Series of Non-Zero {get_scalar_series_label(variable_name)} Fraction\n'
+                f'for {group_name.capitalize()} Classes'
+            )
         if column_name == get_conditional_mean_column(variable_name, column_name):
-            return f'Temporal Series of Conditional Mean {get_scalar_series_label(variable_name)} for {group_name.capitalize()} Classes'
-        return f'Temporal Series of Mean {get_scalar_series_label(variable_name)} for {group_name.capitalize()} Classes'
+            return (
+                f'Temporal Series of Conditional Mean {get_scalar_series_label(variable_name)}\n'
+                f'for {group_name.capitalize()} Classes'
+            )
+        return (
+            f'Temporal Series of Mean {get_scalar_series_label(variable_name)}\n'
+            f'for {group_name.capitalize()} Classes'
+        )
 
     if variable_name == 'precipitation':
         if column_name.endswith('_nonzero_fraction'):
             base_column = strip_suffix(column_name, '_nonzero_fraction')
-            return f'Temporal Series of Non-Zero Fraction for {format_column_label(variable_name, base_column)} in {group_name.capitalize()} Classes'
+            return (
+                f'Temporal Series of Non-Zero Fraction for {format_column_label(variable_name, base_column)}\n'
+                f'in {group_name.capitalize()} Classes'
+            )
         if column_name.endswith('_mean_nonzero'):
             base_column = strip_suffix(column_name, '_mean_nonzero')
-            return f'Temporal Series of Conditional Mean for {format_column_label(variable_name, base_column)} in {group_name.capitalize()} Classes'
-        return f'Temporal Series of Mean {format_column_label(variable_name, column_name)} for {group_name.capitalize()} Classes'
+            return (
+                f'Temporal Series of Conditional Mean for {format_column_label(variable_name, base_column)}\n'
+                f'in {group_name.capitalize()} Classes'
+            )
+        return (
+            f'Temporal Series of Mean {format_column_label(variable_name, column_name)}\n'
+            f'for {group_name.capitalize()} Classes'
+        )
 
-    return f'Temporal Series of {variable_name} {column_name} for {group_name.capitalize()} Classes'
+    return (
+        f'Temporal Series of {variable_name} {column_name}\n'
+        f'for {group_name.capitalize()} Classes'
+    )
 
 
 def get_column_axis_label(variable_name: str, column_name: str) -> str:
@@ -1071,4 +1197,4 @@ def assign_frame_numbers(df: pd.DataFrame) -> pd.DataFrame:
 
 if __name__ == "__main__":
     args = parse_args()
-    main(variable_name=args.var)
+    main(variable_name=args.var, mode=args.mode)
