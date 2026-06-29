@@ -3,7 +3,7 @@
 # ==========================
 experiment:
   run_names: #add mulitple names in case a comparison has to be done (like chacking loss)
-    - grl_2026
+    - grl_2026_k10
     #- dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1
     #- dcv2_ir108_ot_100x100_k9_35k_nc_vit
   epoch: 800          # Epoch number for the main run
@@ -19,14 +19,15 @@ logging:
   logs_path: /home/claudia/codes/ML_postprocessing/logs
   log_level: INFO
 
+
 # ==========================
 # Dimensionality Reduction
 # can be expanded, if many dim reduction methods will be implemented, consider creating a separate config for it
 # ==========================
 reduction:
   epochs: [800] # Feature checkpoints to embed. Each listed epoch triggers a separate reduction run.
-  feature_folder: /sat_data/runs/grl_2026/features/epoch_800/
-  output_path: /sat_data/fig/grl_2026/
+  feature_folder: /sat_data/runs/grl_2026_k10/features/epoch_800/ # /sat_data/runs/grl_2026/features/epoch_800/
+  output_path: /sat_data/fig/grl_2026_k10/
   filename_suffix: ""
   random_states: [3] # Random seeds for the reduction. Each listed seed triggers a separate reduction run.
   n_crops: 25368
@@ -59,9 +60,8 @@ features_preparation:
   crops_path: /sat_data/crops/grl_2026/1/ # path to the crops, used to extract the timestamps for the CSV file
   base_path: /sat_data/runs
   images_path: /sat_data/crops/grl_2026/img/ # path to images of the crops, used for visualization and metadata in the CSV file
-  output_path: /sat_data/output/grl_2026/csv/ #/data1/fig/grl_2026/
+  output_path: /sat_data/output/grl_2026_k10/csv/ #/data1/fig/grl_2026/
   n_dim: 128
-  images_path: /sat_data/crops/grl_2026/img/
   feature_file_train_inds: rank0_chunk0_train_heads_inds.npy
   feature_file_train_features: rank0_chunk0_train_heads_features.npy
   feature_file_test_inds: rank0_chunk0_train_heads_inds.npy
@@ -82,7 +82,7 @@ data:
   filter_imerg: true    # Keep only timestamps at minutes 00 or 30, as IMERG product (set to true only if precipitation is used and n_frames==1)
   n_frames: 8 # Number of frames to consider for each crop
   benchmark_block_size: 250   # Number of samples to process in each day block, processing in chunks needed to avod out of memory (OOM) errors with large datasets
-  feature_csv_path: /sat_data/output/grl_2026/csv/features_grl_2026.csv # Path to the CSV file where the features will be saved, used for visualization and metadata in the CSV file
+  feature_csv_path: /sat_data/output/grl_2026_k10/csv/features_grl_2026_k10.csv # Path to the CSV file where the features will be saved, used for visualization and metadata in the CSV file
 
 # ==========================
 # Statistics
@@ -129,7 +129,7 @@ statistics:
 # visualization embeddings
 # ==========================
 visualization:
-  run_name: grl_2026
+  run_name: grl_2026_k10
   crops_name: grl_2026/1/
   random_state: 3
   sampling_type: all
@@ -140,18 +140,34 @@ visualization:
   variable_type: IR_108
   video: True
   n_frames: 8
-  selection: random # Options: random, closest, farthest, all for tsne visualization, TODO implement the case with more runs
+  selection: closest # Options: random, closest, farthest, all for tsne visualization, TODO implement the case with more runs
   random_seed: [16]
   vmin: -60
   center: 0
   vmax: 5
   cmap: gray_r
-  output_path: /sat_data/output/grl_2026/csv/ #/data1/fig/grl_2026/
+  output_path: /sat_data/output/grl_2026_k10/csv/ #/data1/fig/grl_2026/
   image_crops_path: /sat_data/crops/grl_2026/img/
   plot_types:
     - embedding_crops_table
     - average_crop_shapes
-  embedding_path: /sat_data/fig/grl_2026/tsne_opentsne_perpl-50_grl_2026_3_epoch_800.npy
-  crops_path: /sat_data/runs/grl_2026/crops_list_epoch_800.npy
+  embedding_path: /sat_data/fig/grl_2026_k10/tsne_opentsne_perpl-50_grl_2026_k10_3_epoch_800.npy
+  crops_path: /sat_data/runs/grl_2026_k10/crops_list_epoch_800.npy
 
 
+
+# ==========================
+# output files
+# ==========================
+output_files:
+  run_name: grl_2026_k10
+  training_csv_cth10plus: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cth10plus_stats-fraction_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  training_csv_cth: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv 
+  training_csv_cma: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cma_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv 
+  training_csv_cot: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cot_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  training_csv_cot30plus: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cot30plus_stats-fraction_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  training_csv_precipitation: /sat_data/output/grl_2026_k10/csv/crops_stats_var-precipitation_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  training_csv_euclid_msg_grid: /sat_data/output/grl_2026_k10/csv/crops_stats_var-euclid_msg_grid_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  training_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  testing_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_test_all_7045_imergmin.csv
+  figures_dir: /sat_data/output/grl_2026_k10/figs/
