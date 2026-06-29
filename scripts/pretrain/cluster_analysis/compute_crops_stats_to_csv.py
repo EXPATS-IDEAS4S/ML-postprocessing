@@ -23,18 +23,28 @@ Main steps:
    - from the train feature CSV in `--mode train`;
    - from the test feature CSV in `--mode test`, with recursive test-file
      discovery as a fallback.
-2. For each crop:
-   - Read geographic bounding box (lat/lon) and timestamps from NetCDF
-     metadata, or parse them from the filename for GeoTIFF crops.
-   - Retrieve corresponding CMSAF or IMERG data files from S3.
-   - Subset the data in space and time.
-   - Apply masking (using CMA variable where applicable).
-   - Compute either:
-        * Percentiles (e.g., 50th, 99th) for continuous variables, OR
-        * Category counts/proportions for categorical variables.
-3. Save per-crop statistics to a CSV.
-4. Optionally aggregate per-cluster statistics (legacy code path currently
-   commented out at the bottom of the script).
+2. For each crop chunk, read crop metadata:
+   - geographic bounding box (lat/lon);
+   - crop timestamps;
+   - crop filename and VISSL label.
+3. Group requests by variable and day so that daily S3 bucket files are loaded
+   once per shared block.
+4. For each selected variable:
+   - retrieve the corresponding CMSAF, IMERG, RADAR, or lightning data;
+   - retrieve the matching CMSAF CMA mask when needed;
+   - subset the data in space and time to each crop;
+   - apply CMA filtering where applicable;
+   - compute per-crop or per-frame statistics:
+        * percentiles for continuous variables;
+        * category fractions/count-like summaries for categorical variables;
+        * precipitation sum and precipitation fraction for IMERG.
+5. When `cth` or `cot` are selected, also compute cloud-masked threshold
+   fractions:
+   - `cth10plus`: fraction of cloudy pixels with CTH >= 10000 m;
+   - `cot30plus`: fraction of cloudy pixels with COT >= 30.
+6. Save one CSV per selected or derived variable.
+7. Save one video-level summary CSV with temporal mean, std, and linear
+   gradient for every selected and derived variable.
 
 Inputs:
 -------
@@ -48,6 +58,19 @@ Outputs:
 --------
 - One CSV with crop-level statistics per selected variable:
   `<output_path>/crops_stats_var-<var>_stats-<stats>_frames-<n_frames>_..._<run_name>[_test]_<sampling_type>_<n_subsample>.csv`
+- If `cth` is selected, one additional threshold-fraction CSV:
+  `<output_path>/crops_stats_var-cth10plus_stats-fraction_...csv`
+  with a `fraction` column for cloudy pixels with CTH >= 10000 m.
+- If `cot` is selected, one additional threshold-fraction CSV:
+  `<output_path>/crops_stats_var-cot30plus_stats-fraction_...csv`
+  with a `fraction` column for cloudy pixels with COT >= 30.
+- One video-level summary CSV:
+  `<output_path>/crops_video_summary_vars-<vars>_stats-mean-std-gradient_...csv`
+  with one row per crop video and columns:
+  `crop`, `label`, `time_start`, `time_end`, `lat_mid`, `lon_mid`, plus
+  `<var>_mean`, `<var>_std`, and `<var>_gradient` for every selected and
+  derived variable. Gradients are linear slopes over video time in units per
+  hour.
 - Test-mode output filenames include `test` to avoid overwriting training
   statistics.
 
@@ -59,6 +82,10 @@ Configuration:
       Format of crop files.
 - `sel_vars`, `percentiles` : list
       Variables to process and statistics to compute.
+- `statistics.spatial.mode` : {'aggregated','per_frame'}
+      Controls whether spatial statistics are aggregated over the full video
+      or stored per frame. The video-level summary is most informative in
+      `per_frame` mode because gradients are then calculated across frames.
 - `features_preparation.test_feature_csv_path` : str, optional
       Explicit path to the test feature CSV. If omitted, test mode checks the
       conventional `/sat_data/fig/<run_name>/test/` path before falling back
@@ -99,17 +126,17 @@ PID #  457299 launched at 10:31 on fri 8 may 2026
 
 to check when reopening
 ------
-ps -fp 457299
-pgrep -P 457299
+ps -fp 294705
+pgrep -P 294705
 tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_<run_mode>_<timestamp>.log
 
 to check elapsed times
 ------
-ps -o etime= -p 241881
+ps -o etime= -p 294705
 
 to check memory usage: RSS (resident set size, actual RAM used), VSZ (virtual memory size)
 ------
-ps -o pid,etime,rss,vsz,pmem,pcpu,cmd -p 241881
+ps -o pid,etime,rss,vsz,pmem,pcpu,cmd -p 294705
 
 """
 import argparse
@@ -121,6 +148,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from joblib import Parallel, delayed
+from scipy.ndimage import binary_closing
 
 #sys.path.append(os.path.abspath("/home/Daniele/codes/VISSL_postprocessing"))
 sys.path.append(os.path.abspath("/home/claudia/codes/ML_postprocessing"))
@@ -141,6 +169,12 @@ _S3_CLIENT = None
 _MISSING_BUCKET_OBJECTS = set()
 _SUCCESS_BUCKET_OBJECTS = OrderedDict()
 _MAX_SUCCESS_BUCKET_OBJECTS = 8
+MIN_VALID_FRACTION = 0.01
+
+FRACTION_BIN_CONFIG = {
+    "cth": ("cth10plus", OrderedDict({"fraction": (10000, np.inf)})),
+    "cot": ("cot30plus", OrderedDict({"fraction": (30, np.inf)})),
+}
 
 
 def iter_label_chunks(csv_filename, chunk_size, benchmark_rows=None):
@@ -307,6 +341,72 @@ def format_eta(seconds):
 def format_finish_time(timestamp):
     """Format an estimated finish timestamp for log output."""
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_derived_fraction_vars(sel_vars):
+    """Return derived category-fraction variables implied by selected variables."""
+    return [
+        FRACTION_BIN_CONFIG[var][0]
+        for var in sel_vars
+        if var in FRACTION_BIN_CONFIG
+    ]
+
+
+def get_fraction_bins_for_derived_var(derived_var):
+    """Return fraction-bin definitions for a derived variable name."""
+    for _, (configured_derived_var, bins) in FRACTION_BIN_CONFIG.items():
+        if configured_derived_var == derived_var:
+            return bins
+    return None
+
+
+def close_cloud_mask(cma_values):
+    """Apply 3x3 binary closing to CMA masks frame by frame."""
+    cma_cloud = np.asarray(cma_values) == 1
+
+    if cma_cloud.ndim < 2:
+        return cma_cloud
+
+    if cma_cloud.ndim == 2:
+        return binary_closing(cma_cloud, structure=np.ones((3, 3))).astype(bool)
+
+    original_shape = cma_cloud.shape
+    frame_masks = cma_cloud.reshape((-1,) + original_shape[-2:])
+    closed_masks = [
+        binary_closing(frame_mask, structure=np.ones((3, 3))).astype(bool)
+        for frame_mask in frame_masks
+    ]
+    return np.asarray(closed_masks).reshape(original_shape)
+
+
+def compute_bin_fractions(values, cma_values, bins, min_valid_fraction=MIN_VALID_FRACTION):
+    """
+    Compute cloud-masked fractional area for named value bins.
+
+    Returns a dict of rounded fractions, or None when the crop/frame has too
+    little valid data or no cloudy valid pixels.
+    """
+    values = np.asarray(values)
+    valid = np.isfinite(values)
+
+    if values.size == 0 or valid.mean() < min_valid_fraction:
+        return None
+
+    cloud_mask = close_cloud_mask(cma_values)
+    selected_values = values[valid & cloud_mask]
+    total = selected_values.size
+
+    if total == 0:
+        return None
+
+    fractions = {}
+    for name, (lo, hi) in bins.items():
+        fractions[name] = round(
+            np.logical_and(selected_values >= lo, selected_values < hi).sum() / total,
+            4,
+        )
+
+    return fractions
 
 
 def get_s3_client():
@@ -782,8 +882,10 @@ def extract_block_values(block_context, var, crop_request, mode, logger, day_key
         Day key for logging purposes (e.g., 'YYYY-MM-DD').
     Returns
     -------
-    np.ndarray or list of dict
-        Extracted values for the crop request, either aggregated into a single array or as a list of per-frame dictionaries.
+    tuple
+        Extracted base values and optional derived category fractions. The base
+        values are either aggregated into a single array or returned as a list
+        of per-frame dictionaries. Derived fractions follow the same mode.
     """
     try:
         available_times = [
@@ -793,7 +895,8 @@ def extract_block_values(block_context, var, crop_request, mode, logger, day_key
         ]
 
         if len(available_times) == 0:
-            return np.array([np.nan]) if mode == "aggregated" else []
+            empty_values = np.array([np.nan]) if mode == "aggregated" else []
+            return empty_values, None
 
         ds_subset = block_context["data"].sel(
             lat=slice(crop_request["lat_min"], crop_request["lat_max"]),
@@ -806,15 +909,30 @@ def extract_block_values(block_context, var, crop_request, mode, logger, day_key
             time=available_times,
         )
 
+        derived_var = None
+        derived_values = None
+        if var in FRACTION_BIN_CONFIG:
+            derived_var, bins = FRACTION_BIN_CONFIG[var]
+
         if mode == "aggregated":
             values = ds_subset.values.reshape(-1)
             values_cma = ds_subset_cma.values.reshape(-1)
-            return filter_cma_values(values, values_cma, var)
+            filtered_values = filter_cma_values(values, values_cma, var)
+            if derived_var is not None:
+                derived_values = compute_bin_fractions(
+                    ds_subset.values,
+                    ds_subset_cma.values,
+                    bins,
+                )
+            return filtered_values, derived_values
 
         per_frame_list = []
+        derived_frame_list = [] if derived_var is not None else None
         for time_value in ds_subset.time.values:
-            frame_values = ds_subset.sel(time=time_value).values.reshape(-1)
-            frame_values_cma = ds_subset_cma.sel(time=time_value).values.reshape(-1)
+            frame_data = ds_subset.sel(time=time_value).values
+            frame_cma = ds_subset_cma.sel(time=time_value).values
+            frame_values = frame_data.reshape(-1)
+            frame_values_cma = frame_cma.reshape(-1)
             filtered_frame_values = filter_cma_values(frame_values, frame_values_cma, var)
             frame_result = {
                 "time": np.datetime64(time_value).astype("datetime64[s]").item(),
@@ -823,7 +941,15 @@ def extract_block_values(block_context, var, crop_request, mode, logger, day_key
             if var == "precipitation":
                 frame_result["raw_values"] = frame_values
             per_frame_list.append(frame_result)
-        return per_frame_list
+
+            if derived_var is not None:
+                derived_frame_list.append(
+                    {
+                        "time": np.datetime64(time_value).astype("datetime64[s]").item(),
+                        "fractions": compute_bin_fractions(frame_data, frame_cma, bins),
+                    }
+                )
+        return per_frame_list, derived_frame_list
     except Exception:
         logger.error(
             "Error processing day %s for variable '%s' (crop %s)",
@@ -832,7 +958,8 @@ def extract_block_values(block_context, var, crop_request, mode, logger, day_key
             crop_request["crop_filename"],
             exc_info=True,
         )
-        return np.array([np.nan]) if mode == "aggregated" else []
+        empty_values = np.array([np.nan]) if mode == "aggregated" else []
+        return empty_values, None
 
 
 def process_day_block(block, config, var_config, logger):
@@ -858,6 +985,21 @@ def process_day_block(block, config, var_config, logger):
     var_meta = var_config["variables"][var]
     mode = config["statistics"]["spatial"].get("mode", "aggregated")
 
+    def build_crop_result(crop_request, block_context, day_label):
+        values, derived_values = extract_block_values(
+            block_context,
+            var,
+            crop_request,
+            mode,
+            logger,
+            day_label,
+        )
+        crop_results = [(crop_request["crop_id"], var, values)]
+        if var in FRACTION_BIN_CONFIG:
+            derived_var = FRACTION_BIN_CONFIG[var][0]
+            crop_results.append((crop_request["crop_id"], derived_var, derived_values))
+        return crop_results
+
     if block.get("multi_day", False):
         # Multi-day crop: load and merge all required days
         logger.debug(f"Processing multi-day block for {var} on days {block['day_keys']}")
@@ -877,32 +1019,33 @@ def process_day_block(block, config, var_config, logger):
                 ds_cma_list.append(ds_cma)
         if not ds_list or not ds_cma_list:
             empty_values = np.array([np.nan]) if mode == "aggregated" else []
-            return [
-                (crop_request["crop_id"], var, empty_values)
-                for crop_request in block["crop_requests"]
-            ]
+            results = []
+            for crop_request in block["crop_requests"]:
+                results.append((crop_request["crop_id"], var, empty_values))
+                if var in FRACTION_BIN_CONFIG:
+                    results.append((crop_request["crop_id"], FRACTION_BIN_CONFIG[var][0], None))
+            return results
         # Concatenate along time
         ds_day = xr.concat(ds_list, dim="time")
         ds_day_cma = xr.concat(ds_cma_list, dim="time")
         block_context = build_block_context(ds_day, ds_day_cma, block["crop_requests"])
-        return [
-            (
-                crop_request["crop_id"],
-                var,
-                extract_block_values(block_context, var, crop_request, mode, logger, ",".join(block["day_keys"])),
-            )
-            for crop_request in block["crop_requests"]
-        ]
+        results = []
+        day_label = ",".join(block["day_keys"])
+        for crop_request in block["crop_requests"]:
+            results.extend(build_crop_result(crop_request, block_context, day_label))
+        return results
     else:
         day_key = block["day_key"]
         logger.debug("Processing shared block for %s on %s", var, day_key)
         my_obj, my_obj_cma = load_daily_bucket_objects(day_key, var, var_meta, logger)
         if my_obj is None or my_obj_cma is None:
             empty_values = np.array([np.nan]) if mode == "aggregated" else []
-            return [
-                (crop_request["crop_id"], var, empty_values)
-                for crop_request in block["crop_requests"]
-            ]
+            results = []
+            for crop_request in block["crop_requests"]:
+                results.append((crop_request["crop_id"], var, empty_values))
+                if var in FRACTION_BIN_CONFIG:
+                    results.append((crop_request["crop_id"], FRACTION_BIN_CONFIG[var][0], None))
+            return results
         with xr.open_dataset(io.BytesIO(my_obj)) as ds_bucket, xr.open_dataset(io.BytesIO(my_obj_cma)) as ds_cma_bucket:
             ds_day = ds_bucket[var]
             ds_day_cma = ds_cma_bucket["cma"]
@@ -910,14 +1053,10 @@ def process_day_block(block, config, var_config, logger):
                 ds_day["time"] = ds_day["time"].astype("datetime64[ns]")
                 ds_day_cma["time"] = ds_day_cma["time"].astype("datetime64[ns]")
             block_context = build_block_context(ds_day, ds_day_cma, block["crop_requests"])
-            return [
-                (
-                    crop_request["crop_id"],
-                    var,
-                    extract_block_values(block_context, var, crop_request, mode, logger, day_key),
-                )
-                for crop_request in block["crop_requests"]
-            ]
+            results = []
+            for crop_request in block["crop_requests"]:
+                results.extend(build_crop_result(crop_request, block_context, day_key))
+            return results
 
 
 def combine_block_results(block_results, crop_requests, config, var_config, selected_vars=None):
@@ -940,24 +1079,29 @@ def combine_block_results(block_results, crop_requests, config, var_config, sele
     """
     values_by_crop_var = defaultdict(list)
     mode = config["statistics"]["spatial"].get("mode", "aggregated")
-    sel_vars = (
+    base_sel_vars = (
         selected_vars
         if selected_vars is not None
         else config["statistics"]["spatial"]["sel_vars"]
     )
+    sel_vars = base_sel_vars + get_derived_fraction_vars(base_sel_vars)
 
     for block_result in block_results:
         for crop_id, var, values in block_result:
             if mode == "aggregated":
                 values_by_crop_var[(crop_id, var)].append(values)
             else:
-                values_by_crop_var[(crop_id, var)].extend(values)
+                if values is not None:
+                    values_by_crop_var[(crop_id, var)].extend(values)
 
     flat_results = []
     for crop_request in crop_requests:
         for var in sel_vars:
             # For precipitation, compute percentiles, sum[mm], and fraction
-            if var == "precipitation":
+            fraction_bins = get_fraction_bins_for_derived_var(var)
+            if fraction_bins is not None:
+                stats = list(fraction_bins.keys())
+            elif var == "precipitation":
                 stats = config["statistics"]["spatial"]["percentiles"] + ["sum[mm]", "prec_fraction"]
             else:
                 stats = (
@@ -1048,6 +1192,43 @@ def compute_statistics(values_append, stats, var, mode, times, crop_filename, la
 
     lat_mid = (coords["lat_min"] + coords["lat_max"]) / 2
     lon_mid = (coords["lon_min"] + coords["lon_max"]) / 2
+    fraction_bins = get_fraction_bins_for_derived_var(var)
+
+    if fraction_bins is not None:
+        if mode == "aggregated":
+            fractions = next((item for item in values_append if item is not None), None)
+            row = {
+                "crop": crop_filename,
+                "label": label,
+                "var": var,
+                "time": times[0],
+                "lat_mid": lat_mid,
+                "lon_mid": lon_mid,
+            }
+            for stat in stats:
+                row[stat] = np.nan if fractions is None else fractions.get(stat, np.nan)
+            rows.append(row)
+        elif mode == "per_frame":
+            fractions_by_time = {
+                str(item["time"]): item.get("fractions")
+                for item in values_append
+                if item is not None
+            }
+            for t in times:
+                time_str = str(np.datetime64(t).astype("datetime64[s]").item())
+                fractions = fractions_by_time.get(time_str)
+                row = {
+                    "crop": crop_filename,
+                    "label": label,
+                    "var": var,
+                    "time": time_str,
+                    "lat_mid": lat_mid,
+                    "lon_mid": lon_mid,
+                }
+                for stat in stats:
+                    row[stat] = np.nan if fractions is None else fractions.get(stat, np.nan)
+                rows.append(row)
+        return rows
 
     if not values_append:
         if mode == "aggregated":
@@ -1146,6 +1327,103 @@ def compute_single_stat(values, stat, var):
         return prec_pixels / total_pixels if total_pixels > 0 else 0
     else:
         return compute_percentile(values, int(stat))
+
+
+def compute_temporal_gradient(times, values):
+    """Return linear temporal slope in value units per hour."""
+    times = np.asarray(times, dtype="datetime64[ns]")
+    values = np.asarray(values, dtype=float)
+    valid = np.isfinite(values)
+
+    if valid.sum() < 2:
+        return np.nan
+
+    times = times[valid]
+    values = values[valid]
+    elapsed_hours = (
+        (times - times[0]).astype("timedelta64[s]").astype(float) / 3600.0
+    )
+
+    if np.nanmax(elapsed_hours) == 0:
+        return np.nan
+
+    return np.polyfit(elapsed_hours, values, 1)[0]
+
+
+def summarize_temporal_series(values):
+    """Return mean and std for finite values only."""
+    values = np.asarray(values, dtype=float)
+    valid_values = values[np.isfinite(values)]
+
+    if valid_values.size == 0:
+        return np.nan, np.nan
+
+    return np.mean(valid_values), np.std(valid_values)
+
+
+def get_video_scalar(var, values, var_config, frame_dict=None):
+    """Convert one frame or aggregate of raw values into one scalar video feature."""
+    fraction_bins = get_fraction_bins_for_derived_var(var)
+    if fraction_bins is not None:
+        fractions = values
+        if frame_dict is not None:
+            fractions = frame_dict.get("fractions")
+        if fractions is None:
+            return np.nan
+        return fractions.get("fraction", np.nan)
+
+    if frame_dict is not None:
+        values = frame_dict["values"]
+
+    if var == "precipitation":
+        return compute_single_stat(values, "sum[mm]", var)
+
+    if var in var_config["variables"] and var_config["variables"][var]["categorical"]:
+        return compute_single_stat(values, "None", var)
+
+    values = np.asarray(values, dtype=float)
+    return np.nanmean(values) if values.size > 0 else np.nan
+
+
+def build_video_summary_row(crop_request):
+    """Create the metadata portion of one video-summary row."""
+    return {
+        "crop": crop_request["crop_filename"],
+        "label": crop_request["label"],
+        "time_start": str(np.datetime64(crop_request["times"][0]).astype("datetime64[s]").item()),
+        "time_end": str(np.datetime64(crop_request["times"][-1]).astype("datetime64[s]").item()),
+        "lat_mid": (crop_request["coords"]["lat_min"] + crop_request["coords"]["lat_max"]) / 2,
+        "lon_mid": (crop_request["coords"]["lon_min"] + crop_request["coords"]["lon_max"]) / 2,
+    }
+
+
+def update_video_summary_records(summary_by_crop, block_result, crop_requests_by_id, config, var_config):
+    """Add temporal summary stats from one processed block into per-crop records."""
+    mode = config["statistics"]["spatial"].get("mode", "aggregated")
+
+    for crop_id, var, values in block_result:
+        crop_request = crop_requests_by_id.get(crop_id)
+        if crop_request is None:
+            continue
+
+        row = summary_by_crop.setdefault(crop_id, build_video_summary_row(crop_request))
+
+        if mode == "per_frame":
+            frame_values = [] if values is None else sorted(values, key=lambda item: item["time"])
+            times = [np.datetime64(item["time"]) for item in frame_values]
+            scalars = [
+                get_video_scalar(var, None, var_config, frame_dict=item)
+                for item in frame_values
+            ]
+        else:
+            times = [np.datetime64(crop_request["times"][0])]
+            scalars = [get_video_scalar(var, values, var_config)]
+
+        scalars = np.asarray(scalars, dtype=float)
+        temporal_mean, temporal_std = summarize_temporal_series(scalars)
+        row[f"{var}_mean"] = temporal_mean
+        row[f"{var}_std"] = temporal_std
+        row[f"{var}_gradient"] = compute_temporal_gradient(times, scalars)
 
 
 def extract_geotime_metadata(coords, times):
@@ -1340,13 +1618,15 @@ def main(
 
     # Prepare output CSV paths for each variable
     sel_vars = config["statistics"]["spatial"]["sel_vars"]
+    output_vars = sel_vars + get_derived_fraction_vars(sel_vars)
     var_to_csv = {}
     mode_flag = "test" if mode == "test" else None
-    for var in sel_vars:
+    for var in output_vars:
+        var_stats_str = "fraction" if get_fraction_bins_for_derived_var(var) is not None else stats_str
         parts = [
             "crops_stats",
             f"var-{var}",
-            f"stats-{stats_str}",
+            f"stats-{var_stats_str}",
             f"frames-{n_frames}",
             time_flag,
             geo_flag,
@@ -1362,7 +1642,47 @@ def main(
         if os.path.exists(output_csv_path):
             os.remove(output_csv_path)
 
-    header_written = {var: False for var in sel_vars}
+    video_summary_parts = [
+        "crops_video_summary",
+        f"vars-{'-'.join(output_vars)}",
+        "stats-mean-std-gradient",
+        f"frames-{n_frames}",
+        time_flag,
+        geo_flag,
+        run_name,
+        mode_flag,
+        sampling_type,
+        str(n_subsample) + filter_suffix,
+    ]
+    video_summary_csv = os.path.join(
+        output_path,
+        "_".join([p for p in video_summary_parts if p]) + ".csv",
+    )
+    if os.path.exists(video_summary_csv):
+        os.remove(video_summary_csv)
+    logger.info("video-level summary CSV will be saved to: %s", video_summary_csv)
+
+    header_written = {var: False for var in output_vars}
+    video_summary_header_written = False
+    video_summary_columns = [
+        "crop",
+        "label",
+        "time_start",
+        "time_end",
+        "lat_mid",
+        "lon_mid",
+    ]
+    for var in output_vars:
+        video_summary_columns.extend([
+            f"{var}_mean",
+            f"{var}_std",
+            f"{var}_gradient",
+        ])
+    pd.DataFrame(columns=video_summary_columns).to_csv(
+        video_summary_csv,
+        index=False,
+    )
+    video_summary_header_written = True
     block_size = config["data"].get("benchmark_block_size", 1000)
     run_start_time = time.time()
     total_rows_target = benchmark_rows if benchmark_rows is not None else n_samples
@@ -1407,6 +1727,7 @@ def main(
             crop_request["crop_id"]: crop_request
             for crop_request in crop_requests
         }
+        video_summary_by_crop = OrderedDict()
         day_blocks = build_day_blocks(
             crop_requests,
             config["statistics"]["spatial"]["sel_vars"],
@@ -1436,6 +1757,13 @@ def main(
             )
 
             for i, block_result in enumerate(block_results, 1):
+                update_video_summary_records(
+                    video_summary_by_crop,
+                    block_result,
+                    crop_requests_by_id,
+                    config,
+                    var_config,
+                )
                 flat_results = combine_block_results(
                     [block_result],
                     crop_requests,
@@ -1445,7 +1773,7 @@ def main(
                 )
                 if flat_results:
                     df_block = pd.DataFrame(flat_results)
-                    for var in sel_vars:
+                    for var in output_vars:
                         df_var = df_block[df_block["var"] == var]
                         if not df_var.empty:
                             write_header = not header_written[var]
@@ -1481,6 +1809,13 @@ def main(
                     block_copy["crop_requests"] = subblock_crops
 
                     block_result = process_day_block(block_copy, config, var_config, logger)
+                    update_video_summary_records(
+                        video_summary_by_crop,
+                        block_result,
+                        crop_requests_by_id,
+                        config,
+                        var_config,
+                    )
                     full_subblock_requests = [
                         crop_requests_by_id[crop_request["crop_id"]]
                         for crop_request in subblock_crops
@@ -1495,12 +1830,28 @@ def main(
 
                     if flat_results:
                         df_block = pd.DataFrame(flat_results)
-                        for var in sel_vars:
+                        for var in output_vars:
                             df_var = df_block[df_block["var"] == var]
                             if not df_var.empty:
                                 write_header = not header_written[var]
                                 df_var.to_csv(var_to_csv[var], mode="a", header=write_header, index=False)
                                 header_written[var] = True
+
+        if video_summary_by_crop:
+            ordered_summary_rows = [
+                video_summary_by_crop[crop_request["crop_id"]]
+                for crop_request in crop_requests
+                if crop_request["crop_id"] in video_summary_by_crop
+            ]
+            df_video_summary = pd.DataFrame(ordered_summary_rows)
+            df_video_summary = df_video_summary.reindex(columns=video_summary_columns)
+            df_video_summary.to_csv(
+                video_summary_csv,
+                mode="a",
+                header=not video_summary_header_written,
+                index=False,
+            )
+            video_summary_header_written = True
 
         elapsed_seconds = time.time() - run_start_time
         crops_per_second = processed_crops / elapsed_seconds if elapsed_seconds > 0 else 0.0
