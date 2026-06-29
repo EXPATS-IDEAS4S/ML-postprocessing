@@ -36,7 +36,7 @@ TIME_INTERVAL_FILENAMES = {
 def main():
     
     # define the input and output paths
-    test_csv_path = "/sat_data/output/grl_2026/csv/test_csvs"
+    test_csv_path = "/sat_data/output/grl_2026/csv/test_csv/"
     output_csv_path = "/sat_data/output/grl_2026/csv/"
 
     # read the test dataset csv file
