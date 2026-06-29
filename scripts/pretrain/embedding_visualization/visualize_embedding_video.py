@@ -57,6 +57,9 @@ Animation outputs written after all frame PNGs are created:
 - Random selection mode:
     /sat_data/output/grl_2026/csv/tsne_embedding_grl_2026_epoch_800_10_random_crops_table_transposed_rs-<seed>.gif
     /sat_data/output/grl_2026/csv/tsne_embedding_grl_2026_epoch_800_10_random_crops_table_transposed_rs-<seed>.mp4
+
+example call of the script:
+conda run -n vissl python scripts/pretrain/embedding_visualization/visualize_embedding_video.py --mode=closest 
 """
 
 import os
