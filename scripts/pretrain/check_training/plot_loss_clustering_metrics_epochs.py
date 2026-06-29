@@ -8,13 +8,16 @@ import os
 import pandas as pd
 from collections import OrderedDict
 import sys
+from pathlib import Path
 
-sys.path.append("/home/Daniele/codes/VISSL_postprocessing/utils/plot_utils")
-from check_training_utils import plot_multiple_metrics
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
+
+from utils.plotting.check_training_utils import plot_multiple_metrics
 
 # === CONFIGURATION ===
-RUN_NAME = 'dcv2_ir108-cm_100x100_8frames_k9_70k_nc_r2dplus1'
-OUTPUT_DIR = f"/data1/fig/{RUN_NAME}/clustering_metrics_output/"
+RUN_NAME = 'grl_2026_k10'
+OUTPUT_DIR = f"/sat_data/fig/{RUN_NAME}/clustering_metrics_output/"
 METRICS_FILE = f"{OUTPUT_DIR}clustering_metrics_summary.csv"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 

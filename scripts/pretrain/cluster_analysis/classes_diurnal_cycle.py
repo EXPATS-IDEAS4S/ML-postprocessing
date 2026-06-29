@@ -56,6 +56,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+sys.path.append("/home/claudia/codes/ML_postprocessing")
+
+from utils.configs import load_config
+from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
+from utils.plotting.class_colors import colors_per_class1_names, class_groups
+from utils.plotting.plot_class_analysis import plot_hourly_histogram
+
 
 # Add the repository root so top-level packages such as `utils` resolve
 # regardless of the directory from which this script is launched.
@@ -63,23 +70,60 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", 
 if REPO_ROOT not in sys.path:
     sys.path.append(REPO_ROOT)
 
-from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
-from utils.plotting.class_colors import colors_per_class1_names, class_groups
 
+# read filename of csv files from config file process_run_GRL.yaml
+config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
+config = load_config(config_path)
 CSV_FILES = {
-    "training": Path("/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_all_240216_imergmin.csv"),
-    "testing": Path("/sat_data/output/grl_2026/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_test_all_7045_imergmin.csv"),
+    "training": config["output_files"]["training_video_summary"],
+    "testing": config["output_files"]["testing_video_summary"],
 }
+
 MODE_ALIASES = {
     "train": "training",
     "training": "training",
     "test": "testing",
     "testing": "testing",
 }
-OUTPUT_DIR = Path("/sat_data/output/grl_2026/figs")
+
+# create output directory if it doesn't exist
+OUTPUT_DIR = Path(config["output_files"]["figures_dir"])
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 EXPECTED_FRAMES_PER_VIDEO = 8
 DIURNAL_LINEWIDTH = 4.0
 INVALID_LABELS = {-100}
+SINGLE_CLASS_YMAX = 0.3
+EXPECTED_VIDEO_SUMMARY_COLUMNS = [
+    "crop",
+    "label",
+    "time_start",
+    "time_end",
+    "lat_mid",
+    "lon_mid",
+    "cth_mean",
+    "cth_std",
+    "cth_gradient",
+    "cma_mean",
+    "cma_std",
+    "cma_gradient",
+    "cot_mean",
+    "cot_std",
+    "cot_gradient",
+    "precipitation_mean",
+    "precipitation_std",
+    "precipitation_gradient",
+    "euclid_msg_grid_mean",
+    "euclid_msg_grid_std",
+    "euclid_msg_grid_gradient",
+    "cth10plus_mean",
+    "cth10plus_std",
+    "cth10plus_gradient",
+    "cot30plus_mean",
+    "cot30plus_std",
+    "cot30plus_gradient",
+]
+REQUIRED_TIME_COLUMNS = {"label", "time_start", "time_end"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,9 +147,9 @@ def normalize_mode(mode: str) -> str:
 
 def resolve_csv_file(mode: str) -> Path:
     csv_file = CSV_FILES[mode]
-    if not csv_file.exists():
+    if not Path(csv_file).exists():
         raise FileNotFoundError(f"Missing {mode} crop statistics CSV: {csv_file}")
-    return csv_file
+    return Path(csv_file)
 
 
 def output_filename(filename: str, mode: str) -> Path:
@@ -125,54 +169,89 @@ def style_axis(ax):
     ax.tick_params(width=1.5, length=7)
 
 
-def plot_hourly_histogram(ax, hours, values, color, label):
-    line_color = color if color is not None else "C0"
-    ax.step(
-        hours,
-        values,
-        where="mid",
-        color=line_color,
-        linewidth=DIURNAL_LINEWIDTH,
-        label=label,
+
+def load_video_summary_dataframe(csv_file: Path) -> pd.DataFrame:
+    df = pd.read_csv(csv_file, low_memory=False)
+    if REQUIRED_TIME_COLUMNS.issubset(df.columns):
+        repeated_header_rows = df["time_start"].eq("time_start")
+        if repeated_header_rows.any():
+            print(
+                f"Warning: dropped {repeated_header_rows.sum()} repeated CSV header row(s)."
+            )
+            df = df.loc[~repeated_header_rows].copy()
+        return df
+
+    headerless_df = pd.read_csv(csv_file, header=None)
+    if headerless_df.shape[1] != len(EXPECTED_VIDEO_SUMMARY_COLUMNS):
+        raise ValueError(
+            f"CSV {csv_file} is missing required columns {sorted(REQUIRED_TIME_COLUMNS)} "
+            f"and has {headerless_df.shape[1]} columns, expected "
+            f"{len(EXPECTED_VIDEO_SUMMARY_COLUMNS)}."
+        )
+
+    headerless_df.columns = EXPECTED_VIDEO_SUMMARY_COLUMNS
+    if REQUIRED_TIME_COLUMNS.issubset(headerless_df.columns):
+        print(
+            "Warning: CSV appears to be missing its header row. "
+            "Recovered fixed columns by position."
+        )
+        return headerless_df
+
+    raise ValueError(
+        f"CSV {csv_file} is missing required columns {sorted(REQUIRED_TIME_COLUMNS)}. "
+        f"Found columns: {df.columns.tolist()}"
     )
 
 
 def main(mode: str = "training"):
+
+    # define the mode and corresponding CSV file (test or training)
     mode = normalize_mode(mode)
     csv_file = resolve_csv_file(mode)
 
     print(f"Plotting diurnal cycle for {mode} dataset")
     print(f"Reading CSV: {csv_file}")
 
-    df = read_csv_to_dataframe(str(csv_file))
-    print("Column titles:", df.columns.tolist())
+    # read the CSV into a DataFrame and print column titles
+    video_df = load_video_summary_dataframe(csv_file)
+    print("Column titles:", video_df.columns.tolist())
 
-    video_df = derive_time_class(df)
-    video_df = video_df[~video_df["label"].isin(INVALID_LABELS)].copy()
-    print("Number of videos with 8 frames:", len(video_df))
-    print(video_df.head())
+    # calculate mid hour timestamp between time_start and time_end timestamps columns of video_df and add as mid_time column timestamp
+    video_df["time_start"] = pd.to_datetime(video_df["time_start"])
+    video_df["time_end"] = pd.to_datetime(video_df["time_end"])
 
+    video_df["time_mid"] = (
+        video_df["time_start"]
+        + (video_df["time_end"] - video_df["time_start"]) / 2
+    )
+
+    video_df["time_mid"] = video_df["time_mid"].dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+    # each row is a video, group videos by hour and class label, then normalize occurrences
     df_grouped = build_hourly_occurrence(video_df)
     print(df_grouped.head())
 
     plot_all_classes(df_grouped, mode)
-    plot_single_class_groups(df_grouped, mode)
+    #plot_single_class_groups(df_grouped, mode)
     plot_single_classes(df_grouped, mode)
 
 
 def build_hourly_occurrence(df_times: pd.DataFrame) -> pd.DataFrame:
-    df_grouped = df_times.groupby(["hour", "label"]).size().unstack(fill_value=0)
+    time_mid = pd.to_datetime(df_times["time_mid"])
+    df_grouped = df_times.groupby([time_mid.dt.hour, "label"]).size().unstack(fill_value=0)
     df_grouped = df_grouped.reindex(range(24), fill_value=0)
     return df_grouped.div(df_grouped.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
 
 
 def plot_all_classes(df_grouped: pd.DataFrame, mode: str):
+
     fig, ax = plt.subplots(figsize=(12, 7))
     hours = df_grouped.index.to_numpy()
 
     for label in df_grouped.columns:
         color = colors_per_class1_names.get(str(label), None)
-        plot_hourly_histogram(ax, hours, df_grouped[label].to_numpy(), color, f"Class {label}")
+        plot_hourly_histogram(ax, hours, df_grouped[label].to_numpy(), color, f"Class {label}", linewidth=DIURNAL_LINEWIDTH)
 
     ax.set_xlabel("Hour of the day", fontsize=16)
     ax.set_ylabel("Normalized occurrence", fontsize=16)
@@ -196,11 +275,13 @@ def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
             df_grouped[label].to_numpy(),
             colors_per_class1_names.get(str(label), None),
             f"Class {label}",
+            linewidth=DIURNAL_LINEWIDTH
         )
         ax.set_xlabel("Hour of the day [hh]", fontsize=16)
         ax.set_ylabel("Normalized occurrence", fontsize=16)
         ax.set_title(f"Occurrence of Class {label} across the day", fontsize=16)
         ax.set_xticks(range(24))
+        ax.set_ylim(0, SINGLE_CLASS_YMAX)
         style_axis(ax)
         fig.tight_layout()
         fig.savefig(output_filename(f"class_{label}_diurnal_cycle.png", mode), transparent=True)
@@ -224,6 +305,7 @@ def plot_single_class_groups(df_grouped: pd.DataFrame, mode: str):
                 df_grouped[label].to_numpy(),
                 colors_per_class1_names.get(str(label), None),
                 f"Class {label}",
+                linewidth=DIURNAL_LINEWIDTH
             )
 
         if not has_any_label:
@@ -258,5 +340,8 @@ def derive_time_class(df: pd.DataFrame) -> pd.DataFrame:
     return video_df.reset_index(drop=True)
 
 if __name__ == "__main__":
+    config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
+    config = load_config(config_path) 
+
     args = parse_args()
     main(mode=args.mode)
