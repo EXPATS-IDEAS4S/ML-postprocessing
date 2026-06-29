@@ -11,6 +11,9 @@ Supports two modes:
     - FROM_CROP_STATS = False: Uses crop list CSV for labels/paths
 
 Author: Daniele
+
+Example call of the script:
+conda run -n vissl python scripts/pretrain/prepare_samples/create_df_var_tsne.py --
 """
 
 import os

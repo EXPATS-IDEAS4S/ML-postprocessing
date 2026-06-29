@@ -30,7 +30,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import xarray as xr
 
 # ================= CONFIGURATION =================
-run_name = 'grl_2026'
+run_name = 'grl_2026_k10'
 #event_types = ["PRECIP", "HAIL"]
 train_feat_dir = f'/sat_data/runs/{run_name}/features/epoch_800/'
 n_dim = 128  # Feature vector dimension
@@ -149,7 +149,7 @@ def prepare_and_save_dataset():
     df_test_list = []
     
     image_test_path = f'/sat_data/crops/test_grl_2026/1/' #png for visualization
-    test_feat_dir = f'/sat_data/runs/{run_name}/case_studies_features/'
+    test_feat_dir = f'/sat_data/runs/{run_name}/features_test/'
     # /sat_data/runs/grl_2026/case_studies_features
 
     # Load test features

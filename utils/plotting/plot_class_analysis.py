@@ -14,7 +14,37 @@ import numpy as np
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
- 
+def style_axis(ax):
+    ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(1.5)
+    ax.spines["bottom"].set_linewidth(1.5)
+    ax.tick_params(width=1.5, length=7)
+
+
+
+
+def plot_hourly_histogram(ax, hours, values, color, label, linewidth=3):
+    """"
+    Plots a histogram of values over hours on the provided axis.
+    input:
+        ax: matplotlib axis object
+        hours: array-like, hours of the day (0-23)
+        values: array-like, values corresponding to each hour
+        color: str,§ color for the histogram bars
+        label: str, label for the histogram (for legend)
+        linewidth: float, optional, default=3, the width of the histogram lines
+    """
+    line_color = color if color is not None else "C0"
+    ax.step(
+        hours,
+        values,
+        where="mid",
+        color=line_color,
+        linewidth=linewidth,
+        label=label,
+    )
       
 def plot_single_vars(df, n_subsample, var, long_name, unit, direction, scale, output_path, run_name, sampling_type, stat, legend=False, hue=None, boxplot=True):
     """
