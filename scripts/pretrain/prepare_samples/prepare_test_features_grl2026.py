@@ -18,6 +18,13 @@ Configuration:
     - feature dimension (n_dim), feature filenames.
     - Input paths for training/test crops.
     - Output path for saving final CSV.
+
+
+how to run 
+nohup python prepare_test_features_grl2026.py > prepare_test_features_grl2026.log 2>&1 &
+
+pid: 4041551
+
 """
 
 import numpy as np
