@@ -42,6 +42,7 @@ Generated outputs:
 Example call:
 python cluster_analysis/classes_diurnal_cycle.py --mode training
 python cluster_analysis/classes_diurnal_cycle.py --mode testing
+python cluster_analysis/classes_diurnal_cycle.py --mode both
 
 Author: Claudia Acquistapace
 Date: 10 sept 2025
@@ -51,6 +52,7 @@ Modified: 3 June 2026
 import argparse
 import os
 import sys
+from typing import Dict, List
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -80,6 +82,7 @@ CSV_FILES = {
 }
 
 MODE_ALIASES = {
+    "both": "both",
     "train": "training",
     "training": "training",
     "test": "testing",
@@ -94,6 +97,9 @@ EXPECTED_FRAMES_PER_VIDEO = 8
 DIURNAL_LINEWIDTH = 4.0
 INVALID_LABELS = {-100}
 SINGLE_CLASS_YMAX = 0.3
+SINGLE_CLASS_YMAX_BY_LABEL = {
+    7: 0.5,
+}
 EXPECTED_VIDEO_SUMMARY_COLUMNS = [
     "crop",
     "label",
@@ -127,12 +133,12 @@ REQUIRED_TIME_COLUMNS = {"label", "time_start", "time_end"}
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot class diurnal cycles from train or test crop stats.")
+    parser = argparse.ArgumentParser(description="Plot class diurnal cycles from train/test video summaries.")
     parser.add_argument(
         "--mode",
-        default="training",
+        default="both",
         choices=sorted(MODE_ALIASES),
-        help="Dataset split to plot: training/train or testing/test.",
+        help="Dataset split to plot: training/train, testing/test, or both.",
     )
     return parser.parse_args()
 
@@ -153,7 +159,7 @@ def resolve_csv_file(mode: str) -> Path:
 
 
 def output_filename(filename: str, mode: str) -> Path:
-    if mode == "training":
+    if mode in ("training", "both"):
         return OUTPUT_DIR / filename
 
     stem, ext = os.path.splitext(filename)
@@ -203,10 +209,26 @@ def load_video_summary_dataframe(csv_file: Path) -> pd.DataFrame:
     )
 
 
-def main(mode: str = "training"):
-
-    # define the mode and corresponding CSV file (test or training)
+def main(mode: str = "both"):
     mode = normalize_mode(mode)
+
+    if mode == "both":
+        grouped_by_dataset = {
+            dataset_name: load_hourly_occurrence(dataset_name)
+            for dataset_name in ("training", "testing")
+        }
+        plot_all_classes_comparison(grouped_by_dataset)
+        plot_single_classes_comparison(grouped_by_dataset)
+        return
+
+    df_grouped = load_hourly_occurrence(mode)
+
+    plot_all_classes(df_grouped, mode)
+    #plot_single_class_groups(df_grouped, mode)
+    plot_single_classes(df_grouped, mode)
+
+
+def load_hourly_occurrence(mode: str) -> pd.DataFrame:
     csv_file = resolve_csv_file(mode)
 
     print(f"Plotting diurnal cycle for {mode} dataset")
@@ -231,15 +253,18 @@ def main(mode: str = "training"):
     # each row is a video, group videos by hour and class label, then normalize occurrences
     df_grouped = build_hourly_occurrence(video_df)
     print(df_grouped.head())
-
-    plot_all_classes(df_grouped, mode)
-    #plot_single_class_groups(df_grouped, mode)
-    plot_single_classes(df_grouped, mode)
+    return df_grouped
 
 
 def build_hourly_occurrence(df_times: pd.DataFrame) -> pd.DataFrame:
-    time_mid = pd.to_datetime(df_times["time_mid"])
-    df_grouped = df_times.groupby([time_mid.dt.hour, "label"]).size().unstack(fill_value=0)
+    df_local = df_times.copy()
+    df_local["label"] = pd.to_numeric(df_local["label"], errors="coerce")
+    df_local = df_local[~df_local["label"].isin(INVALID_LABELS)].copy()
+    df_local = df_local.dropna(subset=["label", "time_mid"])
+    df_local["label"] = df_local["label"].astype(int)
+
+    time_mid = pd.to_datetime(df_local["time_mid"])
+    df_grouped = df_local.groupby([time_mid.dt.hour, "label"]).size().unstack(fill_value=0)
     df_grouped = df_grouped.reindex(range(24), fill_value=0)
     return df_grouped.div(df_grouped.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
 
@@ -264,6 +289,44 @@ def plot_all_classes(df_grouped: pd.DataFrame, mode: str):
     plt.close(fig)
 
 
+def get_all_labels(grouped_by_dataset: Dict[str, pd.DataFrame]) -> List[int]:
+    labels = set()
+    for df_grouped in grouped_by_dataset.values():
+        labels.update(df_grouped.columns)
+    return sorted(labels)
+
+
+def plot_all_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
+    fig, ax = plt.subplots(figsize=(13, 7))
+
+    for label in get_all_labels(grouped_by_dataset):
+        color = colors_per_class1_names.get(str(label), None)
+        for dataset_name, linestyle in (("testing", "-"), ("training", "--")):
+            df_grouped = grouped_by_dataset[dataset_name]
+            if label not in df_grouped.columns:
+                continue
+            line_label = f"Class {label} ({dataset_name})"
+            ax.step(
+                df_grouped.index.to_numpy(),
+                df_grouped[label].to_numpy(),
+                where="mid",
+                color=color,
+                linestyle=linestyle,
+                linewidth=DIURNAL_LINEWIDTH if dataset_name == "testing" else DIURNAL_LINEWIDTH * 0.75,
+                label=line_label,
+            )
+
+    ax.set_xlabel("Hour of the day", fontsize=16)
+    ax.set_ylabel("Normalized occurrence", fontsize=16)
+    ax.set_title("Class occurrence across the day: training vs testing", fontsize=16)
+    ax.set_xticks(range(0, 24, 2))
+    ax.legend(frameon=False, fontsize=9, ncol=4)
+    style_axis(ax)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "class_occurrence_diurnal_cycle_train_test.png", transparent=True)
+    plt.close(fig)
+
+
 def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
     hours = df_grouped.index.to_numpy()
 
@@ -281,10 +344,51 @@ def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
         ax.set_ylabel("Normalized occurrence", fontsize=16)
         ax.set_title(f"Occurrence of Class {label} across the day", fontsize=16)
         ax.set_xticks(range(24))
-        ax.set_ylim(0, SINGLE_CLASS_YMAX)
+        ax.set_ylim(0, get_single_class_ymax(label))
         style_axis(ax)
         fig.tight_layout()
         fig.savefig(output_filename(f"class_{label}_diurnal_cycle.png", mode), transparent=True)
+        plt.close(fig)
+
+
+def get_single_class_ymax(label) -> float:
+    return SINGLE_CLASS_YMAX_BY_LABEL.get(int(label), SINGLE_CLASS_YMAX)
+
+
+def plot_single_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
+    for label in get_all_labels(grouped_by_dataset):
+        fig, ax = plt.subplots(figsize=(8, 5))
+        color = colors_per_class1_names.get(str(label), None)
+        has_data = False
+
+        for dataset_name, linestyle in (("testing", "-"), ("training", "--")):
+            df_grouped = grouped_by_dataset[dataset_name]
+            if label not in df_grouped.columns:
+                continue
+            has_data = True
+            ax.step(
+                df_grouped.index.to_numpy(),
+                df_grouped[label].to_numpy(),
+                where="mid",
+                color=color,
+                linestyle=linestyle,
+                linewidth=DIURNAL_LINEWIDTH if dataset_name == "testing" else DIURNAL_LINEWIDTH * 0.75,
+                label=dataset_name,
+            )
+
+        if not has_data:
+            plt.close(fig)
+            continue
+
+        ax.set_xlabel("Hour of the day [hh]", fontsize=16)
+        ax.set_ylabel("Normalized occurrence", fontsize=16)
+        ax.set_title(f"Occurrence of Class {label} across the day", fontsize=16)
+        ax.set_xticks(range(24))
+        ax.set_ylim(0, get_single_class_ymax(label))
+        ax.legend(frameon=False, fontsize=11)
+        style_axis(ax)
+        fig.tight_layout()
+        fig.savefig(OUTPUT_DIR / f"class_{label}_diurnal_cycle_train_test.png", transparent=True)
         plt.close(fig)
 
 
