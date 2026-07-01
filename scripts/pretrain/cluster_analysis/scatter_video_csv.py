@@ -158,6 +158,10 @@ def main():
         "precipitation_std",
         "euclid_msg_grid_mean",
         "euclid_msg_grid_std",
+        "cth10plus_mean",
+        "cth10plus_std",
+        "cot30plus_mean",
+        "cot30plus_std" 
     ]
 
     # calculate mean value for each class for each variable and its std
@@ -224,7 +228,36 @@ def main():
     fig_path = OUTPUT_DIR / "scatter_lightning_precipitation_means.png"
     plt.savefig(fig_path, transparent=True, bbox_inches="tight")
 
-    
+    # create scatter plot of cot30plus and cth10plus means with their uncertainties (std) for each class
+    fig, ax = plt.subplots(figsize=(12, 7))
+    plot_class_errorbar_points(
+        ax,
+        class_means,
+        "cot30plus_mean",
+        "cth10plus_mean",
+        "cot30plus_std",
+        "cth10plus_std",
+        dataset="training",
+    )
+    plot_class_errorbar_points(
+        ax,
+        class_means_test,
+        "cot30plus_mean",
+        "cth10plus_mean",
+        "cot30plus_std",
+        "cth10plus_std",
+        dataset="test",
+    )
+    ax.set_xlabel("Mean fraction of pixels with COT > 30")
+    ax.set_ylabel("Mean fraction of pixels with CTH10+ > 10")
+    ax.set_title("Scatter Plot of COT30+ vs CTH10+ Means with Uncertainties")
+    move_legend_outside(ax)
+    style_axis(ax)
+
+    # save figure
+    fig_path = OUTPUT_DIR / "scatter_cot30plus_cth10plus_means.png"
+    plt.savefig(fig_path, transparent=True, bbox_inches="tight")
+
     # calculate now mean and std of all columns ending with _gradient for each class
     gradient_columns = [col for col in video_stats_df.columns if col.endswith("_gradient")]
     class_gradients = video_stats_df.groupby("label")[gradient_columns].mean()  
@@ -292,6 +325,39 @@ def main():
     # save figure
     fig_path = OUTPUT_DIR / "scatter_cot_cth_gradient_means.png"
     plt.savefig(fig_path, transparent=True, bbox_inches="tight")
+
+
+    # plot scatter plot of cth10plus gradient and cot30plus gradient means for each class
+    fig, ax = plt.subplots(figsize=(12, 7))
+    plot_class_scatter_points(
+        ax,
+        class_gradients,
+        "cth10plus_gradient",
+        "cot30plus_gradient",
+        dataset="training",
+    )
+    plot_class_scatter_points(
+        ax,
+        class_gradients_test,
+        "cth10plus_gradient",
+        "cot30plus_gradient",
+        dataset="test",
+    )
+    ax.set_xlabel("CTH10+ Gradient Mean")
+    ax.set_ylabel("COT30+ Gradient Mean")
+    ax.set_title("Scatter Plot of CTH10+ vs COT30+ Gradient Means")
+    move_legend_outside(ax)
+    style_axis(ax)
+    style_zero_centered_axes(
+        ax,
+        pd.concat([class_gradients["cth10plus_gradient"], class_gradients_test["cth10plus_gradient"]]),
+        pd.concat([class_gradients["cot30plus_gradient"], class_gradients_test["cot30plus_gradient"]]),
+    )
+    
+    # save figure
+    fig_path = OUTPUT_DIR / "scatter_cth10plus_cot30plus_gradient_means.png"
+    plt.savefig(fig_path, transparent=True, bbox_inches="tight")    
+
 
     # print names of the saved figures
     print(f"Saved scatter plots to: {OUTPUT_DIR}")  
