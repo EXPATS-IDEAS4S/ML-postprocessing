@@ -169,5 +169,12 @@ output_files:
   training_csv_precipitation: /sat_data/output/grl_2026_k10/csv/crops_stats_var-precipitation_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
   training_csv_euclid_msg_grid: /sat_data/output/grl_2026_k10/csv/crops_stats_var-euclid_msg_grid_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
   training_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
-  testing_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_test_all_7045_imergmin.csv
+  testing_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_cth10plus: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cth10plus_stats-fraction_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_cth: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_cma: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cma_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_cot: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cot_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_cot30plus: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cot30plus_stats-fraction_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_precipitation: /sat_data/output/grl_2026_k10/csv/crops_stats_var-precipitation_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_csv_euclid_msg_grid: /sat_data/output/grl_2026_k10/csv/crops_stats_var-euclid_msg_grid_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
   figures_dir: /sat_data/output/grl_2026_k10/figs/
