@@ -127,6 +127,8 @@ PID #  457299 launched at 10:31 on fri 8 may 2026
 to check when reopening
 ------
 ps -fp 294705
+
+pid for test run 1190340
 pgrep -P 294705
 tail -f /home/claudia/codes/ML_postprocessing/logs/processing_crops_stats_<run_mode>_<timestamp>.log
 
