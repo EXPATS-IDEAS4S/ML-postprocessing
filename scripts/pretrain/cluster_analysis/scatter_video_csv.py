@@ -36,19 +36,93 @@ CSV_FILES = {
 OUTPUT_DIR = Path(config["output_files"]["figures_dir"])
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MARKER_SIZE = 12
+TEST_MARKER_EDGE_COLOR = "black"
+TEST_MARKER_EDGE_WIDTH = 1.4
+CMA_GRADIENT_LIMIT = 50
 
 
-def style_zero_centered_gradient_axes(ax, x_values, y_values):
-    values = pd.concat([x_values, y_values])
+def get_class_color(label):
+    return colors_per_class1_names.get(str(int(label)), None)
+
+
+def get_class_label(label):
+    return int(label)
+
+
+def style_zero_centered_axes(ax, x_values, y_values, x_limit_cap=None):
+    x_limit = get_zero_centered_axis_limit(x_values, limit_cap=x_limit_cap)
+    y_limit = get_zero_centered_axis_limit(y_values)
+
+    ax.set_xlim(-x_limit, x_limit)
+    ax.set_ylim(-y_limit, y_limit)
+    ax.axhline(0, color="black", linestyle="--", linewidth=1.2, zorder=0)
+    ax.axvline(0, color="black", linestyle="--", linewidth=1.2, zorder=0)
+
+
+def get_zero_centered_axis_limit(values, limit_cap=None):
     max_abs = np.nanmax(np.abs(values.to_numpy(dtype=float)))
     if not np.isfinite(max_abs) or max_abs == 0:
         max_abs = 1.0
     axis_limit = max_abs * 1.1
+    if limit_cap is not None:
+        axis_limit = min(axis_limit, limit_cap)
+    return axis_limit
 
-    ax.set_xlim(-axis_limit, axis_limit)
-    ax.set_ylim(-axis_limit, axis_limit)
-    ax.axhline(0, color="black", linestyle="--", linewidth=1.2, zorder=0)
-    ax.axvline(0, color="black", linestyle="--", linewidth=1.2, zorder=0)
+
+def move_legend_outside(ax):
+    ax.legend(
+        frameon=False,
+        fontsize=10,
+        ncol=2,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        borderaxespad=0,
+    )
+
+
+def clean_video_summary_df(video_stats_df):
+    video_stats_df["label"] = pd.to_numeric(video_stats_df["label"], errors="coerce")
+    return video_stats_df[video_stats_df["label"] != -100]
+
+
+def plot_class_errorbar_points(ax, class_means, x_mean, y_mean, x_std, y_std, dataset):
+    marker = "o" if dataset == "training" else "s"
+    linestyle = "-" if dataset == "training" else "--"
+    label_suffix = "training" if dataset == "training" else "test"
+
+    for label in class_means.index:
+        ax.errorbar(
+            class_means.loc[label, x_mean],
+            class_means.loc[label, y_mean],
+            xerr=class_means.loc[label, x_std],
+            yerr=class_means.loc[label, y_std],
+            fmt=marker,
+            markersize=MARKER_SIZE,
+            ecolor="gray",
+            elinewidth=1.2,
+            linestyle=linestyle,
+            color=get_class_color(label),
+            markeredgecolor=TEST_MARKER_EDGE_COLOR if dataset == "test" else None,
+            markeredgewidth=TEST_MARKER_EDGE_WIDTH if dataset == "test" else 0,
+            label=f"Class {get_class_label(label)} ({label_suffix})",
+        )
+
+
+def plot_class_scatter_points(ax, class_values, x_column, y_column, dataset):
+    marker = "o" if dataset == "training" else "s"
+    label_suffix = "training" if dataset == "training" else "test"
+
+    for label in class_values.index:
+        ax.scatter(
+            class_values.loc[label, x_column],
+            class_values.loc[label, y_column],
+            s=MARKER_SIZE ** 2,
+            color=get_class_color(label),
+            marker=marker,
+            edgecolor=TEST_MARKER_EDGE_COLOR if dataset == "test" else None,
+            linewidth=TEST_MARKER_EDGE_WIDTH if dataset == "test" else 0,
+            label=f"Class {get_class_label(label)} ({label_suffix})",
+        )
 
 
 def main():
@@ -57,6 +131,7 @@ def main():
 
     # load the crop statistics CSV file
     video_stats_df = pd.read_csv(CSV_FILES["training"])
+    video_stats_test_df = pd.read_csv(CSV_FILES["testing"])
     print("Crop statistics CSV files loaded successfully.")
 
     # count number of samples with label -100
@@ -70,8 +145,8 @@ def main():
     print(f"Percentage of samples with label -100: {len(video_minus100)/len(video_stats_df)*100:.2f}%") 
 
     # drop class with label -100
-    video_stats_df["label"] = pd.to_numeric(video_stats_df["label"], errors="coerce")
-    video_stats_df = video_stats_df[video_stats_df["label"] != -100]
+    video_stats_df = clean_video_summary_df(video_stats_df)
+    video_stats_test_df = clean_video_summary_df(video_stats_test_df)
 
     # read columns for first scatter plot
     scatter_columns = [
@@ -87,25 +162,32 @@ def main():
 
     # calculate mean value for each class for each variable and its std
     class_means = video_stats_df.groupby("label")[scatter_columns].mean()
+    class_means_test = video_stats_test_df.groupby("label")[scatter_columns].mean()
 
     # create scatter plot of COT vs CTH means with their uncertainties (std) for each class
     fig, ax = plt.subplots(figsize=(12, 7))
-    for label in class_means.index:
-        ax.errorbar(
-            class_means.loc[label, "cot_mean"],
-            class_means.loc[label, "cth_mean"],
-            xerr=class_means.loc[label, "cot_std"],
-            yerr=class_means.loc[label, "cth_std"],
-            fmt="o",
-            markersize=MARKER_SIZE,
-            ecolor="gray",
-            color=colors_per_class1_names.get(str(label), None),
-            label=f"Class {label}",
-        )   
+    plot_class_errorbar_points(
+        ax,
+        class_means,
+        "cot_mean",
+        "cth_mean",
+        "cot_std",
+        "cth_std",
+        dataset="training",
+    )
+    plot_class_errorbar_points(
+        ax,
+        class_means_test,
+        "cot_mean",
+        "cth_mean",
+        "cot_std",
+        "cth_std",
+        dataset="test",
+    )
     ax.set_xlabel("COT Mean")
     ax.set_ylabel("CTH Mean")
     ax.set_title("Scatter Plot of COT vs CTH Means with Uncertainties")
-    ax.legend(frameon=False, fontsize=11, ncol=3)
+    move_legend_outside(ax)
     style_axis(ax)
 
     # save figure
@@ -114,22 +196,28 @@ def main():
     
     # create scatter plot of lightning and precipitation means with their uncertainties (std) for each class
     fig, ax = plt.subplots(figsize=(12, 7))
-    for label in class_means.index:
-        ax.errorbar(
-            class_means.loc[label, "euclid_msg_grid_mean"],
-            class_means.loc[label, "precipitation_mean"],
-            xerr=class_means.loc[label, "euclid_msg_grid_std"],
-            yerr=class_means.loc[label, "precipitation_std"],
-            fmt="o",
-            markersize=MARKER_SIZE,
-            ecolor="gray",
-            color=colors_per_class1_names.get(str(label), None),
-            label=f"Class {label}",
-        )   
+    plot_class_errorbar_points(
+        ax,
+        class_means,
+        "euclid_msg_grid_mean",
+        "precipitation_mean",
+        "euclid_msg_grid_std",
+        "precipitation_std",
+        dataset="training",
+    )
+    plot_class_errorbar_points(
+        ax,
+        class_means_test,
+        "euclid_msg_grid_mean",
+        "precipitation_mean",
+        "euclid_msg_grid_std",
+        "precipitation_std",
+        dataset="test",
+    )
     ax.set_xlabel("Lightning Mean")
     ax.set_ylabel("Precipitation Mean")
     ax.set_title("Scatter Plot of Lightning vs Precipitation Means with Uncertainties")
-    ax.legend(frameon=False, fontsize=11, ncol=3)
+    move_legend_outside(ax)
     style_axis(ax)
 
     # save figure
@@ -140,26 +228,34 @@ def main():
     # calculate now mean and std of all columns ending with _gradient for each class
     gradient_columns = [col for col in video_stats_df.columns if col.endswith("_gradient")]
     class_gradients = video_stats_df.groupby("label")[gradient_columns].mean()  
+    class_gradients_test = video_stats_test_df.groupby("label")[gradient_columns].mean()
 
     # plot scatter plot of CMA gradient vs CTH gradient means for each class
     fig, ax = plt.subplots(figsize=(12, 7))
-    for label in class_gradients.index:
-        ax.scatter(
-            class_gradients.loc[label, "cma_gradient"],
-            class_gradients.loc[label, "cth_gradient"],
-            s=MARKER_SIZE ** 2,
-            color=colors_per_class1_names.get(str(label), None),
-            label=f"Class {label}",
-        )
+    plot_class_scatter_points(
+        ax,
+        class_gradients,
+        "cma_gradient",
+        "cth_gradient",
+        dataset="training",
+    )
+    plot_class_scatter_points(
+        ax,
+        class_gradients_test,
+        "cma_gradient",
+        "cth_gradient",
+        dataset="test",
+    )
     ax.set_xlabel("CMA Gradient Mean")
     ax.set_ylabel("CTH Gradient Mean")
     ax.set_title("Scatter Plot of CMA vs CTH Gradient Means")
-    ax.legend(frameon=False, fontsize=11, ncol=3)
+    move_legend_outside(ax)
     style_axis(ax)
-    style_zero_centered_gradient_axes(
+    style_zero_centered_axes(
         ax,
-        class_gradients["cma_gradient"],
-        class_gradients["cth_gradient"],
+        pd.concat([class_gradients["cma_gradient"], class_gradients_test["cma_gradient"]]),
+        pd.concat([class_gradients["cth_gradient"], class_gradients_test["cth_gradient"]]),
+        x_limit_cap=CMA_GRADIENT_LIMIT,
     )
     
     # save figure
@@ -168,23 +264,29 @@ def main():
 
     # plot scatter plot of COT gradient vs CTH gradient means for each class
     fig, ax = plt.subplots(figsize=(12, 7))
-    for label in class_gradients.index: 
-        ax.scatter(
-            class_gradients.loc[label, "cot_gradient"],
-            class_gradients.loc[label, "cth_gradient"],
-            s=MARKER_SIZE ** 2,
-            color=colors_per_class1_names.get(str(label), None),
-            label=f"Class {label}",
-        )
+    plot_class_scatter_points(
+        ax,
+        class_gradients,
+        "cot_gradient",
+        "cth_gradient",
+        dataset="training",
+    )
+    plot_class_scatter_points(
+        ax,
+        class_gradients_test,
+        "cot_gradient",
+        "cth_gradient",
+        dataset="test",
+    )
     ax.set_xlabel("COT Gradient Mean")
     ax.set_ylabel("CTH Gradient Mean")
     ax.set_title("Scatter Plot of COT vs CTH Gradient Means")
-    ax.legend(frameon=False, fontsize=11, ncol=3)
+    move_legend_outside(ax)
     style_axis(ax)
-    style_zero_centered_gradient_axes(
+    style_zero_centered_axes(
         ax,
-        class_gradients["cot_gradient"],
-        class_gradients["cth_gradient"],
+        pd.concat([class_gradients["cot_gradient"], class_gradients_test["cot_gradient"]]),
+        pd.concat([class_gradients["cth_gradient"], class_gradients_test["cth_gradient"]]),
     )
 
     # save figure

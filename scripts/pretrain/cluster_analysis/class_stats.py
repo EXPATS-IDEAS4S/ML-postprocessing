@@ -80,6 +80,7 @@ config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yam
 config = load_config(config_path)
 CSV_FILES = {
     "training": config["output_files"]["training_video_summary"],
+    "testing": config["output_files"]["testing_video_summary"],
 }
 output_dir = config["output_files"]["figures_dir"]
 
@@ -87,8 +88,7 @@ def main():
 
     # load the crop statistics CSV file
     video_stats_df = pd.read_csv(CSV_FILES["training"])
-    #crop_stats_cth_df = pd.read_csv( CSV_FILES["training_csv_cth"])
-    #crop_stats_cot_df = pd.read_csv(CSV_FILES["training_csv_cot"])
+    video_stats_test_df = pd.read_csv(CSV_FILES["testing"])
     print("Crop statistics CSV files loaded successfully.")
 
     # count number of samples with label -100
@@ -103,20 +103,77 @@ def main():
 
     # drop class with label -100
     video_stats_df = video_stats_df[video_stats_df["label"] != -100]
+    video_stats_test_df = video_stats_test_df[video_stats_test_df["label"] != -100]
 
     # counting now video classified for each class
-    video_class_counts = video_stats_df["label"].value_counts().sort_index()
+    #video_class_counts = video_stats_df["label"].value_counts().sort_index()
+    #video_class_counts_test = video_stats_test_df["label"].value_counts().sort_index()
+    video_class_counts = video_stats_df["label"].value_counts(normalize=True).sort_index() * 100
+    video_class_counts_test = video_stats_test_df["label"].value_counts(normalize=True).sort_index() * 100
+    
+    # make barplot of video class counts for training and testing datasets, using colors_per_class1_names for the colors of the bars
+    class_numbers = sorted(
+        set(video_class_counts.index).union(video_class_counts_test.index)
+    )
+    training_counts = video_class_counts.reindex(class_numbers, fill_value=0)
+    test_counts = video_class_counts_test.reindex(class_numbers, fill_value=0)
+    test_minus_training = test_counts - training_counts
+    class_comparison = pd.DataFrame(
+        {
+            "training_percent": training_counts,
+            "test_percent": test_counts,
+            "test_minus_training_percentage_points": test_minus_training,
+        }
+    )
+    print("\nClass population comparison (% of each dataset):")
+    print(class_comparison.to_string(float_format=lambda value: f"{value:.2f}"))
+    print("\nClasses more populated in test than training:")
+    print(
+        class_comparison[class_comparison["test_minus_training_percentage_points"] > 0]
+        .sort_values("test_minus_training_percentage_points", ascending=False)
+        .to_string(float_format=lambda value: f"{value:.2f}")
+    )
+    print("\nClasses less populated in test than training:")
+    print(
+        class_comparison[class_comparison["test_minus_training_percentage_points"] < 0]
+        .sort_values("test_minus_training_percentage_points")
+        .to_string(float_format=lambda value: f"{value:.2f}")
+    )
 
-    # make barplot of video class counts
+    x = np.arange(len(class_numbers))
+    width = 0.35
+    class_colors = [
+        colors_per_class1_names[str(int(class_num))]
+        for class_num in class_numbers
+    ]
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(video_class_counts.index.astype(str), 
-            video_class_counts.values, 
-            color=[colors_per_class1_names[str(int(class_num))] for class_num in video_class_counts.index])
+    ax.bar(
+        x - width / 2,
+        training_counts.values,
+        width,
+        color=class_colors,
+        edgecolor="black",
+        linewidth=0.8,
+        label="training",
+    )
+    ax.bar(
+        x + width / 2,
+        test_counts.values,
+        width,
+        color=class_colors,
+        edgecolor="black",
+        linewidth=0.8,
+        hatch="///",
+        label="test",
+    )
+            
     ax.set_xlabel('Class')
-    ax.set_ylabel('Number of Videos')
+    ax.set_ylabel('% of videos in each class')
     ax.set_title('Class Population Statistics for Videos')
-    ax.set_xticks(video_class_counts.index.astype(str))
-    ax.set_xticklabels(video_class_counts.index.astype(str))
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(int(class_num)) for class_num in class_numbers])
+    ax.legend(frameon=False)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)   
     ax.spines['left'].set_linewidth(1.5)
