@@ -202,3 +202,9 @@ output_files:
   testing_csv_precipitation: /sat_data/output/grl_2026_k10/csv/crops_stats_var-precipitation_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
   testing_csv_euclid_msg_grid: /sat_data/output/grl_2026_k10/csv/crops_stats_var-euclid_msg_grid_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
   figures_dir: /sat_data/output/grl_2026_k10/figs/
+  features_training: /sat_data/output/grl_2026_k10/csv/grl_2026_k10-features_backbone_r2dplus1_cropres_100x100_inputvars_1_cm_epochs_800.csv
+  features_testing: /sat_data/fig/grl_2026_k10/test/features_test_dataset_ESSL_grl_2026_k10.csv
+  csv_dir: /sat_data/output/grl_2026_k10/csv/
+
+  ancillary_files:
+    essl_dataset: /sat_data/output/grl_2026/csv/eswd-v2-2012-2025_expats.csv
