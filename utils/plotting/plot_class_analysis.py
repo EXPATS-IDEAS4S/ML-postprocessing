@@ -25,6 +25,31 @@ def style_axis(ax):
 
 
 
+def set_x_ranges_for_variable(ax, var_name):
+
+    if var_name == "cth":
+        ax.set_xlim(500., 14000.)
+        ax.set_ylim(0., 0.00025)
+    elif var_name == "cot":
+        ax.set_xlim(0., 100.)
+        ax.set_ylim(0., 0.1)
+    #elif var_name == "cma":
+        #ax.set_xlim(0., 100.)
+        #ax.set_ylim(0., 0.1)
+    elif var_name == "precipitation":
+        ax.set_xlim(0., 3000.)
+        #ax.set_ylim(0., 0.1)
+    elif var_name == "euclid_msg_grid":
+        ax.set_xlim(0., 800.)
+        #ax.set_ylim(0., 0.1)
+    #elif var_name == "cth10plus":
+        #ax.set_xlim(0., 1.)
+        #ax.set_ylim(0., 0.0005)
+    #elif var_name == "cot30plus":
+        #ax.set_xlim(0, 1.)
+        #ax.set_ylim(0., 0.1)
+    return ax
+
 def plot_hourly_histogram(ax, hours, values, color, label, linewidth=3):
     """"
     Plots a histogram of values over hours on the provided axis.
