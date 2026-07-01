@@ -85,6 +85,28 @@ data:
   feature_csv_path: /sat_data/output/grl_2026_k10/csv/features_grl_2026_k10.csv # Path to the CSV file where the features will be saved, used for visualization and metadata in the CSV file
 
 # ==========================
+# Cloud motion
+# ==========================
+cloud_motion:
+  mode: train
+  crop_dir: /sat_data/crops/grl_2026/1/
+  csv:
+  output_file_key: training_cloud_motion
+  path_column: path
+  label_column: label
+  video_summary_key: training_video_summary
+  summary_crop_column: crop
+  summary_label_column: label
+  variable: IR_108
+  nc_engine: netcdf4
+  limit:
+  pixel_size_km: 3
+  frame_interval_minutes: 15
+  invalid_value:
+  min_valid_fraction: 0.05
+  max_shift_pixels:
+
+# ==========================
 # Statistics
 # ==========================
 statistics:
@@ -169,7 +191,9 @@ output_files:
   training_csv_precipitation: /sat_data/output/grl_2026_k10/csv/crops_stats_var-precipitation_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
   training_csv_euclid_msg_grid: /sat_data/output/grl_2026_k10/csv/crops_stats_var-euclid_msg_grid_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
   training_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  training_cloud_motion: /sat_data/output/grl_2026_k10/csv/cloud_motion_training_all.csv
   testing_video_summary: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  testing_cloud_motion: /sat_data/output/grl_2026_k10/csv/cloud_motion_testing_all.csv
   testing_csv_cth10plus: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cth10plus_stats-fraction_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
   testing_csv_cth: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cth_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
   testing_csv_cma: /sat_data/output/grl_2026_k10/csv/crops_stats_var-cma_stats-50-95-25-75_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
