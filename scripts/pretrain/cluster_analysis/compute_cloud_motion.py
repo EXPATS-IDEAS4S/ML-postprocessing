@@ -32,20 +32,14 @@ mean_response                 phase-correlation confidence/quality
 
 Example
 -------
-Run on the first 20 GRL training crops:
-
-    conda run -n vissl python scripts/pretrain/cluster_analysis/compute_cloud_motion.py \
-        --limit 20 \
-
-Run all crops using the settings in configs/process_run_GRL.yaml:
+Run using the settings in configs/process_run_GRL.yaml:
 
     conda run -n vissl python scripts/pretrain/cluster_analysis/compute_cloud_motion.py
 
 pid 1941839
-
+pid for test 2098405
 """
 
-import argparse
 import csv
 import os
 import sys
@@ -58,174 +52,43 @@ sys.path.append(str(REPO_ROOT))
 from utils.configs import load_config
 from utils.processing.cloud_motion import compute_cloud_motion_from_nc
 
-DEFAULT_CONFIG_PATH = REPO_ROOT / "configs" / "process_run_GRL.yaml"
+config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
+config = load_config(config_path)
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Estimate mean cloud-motion speed and direction from video NetCDF crops."
-    )
-    input_group = parser.add_mutually_exclusive_group()
-    input_group.add_argument("--crop-dir", default=None, help="Directory containing NetCDF crop files.")
-    input_group.add_argument("--csv", default=None, help="CSV file containing a crop path column.")
+cloud_motion_config = config["cloud_motion"]
+output_files = config["output_files"]
+data_config = config["data"]
 
-    parser.add_argument("--output", default=None, help="Output CSV path.")
-    parser.add_argument("--path-column", default=None, help="Crop path column when using --csv.")
-    parser.add_argument("--label-column", default=None, help="Label column when using --csv.")
-    parser.add_argument(
-        "--video-summary-csv",
-        default=None,
-        help=(
-            "Optional video summary CSV containing crop labels. If omitted, the "
-            "path is read from output_files.training_video_summary in --config."
-        ),
-    )
-    parser.add_argument(
-        "--config",
-        default=str(DEFAULT_CONFIG_PATH),
-        help="YAML config containing output_files.training_video_summary.",
-    )
-    parser.add_argument(
-        "--video-summary-key",
-        default=None,
-        help="Key under output_files in --config to use when --video-summary-csv is omitted.",
-    )
-    parser.add_argument(
-        "--summary-crop-column",
-        default=None,
-        help="Crop filename column in --video-summary-csv.",
-    )
-    parser.add_argument(
-        "--summary-label-column",
-        default=None,
-        help="Label column in --video-summary-csv.",
-    )
-    parser.add_argument("--variable", default=None, help="NetCDF variable with masked IR frames.")
-    parser.add_argument("--nc-engine", default=None, help="xarray NetCDF engine, e.g. h5netcdf or netcdf4.")
-    parser.add_argument("--limit", type=int, default=None, help="Only process the first N crops.")
-    parser.add_argument("--pixel-size-km", type=float, default=None, help="Pixel size in km.")
-    parser.add_argument(
-        "--frame-interval-minutes",
-        type=float,
-        default=None,
-        help="Minutes between consecutive frames.",
-    )
-    parser.add_argument(
-        "--invalid-value",
-        type=float,
-        default=None,
-        help="Additional value to mask as non-cloud, often 0 for masked imagery.",
-    )
-    parser.add_argument(
-        "--min-valid-fraction",
-        type=float,
-        default=None,
-        help="Minimum fraction of pixels valid in both frames.",
-    )
-    parser.add_argument(
-        "--max-shift-pixels",
-        type=float,
-        default=None,
-        help="Drop frame-pair vectors longer than this many pixels.",
-    )
-    return parser.parse_args()
+mode = cloud_motion_config["mode"]
+if mode == "train":
+    CSV_PATH = cloud_motion_config["csv_train"]
+    PATH_ROOT = cloud_motion_config["path_root_train"]
+    OUTPUT_FILE_KEY = cloud_motion_config["output_file_key_train"]
+    VIDEO_SUMMARY_KEY = cloud_motion_config["video_summary_key_train"]
+elif mode == "test":
+    CSV_PATH = cloud_motion_config["csv_test"]
+    PATH_ROOT = cloud_motion_config["path_root_test"]
+    OUTPUT_FILE_KEY = cloud_motion_config["output_file_key_test"]
+    VIDEO_SUMMARY_KEY = cloud_motion_config["video_summary_key_test"]
+else:
+    raise ValueError(f"Invalid cloud_motion.mode: {mode}. Expected 'train' or 'test'.")
 
+OUTPUT_CSV = output_files[OUTPUT_FILE_KEY]
+VIDEO_SUMMARY_CSV = output_files[VIDEO_SUMMARY_KEY]
 
-def apply_config_defaults(args):
-    config = load_config(args.config)
-    cloud_motion_config = config.get("cloud_motion", {})
-    output_files = config.get("output_files", {})
-    features_config = config.get("features_preparation", {})
-    data_config = config.get("data", {})
+PATH_COLUMN = cloud_motion_config.get("path_column", "path")
+LABEL_COLUMN = cloud_motion_config.get("label_column", "label")
+SUMMARY_CROP_COLUMN = cloud_motion_config.get("summary_crop_column", "crop")
+SUMMARY_LABEL_COLUMN = cloud_motion_config.get("summary_label_column", "label")
 
-    mode = cloud_motion_config.get("mode", "train")
-    output_file_key = cloud_motion_config.get(
-        "output_file_key",
-        "training_cloud_motion" if mode == "train" else "testing_cloud_motion",
-    )
-
-    if args.crop_dir is None and args.csv is None:
-        args.csv = cloud_motion_config.get("csv")
-        args.crop_dir = cloud_motion_config.get("crop_dir")
-        if args.crop_dir is None and args.csv is None:
-            args.crop_dir = (
-                features_config.get("crops_test_path")
-                if mode == "test"
-                else features_config.get("crops_path")
-            )
-
-    if args.output is None:
-        args.output = cloud_motion_config.get("output") or output_files.get(output_file_key)
-
-    if args.video_summary_key is None:
-        args.video_summary_key = cloud_motion_config.get(
-            "video_summary_key",
-            "testing_video_summary" if mode == "test" else "training_video_summary",
-        )
-
-    args.path_column = args.path_column or cloud_motion_config.get("path_column", "path")
-    args.label_column = args.label_column or cloud_motion_config.get("label_column", "label")
-    args.summary_crop_column = (
-        args.summary_crop_column or cloud_motion_config.get("summary_crop_column", "crop")
-    )
-    args.summary_label_column = (
-        args.summary_label_column or cloud_motion_config.get("summary_label_column", "label")
-    )
-    args.variable = args.variable or cloud_motion_config.get("variable", "IR_108")
-    args.nc_engine = args.nc_engine or cloud_motion_config.get("nc_engine", data_config.get("nc_engine"))
-    args.pixel_size_km = (
-        args.pixel_size_km
-        if args.pixel_size_km is not None
-        else cloud_motion_config.get("pixel_size_km")
-    )
-    args.frame_interval_minutes = (
-        args.frame_interval_minutes
-        if args.frame_interval_minutes is not None
-        else cloud_motion_config.get("frame_interval_minutes")
-    )
-    args.invalid_value = (
-        args.invalid_value
-        if args.invalid_value is not None
-        else cloud_motion_config.get("invalid_value")
-    )
-    args.min_valid_fraction = (
-        args.min_valid_fraction
-        if args.min_valid_fraction is not None
-        else cloud_motion_config.get("min_valid_fraction", 0.05)
-    )
-    args.max_shift_pixels = (
-        args.max_shift_pixels
-        if args.max_shift_pixels is not None
-        else cloud_motion_config.get("max_shift_pixels")
-    )
-    args.limit = args.limit if args.limit is not None else cloud_motion_config.get("limit")
-
-    if args.crop_dir is None and args.csv is None:
-        raise ValueError(
-            "No cloud-motion input configured. Set cloud_motion.crop_dir, "
-            "cloud_motion.csv, or features_preparation.crops_path in the config."
-        )
-    if args.output is None:
-        raise ValueError(
-            "No cloud-motion output configured. Set cloud_motion.output or "
-            f"output_files.{output_file_key} in the config."
-        )
-
-    return args
-
-
-def resolve_video_summary_csv(args):
-    if args.video_summary_csv:
-        return args.video_summary_csv
-
-    config = load_config(args.config)
-
-    try:
-        return config["output_files"][args.video_summary_key]
-    except KeyError as exc:
-        raise KeyError(
-            f"Could not find output_files.{args.video_summary_key} in {args.config}."
-        ) from exc
-
+VARIABLE = cloud_motion_config.get("variable", "IR_108")
+NC_ENGINE = cloud_motion_config.get("nc_engine", data_config.get("nc_engine"))
+PIXEL_SIZE_KM = cloud_motion_config.get("pixel_size_km")
+FRAME_INTERVAL_MINUTES = cloud_motion_config.get("frame_interval_minutes")
+INVALID_VALUE = cloud_motion_config.get("invalid_value")
+MIN_VALID_FRACTION = cloud_motion_config.get("min_valid_fraction", 0.05)
+MAX_SHIFT_PIXELS = cloud_motion_config.get("max_shift_pixels")
+LIMIT = cloud_motion_config.get("limit")
 
 def crop_lookup_keys(crop_name):
     basename = os.path.basename(str(crop_name))
@@ -233,31 +96,30 @@ def crop_lookup_keys(crop_name):
     return {basename, stem}
 
 
-def load_label_lookup(args):
-    video_summary_csv = resolve_video_summary_csv(args)
-    if not video_summary_csv:
+def load_label_lookup():
+    if not VIDEO_SUMMARY_CSV:
         return {}
 
-    with open(video_summary_csv, newline="") as input_file:
+    with open(VIDEO_SUMMARY_CSV, newline="") as input_file:
         reader = csv.DictReader(input_file)
         fieldnames = reader.fieldnames or []
         missing_columns = [
             column
-            for column in (args.summary_crop_column, args.summary_label_column)
+            for column in (SUMMARY_CROP_COLUMN, SUMMARY_LABEL_COLUMN)
             if column not in fieldnames
         ]
         if missing_columns:
             raise KeyError(
-                f"Column(s) {missing_columns!r} not found in {video_summary_csv}. "
+                f"Column(s) {missing_columns!r} not found in {VIDEO_SUMMARY_CSV}. "
                 f"Available columns: {fieldnames}"
             )
 
         label_lookup = {}
         for row in reader:
-            crop_name = row.get(args.summary_crop_column)
+            crop_name = row.get(SUMMARY_CROP_COLUMN)
             if not crop_name:
                 continue
-            label = row.get(args.summary_label_column, "")
+            label = row.get(SUMMARY_LABEL_COLUMN, "")
             for key in crop_lookup_keys(crop_name):
                 label_lookup[key] = label
 
@@ -273,40 +135,48 @@ def get_label_for_path(path, current_label, label_lookup):
     return ""
 
 
-def collect_crop_records(args):
-    label_lookup = load_label_lookup(args)
+def build_crop_path_lookup(path_root):
+    if not path_root:
+        return {}
 
-    if args.crop_dir:
-        paths = sorted(glob(os.path.join(args.crop_dir, "*.nc")))
+    crop_paths = glob(os.path.join(path_root, "**", "*.nc"), recursive=True)
+    return {os.path.basename(path): path for path in crop_paths}
+
+
+def resolve_crop_path(path, crop_path_lookup):
+    if os.path.isabs(path) or not crop_path_lookup:
+        return path
+    return crop_path_lookup.get(os.path.basename(path), path)
+
+
+def collect_crop_records():
+    label_lookup = load_label_lookup()
+    crop_path_lookup = build_crop_path_lookup(PATH_ROOT)
+
+    with open(CSV_PATH, newline="") as input_file:
+        reader = csv.DictReader(input_file)
+        fieldnames = reader.fieldnames or []
+        if PATH_COLUMN not in fieldnames:
+            raise KeyError(
+                f"Column {PATH_COLUMN!r} not found in {CSV_PATH}. "
+                f"Available columns: {reader.fieldnames}"
+            )
+        has_label_column = LABEL_COLUMN in fieldnames
         records = [
-            {"path": path, "label": get_label_for_path(path, "", label_lookup)}
-            for path in paths
+            {
+                "path": resolve_crop_path(row[PATH_COLUMN], crop_path_lookup),
+                "label": get_label_for_path(
+                    row[PATH_COLUMN],
+                    row[LABEL_COLUMN] if has_label_column else "",
+                    label_lookup,
+                ),
+            }
+            for row in reader
+            if row.get(PATH_COLUMN)
         ]
-    else:
-        with open(args.csv, newline="") as input_file:
-            reader = csv.DictReader(input_file)
-            fieldnames = reader.fieldnames or []
-            if args.path_column not in fieldnames:
-                raise KeyError(
-                    f"Column {args.path_column!r} not found in {args.csv}. "
-                    f"Available columns: {reader.fieldnames}"
-                )
-            has_label_column = args.label_column in fieldnames
-            records = [
-                {
-                    "path": row[args.path_column],
-                    "label": get_label_for_path(
-                        row[args.path_column],
-                        row[args.label_column] if has_label_column else "",
-                        label_lookup,
-                    ),
-                }
-                for row in reader
-                if row.get(args.path_column)
-            ]
 
-    if args.limit is not None:
-        records = records[: args.limit]
+    if LIMIT is not None:
+        records = records[:LIMIT]
 
     if not records:
         raise ValueError("No crop paths found to process.")
@@ -315,8 +185,7 @@ def collect_crop_records(args):
 
 
 def main():
-    args = apply_config_defaults(parse_args())
-    crop_records = collect_crop_records(args)
+    crop_records = collect_crop_records()
 
     rows = []
     for idx, crop_record in enumerate(crop_records, start=1):
@@ -326,13 +195,13 @@ def main():
         try:
             result = compute_cloud_motion_from_nc(
                 path,
-                variable=args.variable,
-                pixel_size_km=args.pixel_size_km,
-                frame_interval_minutes=args.frame_interval_minutes,
-                nc_engine=args.nc_engine,
-                invalid_value=args.invalid_value,
-                min_valid_fraction=args.min_valid_fraction,
-                max_shift_pixels=args.max_shift_pixels,
+                variable=VARIABLE,
+                pixel_size_km=PIXEL_SIZE_KM,
+                frame_interval_minutes=FRAME_INTERVAL_MINUTES,
+                nc_engine=NC_ENGINE,
+                invalid_value=INVALID_VALUE,
+                min_valid_fraction=MIN_VALID_FRACTION,
+                max_shift_pixels=MAX_SHIFT_PIXELS,
             )
             row.update(result.as_dict())
         except Exception as exc:
@@ -351,7 +220,7 @@ def main():
             )
         rows.append(row)
 
-    output_dir = os.path.dirname(args.output)
+    output_dir = os.path.dirname(OUTPUT_CSV)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
@@ -368,11 +237,11 @@ def main():
         "mean_response",
         "error",
     ]
-    with open(args.output, "w", newline="") as output_file:
+    with open(OUTPUT_CSV, "w", newline="") as output_file:
         writer = csv.DictWriter(output_file, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
-    print(f"Saved cloud-motion results to {args.output}")
+    print(f"Saved cloud-motion results to {OUTPUT_CSV}")
 
 
 if __name__ == "__main__":
