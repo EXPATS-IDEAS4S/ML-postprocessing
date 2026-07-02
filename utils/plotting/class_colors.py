@@ -47,7 +47,11 @@ class_groups = {
     }
 
 
-#class 1 > class 8
-#class 3 > class 1
-#class 5 > class 3
-#class 8 > class 3 
+
+# define classes of interest for extreme events derived from analysis of the plots 
+extreme_event_classes = {
+    "all": [0, 1, 5, 6, 7, 8],
+    "growing": [ 5, 6, 7], 
+    "dissipating": [0, 1, 8],
+}
+
