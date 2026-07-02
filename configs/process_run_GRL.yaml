@@ -88,13 +88,17 @@ data:
 # Cloud motion
 # ==========================
 cloud_motion:
-  mode: train
-  crop_dir: /sat_data/crops/grl_2026/1/
-  csv:
-  output_file_key: training_cloud_motion
-  path_column: path
+  mode: test
+  csv_train: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csv
+  path_root_train: /sat_data/crops/grl_2026/1
+  csv_test: /sat_data/output/grl_2026_k10/csv/crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_test_all_58095_imergmin.csv
+  path_root_test: /sat_data/crops/test_grl_2026/1
+  output_file_key_test: testing_cloud_motion
+  output_file_key_train: training_cloud_motion
+  path_column: crop
   label_column: label
-  video_summary_key: training_video_summary
+  video_summary_key_test: testing_video_summary
+  video_summary_key_train: training_video_summary
   summary_crop_column: crop
   summary_label_column: label
   variable: IR_108
@@ -205,6 +209,6 @@ output_files:
   features_training: /sat_data/output/grl_2026_k10/csv/grl_2026_k10-features_backbone_r2dplus1_cropres_100x100_inputvars_1_cm_epochs_800.csv
   features_testing: /sat_data/fig/grl_2026_k10/test/features_test_dataset_ESSL_grl_2026_k10.csv
   csv_dir: /sat_data/output/grl_2026_k10/csv/
-
+  testing_video_summary_temporal: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels.csv
   ancillary_files:
     essl_dataset: /sat_data/output/grl_2026/csv/eswd-v2-2012-2025_expats.csv
