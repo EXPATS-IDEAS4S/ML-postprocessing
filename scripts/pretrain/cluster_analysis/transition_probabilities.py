@@ -3,7 +3,8 @@ This code calculates, for each class associated to a video, the probability
 that the class associated to the consecutive video in time extracted from the
 same view of the test dataset is class 0, 1, 2, 3, 4, 5, 6, 7, 8, i.e. the
 transition probabilities between classes for consecutive videos in time. The
-output is a csv file.
+output is a csv file. it also plots the transition probabilities for each view
+ and for all views together, for all times and for selected time intervals.
 
  input:
     - test dataset csv file with columns: 'crop', 'label', 'time'
