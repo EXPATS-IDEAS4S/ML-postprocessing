@@ -39,8 +39,8 @@ config = load_config(config_path)
 CSV_FILES = {
     "training": config["output_files"]["training_video_summary"],
     "testing": config["output_files"]["testing_video_summary"],
-    "cloud_motion_train": config["output_files"]["cloud_motion"],
-    "cloud_motion_test": config["output_files"]["cloud_motion_test"],
+    "cloud_motion_train": config["output_files"]["training_cloud_motion"],
+    "cloud_motion_test": config["output_files"]["testing_cloud_motion"],
 }
 
 # create output directory if it doesn't exist
@@ -50,6 +50,11 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 csv_cloud_motion = CSV_FILES["cloud_motion_train"]
 csv_cloud_motion_test = CSV_FILES["cloud_motion_test"]
 
+RESPONSE_THRESHOLD = 0.4
+SPEED_XMAX_KMH = 150
+SPEED_BINS = np.linspace(0, SPEED_XMAX_KMH, 31)
+
+
 def main():
     
     # Load the CSV file
@@ -57,8 +62,8 @@ def main():
     df_test = pd.read_csv(csv_cloud_motion_test)
 
     # Filter for mean_response >= 0.4
-    df_filtered = df[df["mean_response"] >= 0.4]
-    df_test_filtered = df_test[df_test["mean_response"] >= 0.4]
+    df_filtered = df[df["mean_response"] >= RESPONSE_THRESHOLD]
+    df_test_filtered = df_test[df_test["mean_response"] >= RESPONSE_THRESHOLD]
 
     # read classes in df_filtered
     classes = df_filtered["label"].unique()
@@ -91,8 +96,8 @@ def main():
         plt.figure(figsize=(10, 6))
         ax = plt.gca()
         ax.hist(
-                class_df["mean_speed_kmh"],
-                bins=30, 
+                class_df["mean_speed_kmh"].dropna(),
+                bins=SPEED_BINS,
                 label=f"Class {class_num} (training)", 
                 density=True, 
                 histtype="step",
@@ -102,8 +107,8 @@ def main():
             )   
 
         ax.hist(
-                class_df_test["mean_speed_kmh"],
-                bins=30, 
+                class_df_test["mean_speed_kmh"].dropna(),
+                bins=SPEED_BINS,
                 label=f"Class {class_num} (testing)", 
                 density=True, 
                 histtype="step",
@@ -111,11 +116,14 @@ def main():
                 color=colors_per_class1_names.get(str(class_num), None),
                 linewidth=3,
             )   
+        ax.set_xlim(0, SPEED_XMAX_KMH)
         plt.title(f"Distribution of Mean Speeds (km/h) for Class {class_num}")
         plt.xlabel("Mean Speed (km/h)")
-        plt.ylabel("Frequency")
+        plt.ylabel("Probability density")
+        style_axis(ax)
+        plt.legend(frameon=False, loc="upper right", fontsize=12)
         plt.grid(axis='y', alpha=0.75)
-        plt.savefig(OUTPUT_DIR / f"mean_speed_distribution_class_{class_num}.png")
+        plt.savefig(OUTPUT_DIR / f"mean_speed_distribution_class_{class_num}.png", transparent=True)
         plt.close()
         
         # Plot mean directions deg to
@@ -145,8 +153,13 @@ def main():
         plt.title(f"Distribution of Mean Directions (deg to) for Class {class_num}")
         plt.xlabel("Mean Direction (deg to)")
         plt.ylabel("Frequency")
+        # set axis style
+        style_axis(ax)
+
+        # add legend 
+        plt.legend(frameon=False, loc="upper right", fontsize=12)
         plt.grid(axis='y', alpha=0.75)
-        plt.savefig(OUTPUT_DIR / f"mean_direction_to_distribution_class_{class_num}.png")
+        plt.savefig(OUTPUT_DIR / f"mean_direction_to_distribution_class_{class_num}.png", transparent=True)
         plt.close()
         
         # Plot mean directions deg from
@@ -175,11 +188,16 @@ def main():
         plt.title(f"Distribution of Mean Directions (deg from) for Class {class_num}")
         plt.xlabel("Mean Direction (deg from)")
         plt.ylabel("Frequency")
+        # set axis style
+        style_axis(ax)
+
+        # add legend 
+        plt.legend(frameon=False, loc="upper right", fontsize=12)
         plt.grid(axis='y', alpha=0.75)
-        plt.savefig(OUTPUT_DIR / f"mean_direction_from_distribution_class_{class_num}.png")
+        plt.savefig(OUTPUT_DIR / f"mean_direction_from_distribution_class_{class_num}.png", transparent=True)
         plt.close()
     
-if name__ == "__main__":
+if __name__ == "__main__":
     main()
 
     
