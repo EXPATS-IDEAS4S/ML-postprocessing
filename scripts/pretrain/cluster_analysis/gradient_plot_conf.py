@@ -6,7 +6,7 @@ Reads:
   mean_gradients_cot.npz, mean_gradients_cth.npz, mean_gradients_cma.npz,
   mean_gradients_precipitation.npz, and mean_gradients_euclid_msg_grid.npz.
 - Older all-percentile NPY gradient files from /sat_data/output/grl_2026/figs/
-  for grouped CTH/COT/CMA scatter plots.
+  for grouped CTH/COT/cloud cover scatter plots.
 
 Outputs:
 - Scatter-plot PNG files saved to /sat_data/output/grl_2026/figs/.
@@ -20,9 +20,9 @@ What it does:
   diagnostics across classes, with shared axis limits where useful.
 
 Output files:
-- gradient_scatter_cma_cth_perc50.png: CTH vs CMA gradients for the 50th percentile.
+- gradient_scatter_cma_cth_perc50.png: CTH vs cloud cover gradients for the 50th percentile.
 - gradient_scatter_cot_cth_perc50.png: CTH vs COT gradients for the 50th percentile.
-- {class_name}_gradient_scatter_cma_cth.png: CTH vs CMA gradients across all percentiles for grouped classes.
+- {class_name}_gradient_scatter_cma_cth.png: CTH vs cloud cover gradients across all percentiles for grouped classes.
 - gradient_scatter_prec_sum_lightning_count.png: Precipitation sum vs lightning count gradients.
 - gradient_scatter_prec_fraction_lightning_mean_nonzero.png: Precipitation fraction vs lightning mean non-zero gradients.
 
@@ -241,7 +241,7 @@ def main(mode: str = "both"):
     plt.axvline(0, color='gray', linestyle='--', linewidth=0.7)
     plt.xlabel('Mean Gradient cloud cover', fontsize=14)
     plt.ylabel('Mean Gradient cloud top height', fontsize=14)
-    plt.title(f'Mean Gradients of CMA vs CTH for {perc}th Percentile', fontsize=16)
+    plt.title(f'Mean Gradients of Cloud Cover vs CTH for {perc}th Percentile', fontsize=16)
     plt.grid(color='lightgray', linestyle='--', linewidth=0.5)
     apply_shared_limits(plt.gca(), shared_limits)
     add_color_and_symbol_legends(
