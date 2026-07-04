@@ -1,13 +1,42 @@
 """
-With this code, we want to read the crops_video_summary_with_temporal_sequence_labels.csv that characterize the 
-test dataset in time with respect to the event for each view.
-We want to group by temporal sequence label and derive:
-    - class distributions over the temporal sequence
-    - time series over the temporal sequence for each variable and gradient that characterize the video
+Plot temporal class distributions and export crop-group CSV files.
+
+The script reads the test temporal video-summary table defined in
+configs/process_run_GRL.yaml:
+    output_files.testing_video_summary_temporal
+
+It groups videos by temporal_sequence_label and class label, then saves stacked
+class-distribution figures to:
+    output_files.figures_dir
+
+Figure outputs:
+    class_distributions_over_temporal_sequence.png
+    daytime_class_distributions_over_temporal_sequence.png
+    nighttime_class_distributions_over_temporal_sequence.png
+    group_North_class_distributions_over_temporal_sequence.png
+    group_North_daytime_class_distributions_over_temporal_sequence.png
+    group_North_nighttime_class_distributions_over_temporal_sequence.png
+    group_South_class_distributions_over_temporal_sequence.png
+    group_South_daytime_class_distributions_over_temporal_sequence.png
+    group_South_nighttime_class_distributions_over_temporal_sequence.png
+
+It also exports raw crop-group CSV subsets to:
+    output_files.csv_dir
+
+CSV outputs:
+    crops_video_summary_temporal_sequence_north_daytime.csv
+    crops_video_summary_temporal_sequence_north_nighttime.csv
+    crops_video_summary_temporal_sequence_south_daytime.csv
+    crops_video_summary_temporal_sequence_south_nighttime.csv
+
+Daytime is defined as 06:00 <= time_start < 18:00. Nighttime is all other
+hours. North views are [7, 8, 9, 4, 5, 6], and South views are [1, 2, 3].
+
+How to run:
+    python scripts/pretrain/cluster_analysis/test_analysis/test_temporal_analysis.py
 
 author: Claudia Acquistapace
 date: 2027-07-02
-
 """
 
 
@@ -24,19 +53,20 @@ from utils.configs import load_config
 from scripts.pretrain.cluster_analysis.var_class_temporal_series import read_csv_to_dataframe
 from utils.plotting.class_colors import colors_per_class1_names
 from utils.plotting.plot_class_analysis import style_axis
-from utils.plotting.class_colors import extreme_event_classes
 
 # read filename of csv files from config file process_run_GRL.yaml
 config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
 config = load_config(config_path)
 CSV_FILES = {
     "testing_video_summary_temporal": config["output_files"]["testing_video_summary_temporal"],
-    "training_video_summary": config["output_files"]["training_video_summary"],
 }
 output_dir = config["output_files"]["figures_dir"]
+csv_output_dir = Path(config["output_files"]["csv_dir"])
 AXIS_LABEL_FONTSIZE = 16
 TICK_LABEL_FONTSIZE = 13
 LEGEND_FONTSIZE = 12
+DAYTIME_START_HOUR = 6
+DAYTIME_END_HOUR = 18
 
 def main():
 
@@ -65,17 +95,27 @@ def main():
         errors="coerce",
     ).astype(int)
     temporal_df["view"] = pd.to_numeric(temporal_df["view"], errors="coerce").astype(int)
+    temporal_df["time_start"] = pd.to_datetime(
+        temporal_df["time_start"],
+        errors="coerce",
+    )
+    temporal_df = temporal_df.dropna(subset=["time_start"])
+    temporal_df["day_night"] = np.where(
+        temporal_df["time_start"].dt.hour.between(
+            DAYTIME_START_HOUR,
+            DAYTIME_END_HOUR - 1,
+        ),
+        "daytime",
+        "nighttime",
+    )
 
 
     # plot class distributions over temporal sequence
     # ***********************************************************************************************
     # Rows are temporal sequence steps, columns are classes.
-    class_counts = (
-        temporal_df.groupby(["temporal_sequence_label", "label"])
-        .size()
-        .unstack(fill_value=0)
+    class_distributions = calculate_class_distributions_over_temporal_sequence(
+        temporal_df
     )
-    class_distributions = class_counts.div(class_counts.sum(axis=1), axis=0)
 
     temporal_order = [
         label
@@ -103,6 +143,29 @@ def main():
         output_dir, 
     )
 
+    # plot class distributions over temporal sequence for all views, split by daytime/nighttime
+    # ***********************************************************************************************
+    for day_night_label, day_night_df in temporal_df.groupby("day_night"):
+        day_night_distributions = calculate_class_distributions_over_temporal_sequence(
+            day_night_df
+        )
+        day_night_temporal_order = [
+            label for label in temporal_order if label in day_night_distributions.index
+        ]
+        if day_night_temporal_order:
+            day_night_distributions = day_night_distributions.loc[
+                day_night_temporal_order
+            ]
+
+        plot_class_distributions_over_temporal_sequence(
+            day_night_distributions,
+            class_labels,
+            class_colors,
+            temporal_label_mapping,
+            output_dir,
+            output_prefix=f"{day_night_label}_",
+        )
+
     # plot class distributions over the temporal sequence for aggregated views corresponding to different regions of the domain
     # ***********************************************************************************************
     view_groups = {
@@ -113,20 +176,18 @@ def main():
     # for each view group, we want to compute the class distributions over the temporal sequence
     for group_name, views in view_groups.items():
         group_df = temporal_df[temporal_df["view"].isin(views)]
-        group_class_counts = (
-            group_df.groupby(["temporal_sequence_label", "label"])
-            .size()
-            .unstack(fill_value=0)
-        )
-        group_class_distributions = group_class_counts.div(
-            group_class_counts.sum(axis=1), axis=0
+        group_class_distributions = calculate_class_distributions_over_temporal_sequence(
+            group_df
         )
 
         # filter out temporal sequence labels that are not present in the group
         group_temporal_order = [
             label for label in temporal_order if label in group_class_distributions.index
         ]
-        group_class_distributions = group_class_distributions.loc[group_temporal_order]
+        if group_temporal_order:
+            group_class_distributions = group_class_distributions.loc[
+                group_temporal_order
+            ]
 
         # plot class distributions over temporal sequence for the view group
         plot_class_distributions_over_temporal_sequence(
@@ -138,242 +199,58 @@ def main():
             output_prefix=f"group_{group_name}_",
         )
 
-    # calculate now mean and std of cloud properties and gradients for each temporal sequence label and for each class
-    # ***********************************************************************************************
+        for day_night_label, day_night_group_df in group_df.groupby("day_night"):
+            save_temporal_subset_csv(
+                day_night_group_df,
+                csv_output_dir,
+                f"{group_name}_{day_night_label}",
+            )
+            day_night_group_distributions = (
+                calculate_class_distributions_over_temporal_sequence(
+                    day_night_group_df
+                )
+            )
+            day_night_group_temporal_order = [
+                label
+                for label in temporal_order
+                if label in day_night_group_distributions.index
+            ]
+            if day_night_group_temporal_order:
+                day_night_group_distributions = day_night_group_distributions.loc[
+                    day_night_group_temporal_order
+                ]
 
-    # drop the temporal sequence label -100, which corresponds to video crops that are far from the event
-    temporal_df = temporal_df[temporal_df["temporal_sequence_label"] != -100]
-
-    # drop it also from the labels that need to go on the x axis of the plots
-    temporal_label_mapping = {
-        label: name
-        for label, name in temporal_label_mapping.items() if label != -100
-    }
-    # group by temporal sequence label and class, and calculate mean and std for each variable and gradient
-    grouped = temporal_df.groupby(["temporal_sequence_label", "label"])
-    mean_df = grouped.mean().reset_index()
-    std_df = grouped.std().reset_index()
-
-    # plot the mean and std for selected variable and gradients over the temporal sequence for each class
-    # ***********************************************************************************************
-    selected_vars_temporal_series = [
-        "cth_mean",
-        "cth10plus_mean",
-        "cot30plus_mean",
-        "cma_mean",
-        "cot_mean",
-        "precipitation_mean",
-        "euclid_msg_grid_mean",
-        "cth_gradient",
-        "cma_gradient",
-        "cot_gradient",
-        "precipitation_gradient",
-        "euclid_msg_grid_gradient",
-        "cot30plus_gradient",
-        "cth10plus_gradient"
-
-    ]
-
-    plot_temporal_series_for_variables(
-        mean_df,
-        std_df,
-        selected_vars_temporal_series,
-        class_labels,
-        colors_per_class1_names,
-        temporal_label_mapping,
-        output_dir,
-    )
-
-    # calculate anomalies of the mean and std values for each variable and gradient over the temporal sequence,
-    # with respect to the mean value of the variable/gradient for each class in the training dataset 
-    # and plot the anomalies over the temporal sequence for each class
-    # ***********************************************************************************************
-
-    # read the training video summary csv file to get the mean values of each variable and gradient for each class
-    training_df = read_csv_to_dataframe(CSV_FILES["training_video_summary"])
-
-    # calculate maea values for each variable and gradient for each class in the training dataset
-    training_grouped = training_df.groupby("label")
-    training_mean_df = training_grouped.mean().reset_index()
-
-    # calculate anomalies of the mean and std values for each variable and gradient over the temporal sequence,
-    # with respect to the mean value of the variable/gradient for each class in the training dataset
-    anomalies_mean_df = mean_df.copy()
-    anomalies_std_df = std_df.copy()
-    selected_anomaly_vars_temporal_series = []
-    for var in selected_vars_temporal_series:
-        anomaly_var = f"{var}_anomaly"
-        anomalies_mean_df[var] = anomalies_mean_df.apply(
-            lambda row: row[var] - training_mean_df.loc[
-                training_mean_df["label"] == row["label"], var
-            ].values[0],
-            axis=1,
-        )
-        anomalies_std_df[var] = anomalies_std_df.apply(
-            lambda row: row[var] - training_mean_df.loc[
-                training_mean_df["label"] == row["label"], var
-            ].values[0],
-            axis=1,
-        )
-        # add a name to the variable to indicate that it is an anomaly
-        anomalies_mean_df.rename(columns={var: anomaly_var}, inplace=True)
-        anomalies_std_df.rename(columns={var: anomaly_var}, inplace=True)
-        selected_anomaly_vars_temporal_series.append(anomaly_var)
-        
-    
-    # plot the anomalies over the temporal sequence for each class
-    plot_temporal_series_for_variables(
-        anomalies_mean_df,
-        anomalies_std_df,
-        selected_anomaly_vars_temporal_series,
-        class_labels,
-        colors_per_class1_names,
-        temporal_label_mapping,
-        output_dir,
-    )
-
-    # Repeat the temporal-series and anomaly analysis separately for each view group.
-    for group_name, views in view_groups.items():
-        group_df = temporal_df[temporal_df["view"].isin(views)]
-        if group_df.empty:
-            print(f"No temporal data available for {group_name}; skipping temporal series.")
-            continue
-
-        group_mean_df, group_std_df = calculate_temporal_mean_std(group_df)
-        output_prefix = f"group_{group_name}_"
-
-        plot_temporal_series_for_variables(
-            group_mean_df,
-            group_std_df,
-            selected_vars_temporal_series,
-            class_labels,
-            colors_per_class1_names,
-            temporal_label_mapping,
-            output_dir,
-            output_prefix=output_prefix,
-        )
-
-        group_anomalies_mean_df, group_anomalies_std_df = calculate_anomalies(
-            group_mean_df,
-            group_std_df,
-            selected_vars_temporal_series,
-            training_mean_df,
-        )
-        group_anomaly_vars = [f"{var}_anomaly" for var in selected_vars_temporal_series]
-        plot_temporal_series_for_variables(
-            group_anomalies_mean_df,
-            group_anomalies_std_df,
-            group_anomaly_vars,
-            class_labels,
-            colors_per_class1_names,
-            temporal_label_mapping,
-            output_dir,
-            output_prefix=output_prefix,
-        )
-
-
-def calculate_temporal_mean_std(temporal_df):
-    grouped = temporal_df.groupby(["temporal_sequence_label", "label"])
-    mean_df = grouped.mean(numeric_only=True).reset_index()
-    std_df = grouped.std(numeric_only=True).reset_index()
-    return mean_df, std_df
-
-
-def calculate_anomalies(
-    mean_df,
-    std_df,
-    selected_vars_temporal_series,
-    training_mean_df,
-):
-    anomalies_mean_df = mean_df.copy()
-    anomalies_std_df = std_df.copy()
-
-    for var in selected_vars_temporal_series:
-        anomaly_var = f"{var}_anomaly"
-
-        anomalies_mean_df[var] = anomalies_mean_df.apply(
-            lambda row: row[var] - training_mean_df.loc[
-                training_mean_df["label"] == row["label"], var
-            ].values[0],
-            axis=1,
-        )
-        anomalies_std_df[var] = anomalies_std_df.apply(
-            lambda row: row[var] - training_mean_df.loc[
-                training_mean_df["label"] == row["label"], var
-            ].values[0],
-            axis=1,
-        )
-        anomalies_mean_df.rename(columns={var: anomaly_var}, inplace=True)
-        anomalies_std_df.rename(columns={var: anomaly_var}, inplace=True)
-
-    return anomalies_mean_df, anomalies_std_df
-
-
-
-def plot_temporal_series_for_variables(
-    mean_df,
-    std_df,
-    selected_vars_temporal_series,
-    class_labels,
-    colors_per_class1_names,
-    temporal_label_mapping,
-    output_dir,
-    output_prefix="",
-    ):
-
-    # one plot for each variable and gradient, with mean and std for each class
-    for var in selected_vars_temporal_series:
-        plt.figure(figsize=(10, 6))
-        for class_label in class_labels:
-
-            class_mean = mean_df[mean_df["label"] == class_label]
-            class_std = std_df[std_df["label"] == class_label]
-            
-            # plot just the mean values
-            plt.plot(
-                class_mean["temporal_sequence_label"],
-                class_mean[var],
-                label=f"Class {class_label}",
-                color=colors_per_class1_names.get(str(class_label), "lightgray"),
-                marker="o",
+            plot_class_distributions_over_temporal_sequence(
+                day_night_group_distributions,
+                class_labels,
+                class_colors,
+                temporal_label_mapping,
+                output_dir,
+                output_prefix=f"group_{group_name}_{day_night_label}_",
             )
 
-            #plt.errorbar(
-            #    class_mean["temporal_sequence_label"],
-            #    class_mean[var],
-            #    yerr=class_std[var],
-            #    label=f"Class {class_label}",
-            #    color=colors_per_class1_names.get(str(class_label), "lightgray"),
-            #    fmt="-o",
-            #    capsize=3,
-            #)
+def calculate_class_distributions_over_temporal_sequence(temporal_df):
+    if temporal_df.empty:
+        return pd.DataFrame()
 
-        plt.xlabel("Temporal Sequence Label", fontsize=AXIS_LABEL_FONTSIZE)
-        plt.ylabel(var, fontsize=AXIS_LABEL_FONTSIZE)
-        plt.xticks(
-            ticks=list(temporal_label_mapping.keys()),
-            labels=[temporal_label_mapping[label] for label in temporal_label_mapping.keys()],
-            rotation=35,
-            ha="right",
-            fontsize=TICK_LABEL_FONTSIZE,
-        )
-        plt.yticks(fontsize=TICK_LABEL_FONTSIZE)
-        style_axis(plt.gca())
-        plt.legend(
-            title="Class",
-            bbox_to_anchor=(1.05, 1),
-            loc='upper left',
-            frameon=False,
-            fontsize=LEGEND_FONTSIZE,
-            title_fontsize=LEGEND_FONTSIZE,
-        )
-        plt.tight_layout()
-        output_file = Path(output_dir) / f"{output_prefix}{var}_temporal_sequence.png"
-        plt.savefig(output_file, dpi=300, bbox_inches="tight")
-        print(f"Temporal series plot for {var} saved to {output_file}")
-        plt.close()
-    
-    return None
+    class_counts = (
+        temporal_df.groupby(["temporal_sequence_label", "label"])
+        .size()
+        .unstack(fill_value=0)
+    )
+    return class_counts.div(class_counts.sum(axis=1), axis=0)
+
+
+def save_temporal_subset_csv(subset_df, csv_output_dir, subset_name):
+    csv_output_dir = Path(csv_output_dir)
+    csv_output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_file = (
+        csv_output_dir
+        / f"crops_video_summary_temporal_sequence_{subset_name.lower()}.csv"
+    )
+    subset_df.to_csv(output_file, index=False)
+    print(f"Saved temporal subset CSV to {output_file}")
 
 
 
