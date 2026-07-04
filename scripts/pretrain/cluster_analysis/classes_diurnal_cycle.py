@@ -41,6 +41,7 @@ Generated outputs:
 
 Example call:
 python cluster_analysis/classes_diurnal_cycle.py --mode training
+python cluster_analysis/classes_diurnal_cycle.py --training-only
 python cluster_analysis/classes_diurnal_cycle.py --mode testing
 python cluster_analysis/classes_diurnal_cycle.py --mode both
 
@@ -96,10 +97,11 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 EXPECTED_FRAMES_PER_VIDEO = 8
 DIURNAL_LINEWIDTH = 4.0
 INVALID_LABELS = {-100}
+HOUR_BIN_SIZE = 2
+HOUR_BINS = list(range(0, 24, HOUR_BIN_SIZE))
+HOUR_BIN_CENTERS = np.array(HOUR_BINS) + HOUR_BIN_SIZE / 2
+HOUR_BIN_LABELS = [f"{hour:02d}-{hour + HOUR_BIN_SIZE:02d}" for hour in HOUR_BINS]
 SINGLE_CLASS_YMAX = 0.3
-SINGLE_CLASS_YMAX_BY_LABEL = {
-    7: 0.5,
-}
 EXPECTED_VIDEO_SUMMARY_COLUMNS = [
     "crop",
     "label",
@@ -140,6 +142,13 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(MODE_ALIASES),
         help="Dataset split to plot: training/train, testing/test, or both.",
     )
+    parser.add_argument(
+        "--training-only",
+        dest="mode",
+        action="store_const",
+        const="training",
+        help="Plot only the training dataset diurnal cycles.",
+    )
     return parser.parse_args()
 
 
@@ -173,6 +182,12 @@ def style_axis(ax):
     ax.spines["left"].set_linewidth(1.5)
     ax.spines["bottom"].set_linewidth(1.5)
     ax.tick_params(width=1.5, length=7)
+
+
+def set_hour_bin_axis(ax):
+    ax.set_xticks(HOUR_BIN_CENTERS)
+    ax.set_xticklabels(HOUR_BIN_LABELS, rotation=45, ha="right")
+    ax.set_xlim(0, 24)
 
 
 
@@ -264,15 +279,16 @@ def build_hourly_occurrence(df_times: pd.DataFrame) -> pd.DataFrame:
     df_local["label"] = df_local["label"].astype(int)
 
     time_mid = pd.to_datetime(df_local["time_mid"])
-    df_grouped = df_local.groupby([time_mid.dt.hour, "label"]).size().unstack(fill_value=0)
-    df_grouped = df_grouped.reindex(range(24), fill_value=0)
+    hour_bin = (time_mid.dt.hour // HOUR_BIN_SIZE) * HOUR_BIN_SIZE
+    df_grouped = df_local.groupby([hour_bin, "label"]).size().unstack(fill_value=0)
+    df_grouped = df_grouped.reindex(HOUR_BINS, fill_value=0)
     return df_grouped.div(df_grouped.sum(axis=1).replace(0, np.nan), axis=0).fillna(0)
 
 
 def plot_all_classes(df_grouped: pd.DataFrame, mode: str):
 
     fig, ax = plt.subplots(figsize=(12, 7))
-    hours = df_grouped.index.to_numpy()
+    hours = HOUR_BIN_CENTERS
 
     for label in df_grouped.columns:
         color = colors_per_class1_names.get(str(label), None)
@@ -281,7 +297,7 @@ def plot_all_classes(df_grouped: pd.DataFrame, mode: str):
     ax.set_xlabel("Hour of the day", fontsize=16)
     ax.set_ylabel("Normalized occurrence", fontsize=16)
     ax.set_title("Occurrence of each class across the day", fontsize=16)
-    ax.set_xticks(range(0, 24, 2))
+    set_hour_bin_axis(ax)
     ax.legend(frameon=False, fontsize=11, ncol=3)
     style_axis(ax)
     fig.tight_layout()
@@ -307,7 +323,7 @@ def plot_all_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
                 continue
             line_label = f"Class {label} ({dataset_name})"
             ax.step(
-                df_grouped.index.to_numpy(),
+                HOUR_BIN_CENTERS,
                 df_grouped[label].to_numpy(),
                 where="mid",
                 color=color,
@@ -319,7 +335,7 @@ def plot_all_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
     ax.set_xlabel("Hour of the day", fontsize=16)
     ax.set_ylabel("Normalized occurrence", fontsize=16)
     ax.set_title("Class occurrence across the day: training vs testing", fontsize=16)
-    ax.set_xticks(range(0, 24, 2))
+    set_hour_bin_axis(ax)
     ax.legend(frameon=False, fontsize=9, ncol=4)
     style_axis(ax)
     fig.tight_layout()
@@ -328,7 +344,7 @@ def plot_all_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
 
 
 def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
-    hours = df_grouped.index.to_numpy()
+    hours = HOUR_BIN_CENTERS
 
     for label in df_grouped.columns:
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -343,7 +359,7 @@ def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
         ax.set_xlabel("Hour of the day [hh]", fontsize=16)
         ax.set_ylabel("Normalized occurrence", fontsize=16)
         ax.set_title(f"Occurrence of Class {label} across the day", fontsize=16)
-        ax.set_xticks(range(24))
+        set_hour_bin_axis(ax)
         ax.set_ylim(0, get_single_class_ymax(label))
         style_axis(ax)
         fig.tight_layout()
@@ -352,7 +368,7 @@ def plot_single_classes(df_grouped: pd.DataFrame, mode: str):
 
 
 def get_single_class_ymax(label) -> float:
-    return SINGLE_CLASS_YMAX_BY_LABEL.get(int(label), SINGLE_CLASS_YMAX)
+    return SINGLE_CLASS_YMAX
 
 
 def plot_single_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
@@ -367,7 +383,7 @@ def plot_single_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
                 continue
             has_data = True
             ax.step(
-                df_grouped.index.to_numpy(),
+                HOUR_BIN_CENTERS,
                 df_grouped[label].to_numpy(),
                 where="mid",
                 color=color,
@@ -383,7 +399,7 @@ def plot_single_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
         ax.set_xlabel("Hour of the day [hh]", fontsize=16)
         ax.set_ylabel("Normalized occurrence", fontsize=16)
         ax.set_title(f"Occurrence of Class {label} across the day", fontsize=16)
-        ax.set_xticks(range(24))
+        set_hour_bin_axis(ax)
         ax.set_ylim(0, get_single_class_ymax(label))
         ax.legend(frameon=False, fontsize=11)
         style_axis(ax)
@@ -393,7 +409,7 @@ def plot_single_classes_comparison(grouped_by_dataset: Dict[str, pd.DataFrame]):
 
 
 def plot_single_class_groups(df_grouped: pd.DataFrame, mode: str):
-    hours = df_grouped.index.to_numpy()
+    hours = HOUR_BIN_CENTERS
 
     for group_name, group_labels in class_groups.items():
         fig, ax = plt.subplots(figsize=(8, 5))
@@ -419,7 +435,7 @@ def plot_single_class_groups(df_grouped: pd.DataFrame, mode: str):
         ax.set_xlabel("Hour of the day [hh]", fontsize=16)
         ax.set_ylabel("Normalized occurrence", fontsize=16)
         ax.set_title(f"Occurrence of {group_name} classes across the day", fontsize=16)
-        ax.set_xticks(range(24))
+        set_hour_bin_axis(ax)
         ax.legend(frameon=False, fontsize=11)
         style_axis(ax)
         fig.tight_layout()
