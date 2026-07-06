@@ -1,11 +1,12 @@
 """
-This code reads the video summary CSV files and plots class-level scatter plots
-of mean video properties.
+This code reads the video summary CSV files and cloud-motion CSV files, then
+plots class-level scatter plots of mean video and motion properties.
 
 For each cloud class, the script averages the selected variables over all videos
-in the training dataset. By default, it also reads the testing dataset, plots the
-same class averages for testing, and draws a dashed arrow from the training point
-to the testing point for each class.
+in the training dataset. By default, it also reads the testing dataset, plots
+the same class averages for testing, and draws a dashed arrow from the training
+point to the testing point for each class. With --training-only, the script reads
+and plots only the training data.
 
 The plots include:
     - COT mean vs CTH mean, with class-mean uncertainty from the std columns
@@ -15,6 +16,7 @@ The plots include:
     - Cloud Cover gradient mean vs CTH gradient mean, with training 25-75 percentile uncertainty
     - COT gradient mean vs CTH gradient mean, with training 25-75 percentile uncertainty
     - CTH10+ gradient mean vs COT30+ gradient mean, with training 25-75 percentile uncertainty
+    - wind direction mean vs wind speed mean from cloud-motion CSV files
 
 Markers:
     - circles: training
@@ -52,6 +54,8 @@ config = load_config(config_path)
 CSV_FILES = {
     "training": config["output_files"]["training_video_summary"],
     "testing": config["output_files"]["testing_video_summary"],
+    "training_motion": config["output_files"]["training_cloud_motion"],
+    "testing_motion": config["output_files"]["testing_cloud_motion"],
 }
 
 # create output directory if it doesn't exist
@@ -63,6 +67,7 @@ TEST_MARKER_EDGE_COLOR = "black"
 TEST_MARKER_EDGE_WIDTH = 1.4
 MARKER_EDGE_COLOR = "black"
 MARKER_EDGE_WIDTH = 1.4
+PERCENTILE_ERRORBAR_COLOR = (0.78, 0.78, 0.78, 0.45)
 CMA_GRADIENT_LIMIT = 50
 CTH_MEAN_LIMIT = 8000
 CTH_GRADIENT_LIMIT = 200
@@ -71,6 +76,7 @@ AXIS_LABEL_FONTSIZE = 16
 TITLE_FONTSIZE = 17
 TICK_LABEL_FONTSIZE = 13
 LEGEND_FONTSIZE = 12
+WIND_DIRECTION_X_LIMITS = (100, 310)
 
 
 def parse_args():
@@ -211,6 +217,22 @@ def clean_video_summary_df(video_stats_df):
     return video_stats_df[video_stats_df["label"] != -100]
 
 
+def clean_cloud_motion_df(cloud_motion_df):
+    cloud_motion_df = cloud_motion_df.copy()
+    required_columns = ["label", "mean_response", "mean_direction_from_deg", "mean_speed_kmh"]
+    for column in required_columns:
+        cloud_motion_df[column] = pd.to_numeric(
+            cloud_motion_df[column], errors="coerce"
+        )
+
+    cloud_motion_df = cloud_motion_df.dropna(subset=required_columns)
+    cloud_motion_df = cloud_motion_df[
+        (cloud_motion_df["mean_response"] >= 0.4)
+        & (cloud_motion_df["label"] != -100)
+    ]
+    return cloud_motion_df
+
+
 def plot_training_test_arrows(ax, training_values, test_values, x_column, y_column):
     common_labels = training_values.index.intersection(test_values.index)
 
@@ -337,7 +359,7 @@ def plot_class_percentile_errorbar_points(
             yerr=yerr,
             fmt=marker,
             markersize=marker_size,
-            ecolor="gray",
+            ecolor=PERCENTILE_ERRORBAR_COLOR,
             elinewidth=1.2,
             capsize=3,
             color=get_class_color(label),
@@ -371,22 +393,18 @@ def main():
 
     # load the crop statistics CSV file
     video_stats_df = pd.read_csv(CSV_FILES["training"])
-    video_stats_test_df = pd.read_csv(CSV_FILES["testing"])
-    print("Crop statistics CSV files loaded successfully.")
-
-    # count number of samples with label -100
-    video_minus100 = video_stats_df[video_stats_df["label"] == -100]
-
-    # print number of samples with label -100
-    print(f"Number of samples with label -100: {len(video_minus100)}")
-    #print total number of samples in the dataset
-    print(f"Total number of samples in the dataset: {len(video_stats_df)}")
-    #print percentage of samples with label -100
-    print(f"Percentage of samples with label -100: {len(video_minus100)/len(video_stats_df)*100:.2f}%") 
+    video_train_cloud_motion_df = pd.read_csv(CSV_FILES["training_motion"])
+    video_stats_test_df = pd.read_csv(CSV_FILES["testing"]) if include_test else None
+    video_test_cloud_motion_df = (
+        pd.read_csv(CSV_FILES["testing_motion"]) if include_test else None
+    )
 
     # drop class with label -100
     video_stats_df = clean_video_summary_df(video_stats_df)
-    video_stats_test_df = clean_video_summary_df(video_stats_test_df)
+    video_train_cloud_motion_df = clean_cloud_motion_df(video_train_cloud_motion_df)
+    if include_test:
+        video_stats_test_df = clean_video_summary_df(video_stats_test_df)
+        video_test_cloud_motion_df = clean_cloud_motion_df(video_test_cloud_motion_df)
 
     # read columns for first scatter plot
     scatter_columns = [
@@ -408,8 +426,16 @@ def main():
 
     # calculate mean value for each class for each variable and its std
     class_means = video_stats_df.groupby("label")[scatter_columns].mean()
-    class_means_test = video_stats_test_df.groupby("label")[scatter_columns].mean()
-    class_means_limits = pd.concat([class_means, class_means_test], axis=0)
+    class_means_test = (
+        video_stats_test_df.groupby("label")[scatter_columns].mean()
+        if include_test
+        else None
+    )
+    class_means_limits = (
+        pd.concat([class_means, class_means_test], axis=0)
+        if include_test
+        else class_means
+    )
 
     # create scatter plot of COT vs CTH means with their uncertainties (std) for each class
     fig, ax = plt.subplots(figsize=(12, 7))
@@ -605,7 +631,11 @@ def main():
     class_gradients = video_stats_df.groupby("label")[gradient_columns].mean()  
     class_gradients_q25 = video_stats_df.groupby("label")[gradient_columns].quantile(0.25)
     class_gradients_q75 = video_stats_df.groupby("label")[gradient_columns].quantile(0.75)
-    class_gradients_test = video_stats_test_df.groupby("label")[gradient_columns].mean()
+    class_gradients_test = (
+        video_stats_test_df.groupby("label")[gradient_columns].mean()
+        if include_test
+        else None
+    )
 
     # plot scatter plot of cloud cover gradient vs CTH gradient means for each class
     fig, ax = plt.subplots(figsize=(12, 7))
@@ -785,6 +815,85 @@ def main():
     fig_path = get_output_path("scatter_cth10plus_cot30plus_gradient_means.png", include_test)
     plt.savefig(fig_path, transparent=True, bbox_inches="tight")    
 
+
+    # plot scatter plot of mean_direction_from_deg [deg] and mean_speed_kmh for each class
+    motion_columns = ["mean_direction_from_deg", "mean_speed_kmh"]
+    class_motion_means = video_train_cloud_motion_df.groupby("label")[
+        motion_columns
+    ].mean()
+    class_motion_q25 = video_train_cloud_motion_df.groupby("label")[
+        motion_columns
+    ].quantile(0.25)
+    class_motion_q75 = video_train_cloud_motion_df.groupby("label")[
+        motion_columns
+    ].quantile(0.75)
+    class_motion_means_test = (
+        video_test_cloud_motion_df.groupby("label")[
+            motion_columns
+        ].mean()
+        if include_test
+        else None
+    )
+    class_motion_q25_test = (
+        video_test_cloud_motion_df.groupby("label")[motion_columns].quantile(0.25)
+        if include_test
+        else None
+    )
+    class_motion_q75_test = (
+        video_test_cloud_motion_df.groupby("label")[motion_columns].quantile(0.75)
+        if include_test
+        else None
+    )
+    motion_axis_reference_df = (
+        pd.concat([video_train_cloud_motion_df, video_test_cloud_motion_df], axis=0)
+        if include_test
+        else video_train_cloud_motion_df
+    )
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    if include_test:
+        plot_training_test_links(
+            ax,
+            class_motion_means,
+            class_motion_means_test,
+            "mean_direction_from_deg",
+            "mean_speed_kmh",
+        )
+    plot_class_percentile_errorbar_points(
+        ax,
+        class_motion_means,
+        class_motion_q25,
+        class_motion_q75,
+        "mean_direction_from_deg",
+        "mean_speed_kmh",
+        dataset="training",
+    )
+    if include_test:
+        plot_class_percentile_errorbar_points(
+            ax,
+            class_motion_means_test,
+            class_motion_q25_test,
+            class_motion_q75_test,
+            "mean_direction_from_deg",
+            "mean_speed_kmh",
+            dataset="test",
+        )
+    ax.set_xlabel("Mean Direction From [deg]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("Mean Wind Speed [km/h]", fontsize=AXIS_LABEL_FONTSIZE)
+    dataset_title = "Training and Testing Data" if include_test else "Training Data"
+    ax.set_title(
+        f"Scatter Plot of Mean Direction From vs Mean Wind Speed for {dataset_title}",
+        fontsize=TITLE_FONTSIZE,
+    )
+    move_legend_outside(ax)
+    # format axis
+    style_axis(ax)
+    # set axis limits
+    ax.set_xlim(*WIND_DIRECTION_X_LIMITS)
+    ax.set_ylim(0, 80)
+    # save figure
+    fig_path = get_output_path("scatter_direction_wind_speed_means.png", include_test)
+    plt.savefig(fig_path, transparent=True, bbox_inches="tight")    
 
     # print names of the saved figures
     print(f"Saved scatter plots to: {OUTPUT_DIR}")  
