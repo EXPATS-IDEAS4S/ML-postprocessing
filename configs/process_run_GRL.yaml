@@ -216,3 +216,5 @@ output_files:
   csv_temp_analysis_north_night: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels_north_night.csv
   ancillary_files:
     essl_dataset: /sat_data/output/grl_2026/csv/eswd-v2-2012-2025_expats.csv
+  warning_south_day: /sat_data/output/grl_2026_k10/csv/warning_thresholds_temporal_differences_south_daytime.csv
+  
