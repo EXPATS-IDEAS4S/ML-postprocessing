@@ -68,6 +68,15 @@ TEMPORAL_LABEL_MAPPING = {
     4: "> 4 h after event",
 }
 
+LOOKUP_TABLE_TEMPORAL_INTERVAL_LABELS = {
+    "-4 -> -2": "from far to -4h",
+    "-2 -> -1": "from -4 to -2 h",
+    "-1 -> 0": "from -2 to event",
+    "0 -> 1": "from event to +2h",
+    "1 -> 2": "from +2 to +4h",
+    "2 -> 4": "from 4h to far",
+}
+
 SELECTED_VARS_TEMPORAL_SERIES = [
     "cth_mean",
     "cth10plus_mean",
@@ -91,7 +100,7 @@ VIEW_GROUPS = {
 }
 
 SELECTED_CLASSES_BY_GROUP = {
-    "south_daytime": [5, 6, 7, 3, 9],
+    "south_daytime": [5, 6, 7, 3, 9, 4],
 }
 
 SELECTED_PREDICTORS_BY_GROUP = {
@@ -613,7 +622,10 @@ def plot_warning_threshold_lookup_table(lookup_table, predictor, output_file):
     ax.set_ylabel("Class", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_xticks(np.arange(len(lookup_table.columns)))
     ax.set_xticklabels(
-        lookup_table.columns,
+        [
+            LOOKUP_TABLE_TEMPORAL_INTERVAL_LABELS.get(interval, interval)
+            for interval in lookup_table.columns
+        ],
         rotation=35,
         ha="right",
         fontsize=TICK_LABEL_FONTSIZE,
