@@ -41,6 +41,7 @@ AXIS_LABEL_FONTSIZE = 17
 TICK_LABEL_FONTSIZE = 15
 LEGEND_FONTSIZE = 15
 LINEWIDTH = 4
+POSITIVE_ONLY_DISTRIBUTION_VARIABLES = {"precipitation", "euclid_msg_grid"}
 
 
 def get_time_of_day_linestyle(class_num):
@@ -83,6 +84,8 @@ def add_distribution_legends(ax):
 def get_variable_display_label(var_name):
     if var_name == "cma":
         return "cloud cover"
+    if var_name == "precipitation":
+        return "precipitation [mm]"
     return var_name
 
 
@@ -93,6 +96,20 @@ def style_distribution_axis(ax, var_name):
     ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
     return set_x_ranges_for_variable(ax, var_name)
 
+
+def get_distribution_values(values, var_name):
+    values = pd.to_numeric(values, errors="coerce").dropna()
+    if var_name in POSITIVE_ONLY_DISTRIBUTION_VARIABLES:
+        values = values[values > 0]
+        if len(values) > 0:
+            values = values[values <= values.quantile(0.99)]
+    return values
+
+
+def get_distribution_bins(var_name):
+    if var_name in POSITIVE_ONLY_DISTRIBUTION_VARIABLES:
+        return 30
+    return 50
 
 
 def main():
@@ -135,15 +152,8 @@ def main():
 
                 # filter the dataframe for the current class
                 class_df = video_stats_df[video_stats_df["label"] == class_num]
-                values = pd.to_numeric(class_df[col], errors="coerce").dropna()
-
-                if var_name in ["precipitation", "euclid_msg_grid"]:
-                    values = values[values > 0]
-                    if len(values) > 0:
-                        values = values[values <= values.quantile(0.99)]
-                    bins = 30
-                else:
-                    bins = 50
+                values = get_distribution_values(class_df[col], var_name)
+                bins = get_distribution_bins(var_name)
 
                 # plot the distribution of the current variable for the current class
                 ax = plt.gca()
@@ -178,15 +188,8 @@ def main():
 
                 # filter the dataframe for the current class
                 class_df = video_stats_df[video_stats_df["label"] == class_num]
-                values = pd.to_numeric(class_df[col], errors="coerce").dropna()
-
-                if var_name in ["precipitation", "euclid_msg_grid"]:
-                    values = values[values > 0]
-                    if len(values) > 0:
-                        values = values[values <= values.quantile(0.99)]
-                    bins = 30
-                else:
-                    bins = 50
+                values = get_distribution_values(class_df[col], var_name)
+                bins = get_distribution_bins(var_name)
 
                 # plot the distribution of the current variable for the current class
                 ax = plt.gca()
@@ -225,10 +228,10 @@ def set_x_ranges_for_variable(ax, var_name):
         #ax.set_xlim(0., 100.)
         #ax.set_ylim(0., 0.1)
     elif var_name == "precipitation":
-        ax.set_xlim(0., 3000.)
-        #ax.set_ylim(0., 0.1)
+        ax.set_xlim(0., 500.)
+        ax.set_ylim(0., 0.02)
     elif var_name == "euclid_msg_grid":
-        ax.set_xlim(0., 800.)
+        ax.set_xlim(0., 300.)
         #ax.set_ylim(0., 0.1)
     #elif var_name == "cth10plus":
         #ax.set_xlim(0., 1.)

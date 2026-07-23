@@ -68,9 +68,11 @@ TEST_MARKER_EDGE_WIDTH = 1.4
 MARKER_EDGE_COLOR = "black"
 MARKER_EDGE_WIDTH = 1.4
 PERCENTILE_ERRORBAR_COLOR = (0.78, 0.78, 0.78, 0.45)
-CMA_GRADIENT_LIMIT = 50
+CMA_GRADIENT_PER_15MIN_TO_PER_HOUR = 4
+CMA_GRADIENT_LIMIT = 50 * CMA_GRADIENT_PER_15MIN_TO_PER_HOUR
 CTH_MEAN_LIMIT = 8000
-CTH_GRADIENT_LIMIT = 200
+CTH_GRADIENT_M_PER_15MIN_TO_M_PER_HOUR = 4
+CTH_GRADIENT_LIMIT = 200 * CTH_GRADIENT_M_PER_15MIN_TO_M_PER_HOUR
 ZERO_AXIS_LINEWIDTH = 2.2
 AXIS_LABEL_FONTSIZE = 16
 TITLE_FONTSIZE = 17
@@ -215,6 +217,24 @@ def style_axis(ax):
 def clean_video_summary_df(video_stats_df):
     video_stats_df["label"] = pd.to_numeric(video_stats_df["label"], errors="coerce")
     return video_stats_df[video_stats_df["label"] != -100]
+
+
+def convert_cth_gradient_to_m_per_hour(video_stats_df):
+    video_stats_df = video_stats_df.copy()
+    video_stats_df["cth_gradient"] = (
+        pd.to_numeric(video_stats_df["cth_gradient"], errors="coerce")
+        * CTH_GRADIENT_M_PER_15MIN_TO_M_PER_HOUR
+    )
+    return video_stats_df
+
+
+def convert_cma_gradient_to_per_hour(video_stats_df):
+    video_stats_df = video_stats_df.copy()
+    video_stats_df["cma_gradient"] = (
+        pd.to_numeric(video_stats_df["cma_gradient"], errors="coerce")
+        * CMA_GRADIENT_PER_15MIN_TO_PER_HOUR
+    )
+    return video_stats_df
 
 
 def clean_cloud_motion_df(cloud_motion_df):
@@ -405,6 +425,12 @@ def main():
     if include_test:
         video_stats_test_df = clean_video_summary_df(video_stats_test_df)
         video_test_cloud_motion_df = clean_cloud_motion_df(video_test_cloud_motion_df)
+
+    video_stats_df = convert_cth_gradient_to_m_per_hour(video_stats_df)
+    video_stats_df = convert_cma_gradient_to_per_hour(video_stats_df)
+    if include_test:
+        video_stats_test_df = convert_cth_gradient_to_m_per_hour(video_stats_test_df)
+        video_stats_test_df = convert_cma_gradient_to_per_hour(video_stats_test_df)
 
     # read columns for first scatter plot
     scatter_columns = [
@@ -664,8 +690,8 @@ def main():
             "cth_gradient",
             dataset="test",
         )
-    ax.set_xlabel("Cloud Cover Gradient Mean", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("CTH Gradient Mean [m]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel("cloud cover fraction gradient [h-1]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("CTH Gradient Mean [m/h]", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_title("Scatter Plot of Cloud Cover vs CTH Gradient Means with Training 25-75% Range", fontsize=TITLE_FONTSIZE)
     move_legend_outside(ax)
     style_axis(ax)
@@ -691,7 +717,7 @@ def main():
         y_limit_cap=CTH_GRADIENT_LIMIT,
     )
     style_axis(ax)
-    ax.set_xlim(-0.04, 0.04)
+    ax.set_xlim(-0.16, 0.16)
     ax.set_ylim(-CTH_GRADIENT_LIMIT, CTH_GRADIENT_LIMIT)
     
     # save figure
@@ -726,7 +752,7 @@ def main():
             dataset="test",
         )
     ax.set_xlabel("COT Gradient Mean", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("CTH Gradient Mean [m]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("CTH Gradient Mean [m/h]", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_title("Scatter Plot of COT vs CTH Gradient Means with Training 25-75% Range", fontsize=TITLE_FONTSIZE)
     move_legend_outside(ax)
     style_axis(ax)
