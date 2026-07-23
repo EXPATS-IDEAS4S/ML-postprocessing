@@ -75,7 +75,7 @@ variables:
     bucket_filename_suffix: _RR_15min_msg_res.nc.gz
 
   euclid_msg_grid: 
-    long_name: "EUCLID total lightning"
+    long_name: "EUCLID total lightning fraction"
     unit: null
     categorical: true
     logscale: 
