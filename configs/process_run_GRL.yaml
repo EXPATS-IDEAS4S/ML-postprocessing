@@ -210,6 +210,8 @@ output_files:
   features_testing: /sat_data/fig/grl_2026_k10/test/features_test_dataset_ESSL_grl_2026_k10.csv
   csv_dir: /sat_data/output/grl_2026_k10/csv/
   testing_video_summary_temporal: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels.csv
+  training_video_summary_temporal: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels_crops_video_summary_vars-cth-cma-cot-precipitation-euclid_msg_grid-cth10plus-cot30plus_stats-mean-std-gradient_frames-8_timedim_grl_2026_k10_all_240216_imergmin.csvtraining.csv
+  training_features_distances_centroid: /sat_data/output/grl_2026_k10/csv/grl_2026_k10-features_backbone_r2dplus1_cropres_100x100_inputvars_1_cm_epochs_800.csv
   csv_temp_analysis_south_day: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels_south_day.csv
   csv_temp_analysis_south_night: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels_south_night.csv
   csv_temp_analysis_north_day: /sat_data/output/grl_2026_k10/csv/crops_video_summary_with_temporal_sequence_labels_north_day.csv

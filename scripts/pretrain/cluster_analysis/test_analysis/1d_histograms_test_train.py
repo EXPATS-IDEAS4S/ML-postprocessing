@@ -3,6 +3,7 @@ This script is used to generate 1D histograms for test and train datasets
 in the context of cluster analysis. For the video summary csv file, It creates a histogram for each variable and for each class
 a plot with the test distribution in dashed color, and train distribution in solid colors,
  and saves the plots in the specified output directory.
+The code also calculates the KS statistic and Wasserstein distance between the test and train distributions for each variable/class pair, and saves these metrics in a CSV file.
 
 
 Author: Claudia Acquistapace

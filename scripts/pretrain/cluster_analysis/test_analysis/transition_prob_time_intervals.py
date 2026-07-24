@@ -86,6 +86,12 @@ def validate_input_columns(video_stats_df, csv_path):
 
 
 def clean_video_stats(video_stats_df):
+    """
+    Clean the input video stats dataframe by:
+    - Converting columns to appropriate data types
+    - Dropping rows with missing values in required columns
+    - Filtering out rows with excluded class labels and temporal sequence labels
+    """
     video_stats_df = video_stats_df.copy()
     video_stats_df["label"] = pd.to_numeric(video_stats_df["label"], errors="coerce")
     video_stats_df["view"] = pd.to_numeric(video_stats_df["view"], errors="coerce")
