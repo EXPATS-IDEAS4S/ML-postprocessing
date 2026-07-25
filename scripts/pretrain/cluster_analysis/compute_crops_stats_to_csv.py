@@ -123,7 +123,7 @@ in batch mode use this:
 cd /home/claudia/codes/ML_postprocessing
 nohup conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_stats_to_csv.py --mode test > logs/compute_crops_stats_to_csv_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 PID #  457299 launched at 10:31 on fri 8 may 2026
-
+PID # 3046239 launched at 15:16 on Fri 24 jul 2026 to include prec fraction in the video summary CSV
 to check when reopening
 ------
 ps -fp 294705
@@ -352,6 +352,14 @@ def get_derived_fraction_vars(sel_vars):
         for var in sel_vars
         if var in FRACTION_BIN_CONFIG
     ]
+
+
+def get_video_summary_vars(sel_vars):
+    """Return variables that should appear in the video-level summary CSV."""
+    summary_vars = sel_vars + get_derived_fraction_vars(sel_vars)
+    if "precipitation" in sel_vars and "prec_fraction" not in summary_vars:
+        summary_vars.append("prec_fraction")
+    return summary_vars
 
 
 def get_fraction_bins_for_derived_var(derived_var):
@@ -1374,6 +1382,11 @@ def get_video_scalar(var, values, var_config, frame_dict=None):
             return np.nan
         return fractions.get("fraction", np.nan)
 
+    if var == "prec_fraction":
+        if frame_dict is not None:
+            values = frame_dict.get("raw_values", frame_dict["values"])
+        return compute_single_stat(values, "prec_fraction", "precipitation")
+
     if frame_dict is not None:
         values = frame_dict["values"]
 
@@ -1426,6 +1439,23 @@ def update_video_summary_records(summary_by_crop, block_result, crop_requests_by
         row[f"{var}_mean"] = temporal_mean
         row[f"{var}_std"] = temporal_std
         row[f"{var}_gradient"] = compute_temporal_gradient(times, scalars)
+
+        if var == "precipitation":
+            if mode == "per_frame":
+                fraction_scalars = [
+                    get_video_scalar("prec_fraction", None, var_config, frame_dict=item)
+                    for item in frame_values
+                ]
+            else:
+                fraction_scalars = [get_video_scalar("prec_fraction", values, var_config)]
+
+            fraction_scalars = np.asarray(fraction_scalars, dtype=float)
+            fraction_mean, fraction_std = summarize_temporal_series(fraction_scalars)
+            row["prec_fraction_mean"] = fraction_mean
+            row["prec_fraction_std"] = fraction_std
+            row["prec_fraction_gradient"] = compute_temporal_gradient(
+                times, fraction_scalars
+            )
 
 
 def extract_geotime_metadata(coords, times):
@@ -1621,6 +1651,7 @@ def main(
     # Prepare output CSV paths for each variable
     sel_vars = config["statistics"]["spatial"]["sel_vars"]
     output_vars = sel_vars + get_derived_fraction_vars(sel_vars)
+    video_summary_vars = get_video_summary_vars(sel_vars)
     var_to_csv = {}
     mode_flag = "test" if mode == "test" else None
     for var in output_vars:
@@ -1646,7 +1677,7 @@ def main(
 
     video_summary_parts = [
         "crops_video_summary",
-        f"vars-{'-'.join(output_vars)}",
+        f"vars-{'-'.join(video_summary_vars)}",
         "stats-mean-std-gradient",
         f"frames-{n_frames}",
         time_flag,
@@ -1674,7 +1705,7 @@ def main(
         "lat_mid",
         "lon_mid",
     ]
-    for var in output_vars:
+    for var in video_summary_vars:
         video_summary_columns.extend([
             f"{var}_mean",
             f"{var}_std",
