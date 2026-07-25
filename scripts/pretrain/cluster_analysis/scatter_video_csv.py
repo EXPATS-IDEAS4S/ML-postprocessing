@@ -46,7 +46,7 @@ sys.path.append("/home/claudia/codes/ML_postprocessing")
 
 from utils.configs import load_config
 from utils.plotting.plot_class_analysis import plot_hourly_histogram, style_axis as base_style_axis
-from utils.plotting.class_colors import colors_per_class1_names
+from utils.plotting.class_colors import colors_per_class_codes_grl
 
 # read filename of csv files from config file process_run_GRL.yaml
 config_path = "/home/claudia/codes/ML_postprocessing/configs/process_run_GRL.yaml"
@@ -107,7 +107,7 @@ def get_output_path(filename, include_test):
 
 
 def get_class_color(label):
-    return colors_per_class1_names.get(str(int(label)), None)
+    return colors_per_class_codes_grl.get(str(int(label)), None)
 
 
 def get_class_label(label):
