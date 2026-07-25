@@ -38,10 +38,34 @@ colors_per_class1_names = {
     '9': 'goldenrod',
 }
 
+colors_per_class_codes_grl = {
+    # Decaying daytime (teals)
+    '0': "#2CA25F",
+    '8': "#006D2C",
 
+    # Decaying nighttime (blues)
+    '3': "#807DBA",
+    '9': "#54278F",
+
+    # Growing convection (oranges)
+    '5': "#FDBE85",
+    '6': "#F16913",
+    '7': "#B30000",
+
+    # Other
+    '1': "#A7A6BA", 
+    '2': "#C4C3D0",
+    '4': "#91A3B0",
+}
+
+class_groups_diurnal_cycle = {
+    'day': [5, 6, 7 ],
+    'night': [0, 1,4,8],
+    'anytime': [2,3,9]
+}
 
 class_groups = {
-        'Convection': [1, 3, 5, 8, 6],
+        'Convection': [5, 6, 7, 8, ],
         'Overcast': [4, 7],
         'Broken Clouds': [0, 2],
     }

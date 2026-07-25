@@ -39,7 +39,7 @@ from scripts.pretrain.cluster_analysis.classes_diurnal_cycle import (
     load_hourly_occurrence,
 )
 from utils.plotting.class_colors import (
-    colors_per_class1_names,
+    colors_per_class_codes_grl,
     class_groups_diurnal_cycle,
 )
 from utils.plotting.plot_class_analysis import plot_hourly_histogram
@@ -55,8 +55,8 @@ N_CLASSES = 10
 N_FRAMES = 8
 OUTPUT_DPI = 220
 TRANSITION_GAMMA = 0.5
-FONT_SIZE_TEXT = 20 
-TICK_LABEL_SIZE = 20
+FONT_SIZE_TEXT = 23 
+TICK_LABEL_SIZE = 23
 COMMON_YMAX = 30
 DIURNAL_LINEWIDTH = 4.0
 FIGURE_LEFT = 0.08
@@ -64,6 +64,7 @@ FIGURE_RIGHT = 0.97
 FIGURE_BOTTOM = 0.14
 FIGURE_TOP = 0.94
 ROW_TITLE_OFFSET = 0.025
+BULK_ROW_TITLE_OFFSET = 0.04
 HOUR_BIN_SIZE = 2
 HOUR_BINS = list(range(0, 24, HOUR_BIN_SIZE))
 HOUR_BIN_CENTERS = np.array(HOUR_BINS) + HOUR_BIN_SIZE / 2
@@ -139,9 +140,9 @@ def add_class_legend(fig):
             [0],
             marker="o",
             linestyle="None",
-            markerfacecolor=colors_per_class1_names[str(label)],
-            markeredgecolor=colors_per_class1_names[str(label)],
-            markersize=10,
+            markerfacecolor=colors_per_class_codes_grl[str(label)],
+            markeredgecolor=colors_per_class_codes_grl[str(label)],
+            markersize=16,
             label=f"Class {label}",
         )
         for label in range(N_CLASSES)
@@ -152,7 +153,7 @@ def add_class_legend(fig):
         bbox_to_anchor=(0.5, 0.05), 
         ncol=N_CLASSES,
         frameon=False,
-        fontsize=20,
+        fontsize=23,
         handletextpad=0.4,
         columnspacing=1.1,
     )
@@ -225,7 +226,13 @@ def main():
     # Row 2 and Row 3 will be filled with the other plots (not implemented in this snippet)
     plot_second_row_bulk_properties(fig, gs, config)
 
-    add_row_title(fig, gs, 1, "b) Bulk properties of cloud classes")
+    add_row_title(
+        fig,
+        gs,
+        1,
+        "b) Bulk properties of cloud classes",
+        offset=BULK_ROW_TITLE_OFFSET,
+    )
 
     plot_third_row_temporal_characteristics(fig, gs, config)
 
@@ -274,7 +281,7 @@ def plot_single_class_groups(ax, df_grouped: pd.DataFrame, group_labels, hours, 
             ax,
             hours,
             df_grouped[label].to_numpy() * 100,  # Convert to percentage
-            colors_per_class1_names.get(str(label), None),
+            colors_per_class_codes_grl.get(str(label), None),
             f"Class {label}",
             linewidth=DIURNAL_LINEWIDTH,
         )
@@ -314,7 +321,7 @@ def plot_second_row_bulk_properties(fig, gs, config):
         c=cot_values,
         cmap=cot_cmap,
         s=SCATTER_MARKER_AREA_LARGE,
-        edgecolors=[colors_per_class1_names[str(label)] for label in class_means.index],
+        edgecolors=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         linewidths=2.5, 
         zorder=3,
     )
@@ -342,11 +349,12 @@ def plot_second_row_bulk_properties(fig, gs, config):
     )
     cbar.set_ticks([5, 10, 15, 20, 25])
     cbar.ax.xaxis.set_label_position("top")
-    cbar.set_label("Mean COT", fontsize=16)
-    cbar.ax.tick_params(labelsize=16, length=3)
+    cbar.set_label("Mean COT", fontsize=18)
+    cbar.ax.tick_params(labelsize=18, length=3)
     ax1.set_xlabel("Cloud Cover (%)", fontsize=FONT_SIZE_TEXT)
     ax1.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
     ax1.set_title("1.Cloud Cover vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    ax1.set_xlim(0., 100.)
     highlight_selected_classes(ax1, class_means, "cma_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE_LARGE)
     style_axis(ax1) 
 
@@ -355,7 +363,7 @@ def plot_second_row_bulk_properties(fig, gs, config):
     ax2.scatter(
         class_means["cma_mean"]*100, # convert to percentage
         class_means["prec_fraction_mean"]*100, # convert to percentage
-        c=[colors_per_class1_names[str(label)] for label in class_means.index],
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
     )
@@ -372,6 +380,7 @@ def plot_second_row_bulk_properties(fig, gs, config):
     ax2.set_xlabel("Cloud Cover (%)", fontsize=FONT_SIZE_TEXT)
     ax2.set_ylabel("Precipitation Fraction (%)", fontsize=FONT_SIZE_TEXT)
     ax2.set_title("2.Cloud Cover vs Precipitation Fraction", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    ax2.set_xlim(0., 100.)
     highlight_selected_classes(ax2, class_means, "cma_mean", "prec_fraction_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax2)
 
@@ -381,7 +390,7 @@ def plot_second_row_bulk_properties(fig, gs, config):
     ax3.scatter(
         class_means["precipitation_mean"],
         class_means["euclid_msg_grid_mean"],
-        c=[colors_per_class1_names[str(label)] for label in class_means.index],
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
     )

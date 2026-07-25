@@ -40,7 +40,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
 from utils.configs import load_config  # noqa: E402
-from utils.plotting.class_colors import colors_per_class1_names  # noqa: E402
+from utils.plotting.class_colors import colors_per_class_codes_grl  # noqa: E402
 
 CONFIG_PATH = REPO_ROOT / "configs" / "process_run_GRL.yaml"
 OUTPUT_FILENAME = "figure2_classes_representativity_structure.png"
@@ -48,7 +48,7 @@ N_CLASSES = 10
 N_FRAMES = 8
 OUTPUT_DPI = 220
 TRANSITION_GAMMA = 0.5
-FONT_SIZE_TEXT = 20 
+FONT_SIZE_TEXT = 23 
 
 # load video summary csv file path from config
 config = load_config(str(CONFIG_PATH))
@@ -184,7 +184,7 @@ def draw_class_and_frames(parent_spec, centroid_videos_df, fig: plt.Figure) -> N
 
     # Draw the class boxes in the color of the class
     for class_index in range(N_CLASSES):
-        color = colors_per_class1_names.get(str(class_index), "lightgray")
+        color = colors_per_class_codes_grl.get(str(class_index), "lightgray")
 
         class_ax = fig.add_subplot(subgrid[class_index, 0])
         if anchor_ax is None:
@@ -223,7 +223,7 @@ def draw_class_and_frames(parent_spec, centroid_videos_df, fig: plt.Figure) -> N
                     "missing\ncentroid",
                     ha="center",
                     va="center",
-                    fontsize=8,
+                    fontsize=9,
                     color="#666666",
                 )
                 continue
@@ -239,7 +239,7 @@ def draw_class_and_frames(parent_spec, centroid_videos_df, fig: plt.Figure) -> N
                     f"missing\n{frame_path_column}",
                     ha="center",
                     va="center",
-                    fontsize=8,
+                    fontsize=9,
                     color="#666666",
                 )
 
@@ -257,7 +257,7 @@ def draw_count_placeholder(ax: plt.Axes, features_df: pd.DataFrame) -> None:
     total_videos = class_counts.sum()
     normalized_counts = class_counts / total_videos
     bar_colors = [
-        colors_per_class1_names.get(str(class_label), "lightgray")
+        colors_per_class_codes_grl.get(str(class_label), "lightgray")
         for class_label in normalized_counts.index
     ]
 
@@ -305,7 +305,7 @@ def draw_distance_placeholder(ax: plt.Axes, features_df: pd.DataFrame) -> None:
         distance_distributions.append(class_distances.values)
         positions.append(class_index)
 
-    ax.boxplot(
+    boxplot = ax.boxplot(
         distance_distributions,
         positions=positions,
         widths=0.6,
@@ -315,7 +315,11 @@ def draw_distance_placeholder(ax: plt.Axes, features_df: pd.DataFrame) -> None:
         capprops=dict(color="black"),
         medianprops=dict(color="red"),
     )
-    ax.set_title("c) Class spread", fontsize=FONT_SIZE_TEXT, pad=8, loc="left", fontweight="bold")
+    for patch, class_index in zip(boxplot["boxes"], positions):
+        patch.set_facecolor(
+            colors_per_class_codes_grl.get(str(class_index), "lightgray")
+        )
+    ax.set_title("c) Class compactness", fontsize=FONT_SIZE_TEXT, pad=8, loc="left", fontweight="bold")
     ax.set_xlabel("Class", fontsize=FONT_SIZE_TEXT)
     ax.set_ylabel("Distance distribution", fontsize=FONT_SIZE_TEXT)
     ax.set_xticks(np.arange(N_CLASSES))
@@ -389,7 +393,7 @@ def draw_distance_legend(ax: plt.Axes) -> None:
     ]
 
     for x_value, label in legend_lines:
-        ax.text(x_value, box_top + 0.08, label, transform=ax.transAxes, ha="center", va="bottom", fontsize=11)
+        ax.text(x_value, box_top + 0.08, label, transform=ax.transAxes, ha="center", va="bottom", fontsize=13)
 
     ax.text(
         x_median,
@@ -398,9 +402,9 @@ def draw_distance_legend(ax: plt.Axes) -> None:
         transform=ax.transAxes,
         ha="center",
         va="top",
-        fontsize=11,
+        fontsize=13,
     )
-    ax.text(0.87, y_center, "outlier", transform=ax.transAxes, ha="left", va="center", fontsize=11)
+    ax.text(0.87, y_center, "outlier", transform=ax.transAxes, ha="left", va="center", fontsize=13)
 
 def draw_spatial_placeholder(ax: plt.Axes, fig: plt.Figure, features_df) -> None:
     """"
@@ -432,7 +436,7 @@ def draw_spatial_placeholder(ax: plt.Axes, fig: plt.Figure, features_df) -> None
     class_positions = np.arange(N_CLASSES)
     bar_width = 0.38
     bar_colors = [
-        colors_per_class1_names.get(str(class_label), "lightgray")
+        colors_per_class_codes_grl.get(str(class_label), "lightgray")
         for class_label in class_positions
     ]
 

@@ -8,11 +8,29 @@ Includes functions for visualizing regions with Cartopy maps.
 
 
 import matplotlib.pyplot as plt
-import seaborn as sns
 import os
 import numpy as np
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
+try:
+    import cartopy.crs as ccrs
+    import cartopy.feature as cfeature
+except ImportError:  # pragma: no cover - optional dependency
+    ccrs = None
+    cfeature = None
+
+try:
+    import seaborn as sns
+except ImportError:  # pragma: no cover - optional dependency
+    sns = None
+
+
+def require_seaborn():
+    if sns is None:
+        raise ImportError("seaborn is required for this plotting function.")
+
+
+def require_cartopy():
+    if ccrs is None or cfeature is None:
+        raise ImportError("cartopy is required for this plotting function.")
 
 def style_axis(ax):
     ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
@@ -50,6 +68,15 @@ def set_x_ranges_for_variable(ax, var_name):
         #ax.set_ylim(0., 0.1)
     return ax
 
+
+def style_axis(ax):
+    ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_linewidth(1.5)
+    ax.spines["bottom"].set_linewidth(1.5)
+    ax.tick_params(width=1.5, length=7)
+
 def plot_hourly_histogram(ax, hours, values, color, label, linewidth=3):
     """"
     Plots a histogram of values over hours on the provided axis.
@@ -70,7 +97,8 @@ def plot_hourly_histogram(ax, hours, values, color, label, linewidth=3):
         linewidth=linewidth,
         label=label,
     )
-      
+    style_axis(ax)
+    
 def plot_single_vars(df, n_subsample, var, long_name, unit, direction, scale, output_path, run_name, sampling_type, stat, legend=False, hue=None, boxplot=True):
     """
     Plots a boxplot for a single variable, with optional grouping by hue, and saves the figure.
@@ -109,6 +137,7 @@ def plot_single_vars(df, n_subsample, var, long_name, unit, direction, scale, ou
     None
         The function saves the boxplot as a PNG file and closes the figure.
     """
+    require_seaborn()
     fig, ax = plt.subplots(figsize=(8, 4))
     #sns.boxplot(data=df, x='label', y=var, ax=ax, showfliers=False)
     if boxplot:
@@ -186,6 +215,7 @@ def plot_joyplot(df, class_label, variable_name, long_name, unit, n_subsample, o
     legend : bool, optional (default=False)
         If True, a legend is added to the plot.
     """
+    require_seaborn()
     # Filter data for the specified class label
     class_df = df[df['label'] == class_label]
 

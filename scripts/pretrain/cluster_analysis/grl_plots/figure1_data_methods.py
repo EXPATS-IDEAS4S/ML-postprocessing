@@ -82,12 +82,12 @@ OROGRAPHY_VARIABLE_CANDIDATES = (
     "dem",
     "DEM",
 )
-PANEL_LABEL_SIZE = 18
-TITLE_SIZE = 18
-SMALL_TITLE_SIZE = 18
-TIME_LABEL_SIZE = 12
-COLORBAR_LABEL_SIZE = 16
-COLORBAR_TICK_LABEL_SIZE = 16
+PANEL_LABEL_SIZE = 21
+TITLE_SIZE = 21
+SMALL_TITLE_SIZE = 21
+TIME_LABEL_SIZE = 14
+COLORBAR_LABEL_SIZE = 18
+COLORBAR_TICK_LABEL_SIZE = 18
 OUTPUT_FILENAME = "figure1_data_methods.png"
 MSG_VARIABLE_CANDIDATES = ("IR_108", "ir_108", "BT108", "bt108")
 CMA_VARIABLE_CANDIDATES = ("cma", "CMA")
@@ -688,7 +688,7 @@ def plot_orography_contours(ax: plt.Axes, orography: xr.DataArray | None, extent
         transform=ccrs.PlateCarree() if ccrs is not None else ax.transData,
         zorder=3,
     )
-    ax.clabel(contours, inline=True, fontsize=7, fmt="%d m")
+    ax.clabel(contours, inline=True, fontsize=8, fmt="%d m")
 
 
 def plot_panel_a(
@@ -836,7 +836,7 @@ def plot_panel_b(parent_spec, fig: plt.Figure, ds_crop: xr.Dataset, times: np.nd
         axes[-1].legend(
             handles=[Patch(facecolor="none", edgecolor="white", hatch="////", label="No-cloud pixels")],
             loc="lower right",
-            fontsize=8,
+            fontsize=9,
             frameon=True,
         )
 
@@ -872,7 +872,7 @@ def plot_diagonal_panel(
             transform=ax.transAxes,
             ha="center",
             va="center",
-            fontsize=14,
+            fontsize=16,
             color="0.35",
         )
         return
@@ -885,7 +885,7 @@ def plot_diagonal_panel(
         textcoords="axes fraction",
         xycoords="axes fraction",
         arrowprops={"arrowstyle": "->", "linewidth": 1.4, "color": "0.3"},
-        fontsize=10,
+        fontsize=12,
         color="0.3",
     )
 
@@ -941,7 +941,7 @@ def plot_diagonal_panel(
         ax.legend(
             handles=[Patch(facecolor="none", edgecolor="white", hatch="////", label="No-cloud pixels")],
             loc="lower right",
-            fontsize=8,
+            fontsize=9,
             frameon=True,
         )
 
