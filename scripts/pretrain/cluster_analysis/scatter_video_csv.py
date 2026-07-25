@@ -68,11 +68,9 @@ TEST_MARKER_EDGE_WIDTH = 1.4
 MARKER_EDGE_COLOR = "black"
 MARKER_EDGE_WIDTH = 1.4
 PERCENTILE_ERRORBAR_COLOR = (0.78, 0.78, 0.78, 0.45)
-CMA_GRADIENT_PER_15MIN_TO_PER_HOUR = 4
-CMA_GRADIENT_LIMIT = 50 * CMA_GRADIENT_PER_15MIN_TO_PER_HOUR
+CMA_GRADIENT_LIMIT = 0.2
 CTH_MEAN_LIMIT = 8000
-CTH_GRADIENT_M_PER_15MIN_TO_M_PER_HOUR = 4
-CTH_GRADIENT_LIMIT = 200 * CTH_GRADIENT_M_PER_15MIN_TO_M_PER_HOUR
+CTH_GRADIENT_LIMIT = 800
 ZERO_AXIS_LINEWIDTH = 2.2
 AXIS_LABEL_FONTSIZE = 16
 TITLE_FONTSIZE = 17
@@ -219,24 +217,6 @@ def clean_video_summary_df(video_stats_df):
     return video_stats_df[video_stats_df["label"] != -100]
 
 
-def convert_cth_gradient_to_m_per_hour(video_stats_df):
-    video_stats_df = video_stats_df.copy()
-    video_stats_df["cth_gradient"] = (
-        pd.to_numeric(video_stats_df["cth_gradient"], errors="coerce")
-        * CTH_GRADIENT_M_PER_15MIN_TO_M_PER_HOUR
-    )
-    return video_stats_df
-
-
-def convert_cma_gradient_to_per_hour(video_stats_df):
-    video_stats_df = video_stats_df.copy()
-    video_stats_df["cma_gradient"] = (
-        pd.to_numeric(video_stats_df["cma_gradient"], errors="coerce")
-        * CMA_GRADIENT_PER_15MIN_TO_PER_HOUR
-    )
-    return video_stats_df
-
-
 def clean_cloud_motion_df(cloud_motion_df):
     cloud_motion_df = cloud_motion_df.copy()
     required_columns = ["label", "mean_response", "mean_direction_from_deg", "mean_speed_kmh"]
@@ -292,18 +272,45 @@ def plot_training_test_links(ax, training_values, test_values, x_column, y_colum
     )
 
 
-def plot_class_errorbar_points(ax, class_means, x_mean, y_mean, x_std, y_std, dataset):
+def plot_class_errorbar_points(
+    ax,
+    class_means,
+    x_mean,
+    y_mean,
+    x_std,
+    y_std,
+    dataset,
+    marker_size=None,
+):
+    """
+    Plot class means with error bars representing the standard deviation for each class.
+    Parameters:
+        ax: matplotlib Axes object to plot on.
+        class_means: DataFrame containing class means and standard deviations.
+        x_mean: Column name for the x-axis mean values.
+        y_mean: Column name for the y-axis mean values.
+        x_std: Column name for the x-axis standard deviation values.
+        y_std: Column name for the y-axis standard deviation values.
+        dataset: String indicating whether the data is from 'training' or 'test'.
+    """
+    # Determine marker style and size based on dataset type
     marker = "o" if dataset == "training" else "s"
-    marker_size = MARKER_SIZE if dataset == "training" else TEST_MARKER_SIZE
+    if marker_size is None:
+        marker_size = MARKER_SIZE if dataset == "training" else TEST_MARKER_SIZE
     linestyle = "-" if dataset == "training" else "--"
     label_suffix = "training" if dataset == "training" else "test"
 
+    # Scale the error bars for percentage-based columns
+    percent_scaled_columns = {"cma_mean", "prec_fraction_mean"}
+    x_scale = 100 if x_mean in percent_scaled_columns else 1
+    y_scale = 100 if y_mean in percent_scaled_columns else 1
+
     for label in class_means.index:
-        xerr = finite_or_zero(class_means.loc[label, x_std])
-        yerr = finite_or_zero(class_means.loc[label, y_std])
+        xerr = finite_or_zero(class_means.loc[label, x_std]) * x_scale
+        yerr = finite_or_zero(class_means.loc[label, y_std]) * y_scale
         ax.errorbar(
-            class_means.loc[label, x_mean],
-            class_means.loc[label, y_mean],
+            class_means.loc[label, x_mean] * x_scale,
+            class_means.loc[label, y_mean] * y_scale,
             xerr=xerr,
             yerr=yerr,
             fmt=marker,
@@ -353,9 +360,11 @@ def plot_class_percentile_errorbar_points(
     x_column,
     y_column,
     dataset,
+    marker_size=None,
 ):
     marker = "o" if dataset == "training" else "s"
-    marker_size = MARKER_SIZE if dataset == "training" else TEST_MARKER_SIZE
+    if marker_size is None:
+        marker_size = MARKER_SIZE if dataset == "training" else TEST_MARKER_SIZE
     label_suffix = "training" if dataset == "training" else "test"
 
     for label in class_means.index:
@@ -425,12 +434,6 @@ def main():
     if include_test:
         video_stats_test_df = clean_video_summary_df(video_stats_test_df)
         video_test_cloud_motion_df = clean_cloud_motion_df(video_test_cloud_motion_df)
-
-    video_stats_df = convert_cth_gradient_to_m_per_hour(video_stats_df)
-    video_stats_df = convert_cma_gradient_to_per_hour(video_stats_df)
-    if include_test:
-        video_stats_test_df = convert_cth_gradient_to_m_per_hour(video_stats_test_df)
-        video_stats_test_df = convert_cma_gradient_to_per_hour(video_stats_test_df)
 
     # read columns for first scatter plot
     scatter_columns = [
@@ -690,8 +693,8 @@ def main():
             "cth_gradient",
             dataset="test",
         )
-    ax.set_xlabel("cloud cover fraction gradient [h-1]", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("CTH Gradient Mean [m/h]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel("Cloud cover fraction gradient [fraction/h]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("CTH gradient [m/h]", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_title("Scatter Plot of Cloud Cover vs CTH Gradient Means with Training 25-75% Range", fontsize=TITLE_FONTSIZE)
     move_legend_outside(ax)
     style_axis(ax)
@@ -751,8 +754,8 @@ def main():
             "cth_gradient",
             dataset="test",
         )
-    ax.set_xlabel("COT Gradient Mean", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("CTH Gradient Mean [m/h]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel("COT gradient [COT units/h]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("CTH gradient [m/h]", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_title("Scatter Plot of COT vs CTH Gradient Means with Training 25-75% Range", fontsize=TITLE_FONTSIZE)
     move_legend_outside(ax)
     style_axis(ax)
@@ -811,8 +814,8 @@ def main():
             "cot30plus_gradient",
             dataset="test",
         )
-    ax.set_xlabel("CTH10+ Gradient Mean", fontsize=AXIS_LABEL_FONTSIZE)
-    ax.set_ylabel("COT30+ Gradient Mean", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_xlabel("CTH10+ gradient [fraction/h]", fontsize=AXIS_LABEL_FONTSIZE)
+    ax.set_ylabel("COT30+ gradient [fraction/h]", fontsize=AXIS_LABEL_FONTSIZE)
     ax.set_title("Scatter Plot of CTH10+ vs COT30+ Gradient Means with Training 25-75% Range", fontsize=TITLE_FONTSIZE)
     move_legend_outside(ax)
     style_axis(ax)
