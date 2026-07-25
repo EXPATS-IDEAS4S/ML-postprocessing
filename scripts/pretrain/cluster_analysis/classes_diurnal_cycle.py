@@ -236,6 +236,7 @@ def main(mode: str = "both"):
         plot_single_classes_comparison(grouped_by_dataset)
         return
 
+    # Load the hourly occurrence DataFrame for the specified mode (training or testing)
     df_grouped = load_hourly_occurrence(mode)
 
     plot_all_classes(df_grouped, mode)
