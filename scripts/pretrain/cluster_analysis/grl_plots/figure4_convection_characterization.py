@@ -77,7 +77,14 @@ B_TITLE_GAP_FRACTION = 0.38
 LEGEND_FONTSIZE = 18
 WIND_DIRECTION_X_LIMITS = (100, 310)
 TIME_SERIES_LINEWIDTH = 4
+TIME_SERIES_PERCENTILE_LINEWIDTH = 2.2
 TIME_SERIES_MARKER_SIZE = 10
+TIME_SERIES_PERCENTILES_TO_PLOT = ["25", "50", "75"]
+GRADIENT_UNIT_STRINGS = [
+    "gradient units: m/frame",
+    "gradient units: %/frame",
+    "gradient units: mm/frame",
+]
 MAIN_ROW_HSPACE = 0.62
 LOWER_TIME_SERIES_ROW_SHIFT = 0.04
 
@@ -119,6 +126,9 @@ CSV_FILES = {
 }
 N_CLASSES = 10
 N_FRAMES = 8
+TARGET_DISTANCE = 1
+CHECK_TARGET_DISTANCE = 0
+N_SAMPLES_PER_CLASS = 2000
 PERCENTILE_COLUMNS = ["25", "50", "75", "95"]
 SLOPE_DECIMALS = 2
 CLASS_TO_PLOT = {
@@ -130,6 +140,7 @@ PLOT_SPECS = {
     "cth": {
         "csv_key": "training_csv_cth",
         "mode": "percentiles",
+        "summary_column": "50",
         "ylabel_abs": "Cloud-top height (m)",
         "ylabel_delta": "$\\Delta$Cloud-top\nheight (m)",
         "slope_unit": "m/frame",
@@ -171,6 +182,7 @@ PLOT_SPECS = {
     "precipitation": {
         "csv_key": "training_csv_precipitation",
         "mode": "percentiles",
+        "summary_column": "sum[mm]",
         "ylabel_abs": "Cumulative Precipitation (mm)",
     "ylabel_delta": "$\\Delta$Cumulative\nPrecipitation (mm)",
         "slope_unit": "mm/frame",
@@ -196,17 +208,145 @@ def load_variable_dataframe(csv_path):
     return pd.read_csv(csv_path)
 
 
+def extract_crop_name(path_value):
+    return os.path.basename(path_value)
+
+
+def select_samples_closest_to_target_distance(df, target_distance=TARGET_DISTANCE, n_samples=N_SAMPLES_PER_CLASS):
+    """
+    Select the n_samples rows from the dataframe df that have the closest distance to the target_distance.
+    """
+    distance_to_target = (df["distance"] - target_distance).abs()
+    return df.loc[distance_to_target.nsmallest(n_samples).index]
+
+
+def build_selected_datasets(video_stats_df, video_distances_df, target_distance):
+    print(
+        f"Selecting the {N_SAMPLES_PER_CLASS} samples whose distance is closest to {target_distance} for each class..."
+    )
+    video_stats_plot_df = (
+        video_stats_df.groupby("label", group_keys=False)
+        .apply(lambda df: select_samples_closest_to_target_distance(df, target_distance=target_distance))
+        .reset_index(drop=True)
+    )
+    selected_crops_df = video_stats_plot_df[["crop", "label"]].drop_duplicates()
+
+    variable_dfs = {}
+    for variable_name, plot_spec in PLOT_SPECS.items():
+        variable_df = load_variable_dataframe(CSV_FILES[plot_spec["csv_key"]])
+        variable_df = variable_df.merge(video_distances_df[["crop", "distance"]], on="crop", how="left")
+        variable_df = clean_variable_df(variable_df)
+        variable_df = variable_df.merge(selected_crops_df, on=["crop", "label"], how="inner")
+        variable_dfs[variable_name] = variable_df
+
+    return video_stats_plot_df, variable_dfs
+
+
+def create_figure(video_stats_plot_df, variable_dfs, output_filename):
+    print(f"Plotting {output_filename}...")
+    n_rows = 1 + len(PLOTS_SPEC_SELECTED)
+
+    fig, axes = plt.subplots(
+        n_rows,
+        3,
+        figsize=(25, 5.4 * n_rows),
+        sharey="row",
+        gridspec_kw={"height_ratios": [2.6] + [1.0] * (n_rows - 1)},
+    )
+    fig.subplots_adjust(left=0.08, right=0.84, top=0.92, bottom=0.08, hspace=MAIN_ROW_HSPACE, wspace=0.12)
+
+    plot_scatter_row(
+        fig,
+        axes[0, :],
+        video_stats_plot_df,
+        class_2_plot=CLASS_TO_PLOT,
+    )
+
+    for i, (variable_name, plot_spec) in enumerate(PLOTS_SPEC_SELECTED.items()):
+        if variable_name == "cth10plus":
+            plot_time_series_row(axes[i+1, :],
+                                variable_dfs["cth"],
+                                class_2_plot=CLASS_TO_PLOT,
+                                variable_name="cth",
+                                plot_spec=PLOTS_SPEC_SELECTED["cth"],
+                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
+                                row_index=i)
+            plot_time_series_row(axes[i+1, :],
+                                variable_dfs[variable_name],
+                                class_2_plot=CLASS_TO_PLOT,
+                                variable_name=variable_name,
+                                plot_spec=plot_spec,
+                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
+                                row_index=i)
+        else:
+            plot_time_series_row(axes[i+1, :],
+                                variable_dfs[variable_name],
+                                class_2_plot=CLASS_TO_PLOT,
+                                variable_name=variable_name,
+                                plot_spec=plot_spec,
+                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
+                                row_index=i)
+
+    tighten_lower_time_series_spacing(axes)
+
+    if n_rows > 1:
+        upper_bbox = axes[0, 0].get_position()
+        lower_bbox = axes[1, 0].get_position()
+        fig.text(
+            lower_bbox.x0,
+            lower_bbox.y1 + B_TITLE_GAP_FRACTION * (upper_bbox.y0 - lower_bbox.y1),
+            "b) Temporal changes in video sequences",
+            fontsize=TITLE_FONTSIZE,
+            fontweight="bold",
+            ha="left",
+            va="center",
+        )
+
+    add_class_legend(fig)
+    add_percentile_legend(fig, frameon=False)
+    plt.savefig(OUTPUT_DIR / output_filename, dpi=300)
+    plt.close(fig)
+
+
+def get_time_series_value_column(plot_spec):
+    if plot_spec["mode"] == "percentiles":
+        return plot_spec.get("summary_column", "50")
+    return plot_spec["value_column"]
+
+
+def get_available_time_series_percentiles(df):
+    return [column for column in TIME_SERIES_PERCENTILES_TO_PLOT if column in df.columns]
+
+
+def compute_frame_index_percentiles(class_df, value_column, scale):
+    percentiles = [int(column) / 100 for column in TIME_SERIES_PERCENTILES_TO_PLOT]
+    class_time_series = (
+        class_df.groupby("frame_index")[value_column]
+        .quantile(percentiles)
+        .unstack()
+        .reset_index()
+    )
+    class_time_series = class_time_series.rename(
+        columns={percentile: str(int(percentile * 100)) for percentile in percentiles}
+    )
+    percentile_columns = get_available_time_series_percentiles(class_time_series)
+    class_time_series[percentile_columns] = class_time_series[percentile_columns] * scale
+    return class_time_series
+
+
 def prepare_class_time_series(variable_df, plot_spec):
     variable_df = variable_df.copy()
     variable_df["time"] = pd.to_datetime(variable_df["time"], errors="coerce")
     required_columns = ["crop", "label", "time"]
+    value_column = get_time_series_value_column(plot_spec)
 
     if plot_spec["mode"] == "percentiles":
         for column in PERCENTILE_COLUMNS:
             variable_df[column] = pd.to_numeric(variable_df[column], errors="coerce")
-        required_columns.extend(PERCENTILE_COLUMNS)
+        if value_column not in PERCENTILE_COLUMNS:
+            variable_df[value_column] = pd.to_numeric(variable_df[value_column], errors="coerce")
+        required_columns.append(value_column)
     else:
-        value_column = plot_spec["value_column"]
         variable_df[value_column] = pd.to_numeric(variable_df[value_column], errors="coerce")
         required_columns.append(value_column)
 
@@ -226,13 +366,8 @@ def prepare_class_time_series(variable_df, plot_spec):
         if class_df.empty:
             continue
 
-        if plot_spec["mode"] == "percentiles":
-            class_time_series = class_df.groupby("frame_index")[PERCENTILE_COLUMNS].mean().reset_index()
-        else:
-            value_column = plot_spec["value_column"]
-            scale = plot_spec.get("scale", 1)
-            class_time_series = class_df.groupby("frame_index")[value_column].mean().reset_index()
-            class_time_series[value_column] = class_time_series[value_column] * scale
+        scale = plot_spec.get("scale", 1)
+        class_time_series = compute_frame_index_percentiles(class_df, value_column, scale)
 
         class_time_series_by_label[class_label] = class_time_series
 
@@ -283,33 +418,73 @@ def plot_variable_time_series_on_axes(
             ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
             continue
 
-        slope_lines = []
+        annotation_entries = []
 
         for class_label in plotted_classes:
             series_df = class_time_series_by_label[class_label]
-            if plot_spec["mode"] == "percentiles":
-                median = series_df["50"].to_numpy()
+            percentile_columns = get_available_time_series_percentiles(series_df)
+            if percentile_columns:
+                for percentile_column in percentile_columns:
+                    percentile_values = series_df[percentile_column].to_numpy()
+                    percentile_delta = percentile_values - percentile_values[0]
+                    if percentile_column == "50":
+                        linestyle = "-"
+                    elif percentile_column == "25":
+                        linestyle = ":"
+                    else:
+                        linestyle = "--"
+                    marker = "o" if percentile_column == "50" else None
+                    ax.plot(
+                        frames,
+                        percentile_delta,
+                        color=colors_per_class_codes_grl[str(class_label)],
+                        linestyle=linestyle,
+                        marker=marker,
+                        linewidth=TIME_SERIES_LINEWIDTH if percentile_column == "50" else TIME_SERIES_PERCENTILE_LINEWIDTH,
+                        markersize=TIME_SERIES_MARKER_SIZE,
+                        alpha=1.0 if percentile_column == "50" else 0.75,
+                        label=f"Class {class_label}",
+                    )
+                central_series = series_df["50"].to_numpy()
             else:
-                value_column = plot_spec["value_column"]
-                median = series_df[value_column].to_numpy()
+                mean = series_df["mean"].to_numpy()
+                delta = mean - mean[0]
+                ax.plot(
+                    frames,
+                    delta,
+                    color=colors_per_class_codes_grl[str(class_label)],
+                    marker="o",
+                    linewidth=TIME_SERIES_LINEWIDTH,
+                    markersize=TIME_SERIES_MARKER_SIZE,
+                    label=f"Class {class_label}",
+                )
+                central_series = mean
 
-            delta = median - median[0]
-            ax.plot(
-                frames,
-                delta,
-                color=colors_per_class_codes_grl[str(class_label)],
-                marker="o",
-                linewidth=TIME_SERIES_LINEWIDTH,
-                markersize=TIME_SERIES_MARKER_SIZE,
-                label=f"Class {class_label}",
-            )
-
-            slope = np.polyfit(frames, median, 1)[0]
-            slope_lines.append(
-                f"Class {class_label}: {slope:+.{SLOPE_DECIMALS}f} {plot_spec['slope_unit']}"
+            slope = np.polyfit(frames, central_series, 1)[0]
+            annotation_entries.append(
+                {
+                    "text": f"{slope:+.{SLOPE_DECIMALS}f}",
+                    "color": colors_per_class_codes_grl[str(class_label)],
+                }
             )
 
         ax.axhline(0, color="0.35", linewidth=1)
+        if annotation_entries:
+            bbox_style = {"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2.0}
+            x_positions = np.linspace(0.2, 0.8, num=len(annotation_entries))
+            for x_position, entry in zip(x_positions, annotation_entries):
+                ax.text(
+                    x_position,
+                    0.06,
+                    entry["text"],
+                    transform=ax.transAxes,
+                    ha="left",
+                    va="bottom",
+                    fontsize=21,
+                    color=entry["color"],
+                    fontweight="bold",
+                    bbox=bbox_style,
+                )
         if column_index == 0:
             ax.set_ylabel(plot_spec["ylabel_delta"], fontsize=AXIS_LABEL_FONTSIZE)
         else:
@@ -318,16 +493,17 @@ def plot_variable_time_series_on_axes(
             ax.set_xlabel("Frame index", fontsize=AXIS_LABEL_FONTSIZE)
         else:
             ax.set_xlabel("")
-        ax.text(
-            0.03,
-            0.06,
-            "\n".join(slope_lines),
-            transform=ax.transAxes,
-            ha="left",
-            va="bottom",
-            fontsize=21,
-            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 3.0},
-        )
+        if column_index == len(CLASS_TO_PLOT) - 1 and row_index < len(GRADIENT_UNIT_STRINGS):
+            ax.text(
+                0.98,
+                0.98,
+                GRADIENT_UNIT_STRINGS[row_index],
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=18,
+                bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2.0},
+            )
         ax.grid(axis="y", alpha=0.2)
         style_axis(ax)
         ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
@@ -359,6 +535,47 @@ def add_class_legend(fig):
     )
 
 
+def add_percentile_legend(fig, frameon=False):
+    handles = [
+        Line2D(
+            [0],
+            [0],
+            color="0.25",
+            linestyle=":",
+            linewidth=TIME_SERIES_PERCENTILE_LINEWIDTH,
+            label="25th percentile",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color="0.25",
+            linestyle="-",
+            marker="o",
+            linewidth=TIME_SERIES_LINEWIDTH,
+            markersize=TIME_SERIES_MARKER_SIZE,
+            label="50th percentile",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color="0.25",
+            linestyle="--",
+            linewidth=TIME_SERIES_PERCENTILE_LINEWIDTH,
+            label="75th percentile",
+        ),
+    ]
+    fig.legend(
+        handles=handles,
+        loc="upper left",
+        bbox_to_anchor=(0.865, 0.92),
+        ncol=1,
+        frameon=frameon,
+        fontsize=LEGEND_FONTSIZE,
+        handletextpad=0.6,
+        columnspacing=0.8,
+    )
+
+
 def tighten_lower_time_series_spacing(axes, shift=LOWER_TIME_SERIES_ROW_SHIFT):
     for row_index in range(2, axes.shape[0]):
         row_shift = shift * (row_index - 1)
@@ -373,14 +590,14 @@ def tighten_lower_time_series_spacing(axes, shift=LOWER_TIME_SERIES_ROW_SHIFT):
     
 def main():
 
-    # ------------- selecting the 2000 closest samples to the centroid for each class -------------
+    # ------------- selecting the 2000 samples whose distance is closest to 1 for each class -------------
     # load the crop statistics CSV file
     print("Loading video summary and distances CSV files...")
     video_stats_df = pd.read_csv(CSV_FILES["training_video_summary"])
     video_distances_df = pd.read_csv(CSV_FILES["training_distances"])
 
     # read column path from video_distances_df and extract the crop name from the path
-    video_distances_df["crop"] = video_distances_df["path"].apply(lambda x: os.path.basename(x).split(".")[0])
+    video_distances_df["crop"] = video_distances_df["path"].apply(extract_crop_name)
 
     print("Merging video summary and distances dataframes...")
     # add distance variable from video_distances_df to all the videos in the dataframe
@@ -390,97 +607,18 @@ def main():
     # drop class with label -100
     video_stats_df = clean_variable_df(video_stats_df)
 
-    print("Selecting the 2000 closest samples to the centroid for each class...")
-    # select for each class the 1000 closest samples to the centroid based on the distance column
-    video_stats_plot_df = video_stats_df.groupby("label").apply(lambda x: x.nsmallest(2000, "distance")).reset_index(drop=True)
+    figures_to_generate = [
+        (TARGET_DISTANCE, "figure4_convection_characterization.png"),
+        (CHECK_TARGET_DISTANCE, "figure4_convection_characterization_distance_close_to_0.png"),
+    ]
 
-    # ------------ select the 2000 closest samples to the centroid for each variable file of the frames ------------
-    # create a dictionary to store the variable dataframes
-    variable_dfs = {}
-    for variable_name, plot_spec in PLOT_SPECS.items():
-
-        # load the variable dataframe from the corresponding CSV file
-        variable_df = load_variable_dataframe(CSV_FILES[plot_spec["csv_key"]])
-
-        # add distance variable from video_distances_df to all the videos in the dataframe
-        variable_df = variable_df.merge(video_distances_df[["crop", "distance"]], on="crop", how="left")
-
-        # drop class with label -100
-        variable_df = clean_variable_df(variable_df)    
-
-        # select for each class the 2000 closest samples to the centroid based on the distance column
-        variable_df = variable_df.groupby("label").apply(lambda x: x.nsmallest(2000, "distance")).reset_index(drop=True)
-        variable_dfs[variable_name] = variable_df
-    
-    print("Plotting figure 4...")
-    #---------------start plotting the figure 4----------------
-    n_rows = 1 + len(PLOTS_SPEC_SELECTED)
-
-    fig, axes = plt.subplots(
-        n_rows,
-        3,
-        figsize=(25, 5.4 * n_rows),
-        sharey="row",
-        gridspec_kw={"height_ratios": [2.6] + [1.0] * (n_rows - 1)},
-    )
-    fig.subplots_adjust(left=0.08, right=0.84, top=0.92, bottom=0.08, hspace=MAIN_ROW_HSPACE, wspace=0.12)
-
-    # create functions to plot the entire row of scatter plots and time series 
-    plot_scatter_row(
-        fig,
-        axes[0, :],
-        video_stats_plot_df,
-        class_2_plot=CLASS_TO_PLOT,
-    )
-    # loop on the variables to be plotter to call the function to plot the time series for each variable
-    for i, (variable_name, plot_spec) in enumerate(PLOTS_SPEC_SELECTED.items()):
-
-        # plot cth and cth10plus time series in the same plot with different y-axis
-        if variable_name == "cth10plus":
-            plot_time_series_row(axes[i+1, :], 
-                                variable_dfs["cth"], 
-                                class_2_plot=CLASS_TO_PLOT, 
-                                variable_name="cth", 
-                                plot_spec=PLOTS_SPEC_SELECTED["cth"],
-                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
-                                row_index=i)
-            plot_time_series_row(axes[i+1, :], 
-                                variable_dfs[variable_name], 
-                                class_2_plot=CLASS_TO_PLOT, 
-                                variable_name=variable_name, 
-                                plot_spec=plot_spec,
-                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
-                                row_index=i)
-        else:
-            plot_time_series_row(axes[i+1, :], 
-                                variable_dfs[variable_name], 
-                                class_2_plot=CLASS_TO_PLOT, 
-                                variable_name=variable_name, 
-                                plot_spec=plot_spec,
-                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
-                                row_index=i)
-
-    tighten_lower_time_series_spacing(axes)
-        
-    # set the title for each row of the figure
-    if n_rows > 1:
-        upper_bbox = axes[0, 0].get_position()
-        lower_bbox = axes[1, 0].get_position()
-        fig.text(
-            lower_bbox.x0,
-            lower_bbox.y1 + B_TITLE_GAP_FRACTION * (upper_bbox.y0 - lower_bbox.y1),
-            "b) Temporal changes in video sequences",
-            fontsize=TITLE_FONTSIZE,
-            fontweight="bold",
-            ha="left",
-            va="center",
+    for target_distance, output_filename in figures_to_generate:
+        video_stats_plot_df, variable_dfs = build_selected_datasets(
+            video_stats_df,
+            video_distances_df,
+            target_distance=target_distance,
         )
-    # call legend for the classes outside the figure
-    add_class_legend(fig)
-
-    # format the figure and save it
-    plt.savefig(OUTPUT_DIR / "figure4_convection_characterization.png", dpi=300)
-    plt.close(fig)  
+        create_figure(video_stats_plot_df, variable_dfs, output_filename)
 
 
 def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
@@ -496,6 +634,10 @@ def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
     first_group_name = next(iter(class_2_plot))
     shared_top_ax = None
     shared_bottom_ax = None
+    selected_labels = [label for class_labels in class_2_plot.values() for label in class_labels]
+    selected_df = video_stats_plot_df[video_stats_plot_df["label"].isin(selected_labels)]
+    top_values = selected_df["cth_mean"].dropna()
+    bottom_values = selected_df.loc[selected_df["euclid_msg_grid_mean"] > 0, "euclid_msg_grid_mean"].dropna()
 
     for column_index, (parent_ax, (group_name, class_labels)) in enumerate(zip(axes, class_2_plot.items())):
         parent_spec = parent_ax.get_subplotspec()
@@ -558,7 +700,7 @@ def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
                 median_row["cma_mean"] * 100,
                 median_row["cth_mean"],
                 color=colors_per_class_codes_grl[str(class_label)],
-                edgecolor="black",
+                edgecolor="white",
                 marker="X",
                 s=MARKER_SIZE * 10,
                 linewidth=2.5,
@@ -576,7 +718,7 @@ def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
                     bottom_median_row["precipitation_mean"],
                     bottom_median_row["euclid_msg_grid_mean"],
                     color=colors_per_class_codes_grl[str(class_label)],
-                    edgecolor="black",
+                    edgecolor="white",
                     marker="X",
                     s=MARKER_SIZE * 10,
                     linewidth=2.5,
@@ -586,6 +728,7 @@ def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
             ax_top.set_ylabel("Mean cloud \n top height (m)", fontsize=AXIS_LABEL_FONTSIZE)
         else:
             ax_top.set_ylabel("")
+            ax_top.tick_params(axis="y", labelleft=False)
         ax_top.set_xlabel("Cloud Cover (%)", fontsize=AXIS_LABEL_FONTSIZE, labelpad=14)
         ax_top.set_xlim(0., 100.)
         ax_top.grid(axis="y", alpha=0.2)
@@ -596,12 +739,24 @@ def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
             ax_bottom.set_ylabel("Lightning counts", fontsize=AXIS_LABEL_FONTSIZE)
         else:
             ax_bottom.set_ylabel("")
+            ax_bottom.tick_params(axis="y", labelleft=False)
         ax_bottom.set_xlabel("Mean cumulative Precipitation (mm)", fontsize=AXIS_LABEL_FONTSIZE)
         ax_bottom.set_xlim(0.,6000.)
         ax_bottom.set_yscale("log")
         ax_bottom.grid(axis="y", alpha=0.2)
         style_axis(ax_bottom)
         ax_bottom.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
+
+    if shared_top_ax is not None and not top_values.empty:
+        top_min = top_values.min()
+        top_max = top_values.max()
+        top_padding = max((top_max - top_min) * 0.05, 1)
+        shared_top_ax.set_ylim(top_min - top_padding, top_max + top_padding)
+
+    if shared_bottom_ax is not None and not bottom_values.empty:
+        bottom_min = bottom_values.min()
+        bottom_max = bottom_values.max()
+        shared_bottom_ax.set_ylim(bottom_min * 0.8, bottom_max * 1.2)
 
 
 

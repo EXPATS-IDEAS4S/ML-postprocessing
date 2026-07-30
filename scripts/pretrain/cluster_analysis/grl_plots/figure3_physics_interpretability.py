@@ -160,14 +160,18 @@ def add_class_legend(fig):
 
 
 def plot_class_errorbars(ax, class_means, x_mean, y_mean, x_std, y_std, color="gray"):
+    percent_scaled_columns = {"cma_mean", "prec_fraction_mean"}
+    x_scale = 100 if x_mean in percent_scaled_columns else 1
+    y_scale = 100 if y_mean in percent_scaled_columns else 1
+
     for label in class_means.index:
         xerr = class_means.loc[label, x_std]
         yerr = class_means.loc[label, y_std]
         ax.errorbar(
-            class_means.loc[label, x_mean],
-            class_means.loc[label, y_mean],
-            xerr=0 if not np.isfinite(xerr) else xerr,
-            yerr=0 if not np.isfinite(yerr) else yerr,
+            class_means.loc[label, x_mean] * x_scale,
+            class_means.loc[label, y_mean] * y_scale,
+            xerr=0 if not np.isfinite(xerr) else xerr * x_scale,
+            yerr=0 if not np.isfinite(yerr) else yerr * y_scale,
             fmt="none",
             ecolor=color,
             elinewidth=1.2,
@@ -366,16 +370,16 @@ def plot_second_row_bulk_properties(fig, gs, config):
         c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
+        zorder=3,
     )
-    plot_class_errorbar_points(
+    plot_class_errorbars(
         ax2,
         class_means,
         "cma_mean",
         "prec_fraction_mean",
         "cma_std",
         "prec_fraction_std",
-        dataset="training",
-        marker_size=SCATTER_MARKER_SIZE,
+        color="dimgray",
     )
     ax2.set_xlabel("Cloud Cover (%)", fontsize=FONT_SIZE_TEXT)
     ax2.set_ylabel("Precipitation Fraction (%)", fontsize=FONT_SIZE_TEXT)
