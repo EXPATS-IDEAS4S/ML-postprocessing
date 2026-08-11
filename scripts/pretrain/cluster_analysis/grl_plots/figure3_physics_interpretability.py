@@ -64,7 +64,7 @@ FIGURE_RIGHT = 0.97
 FIGURE_BOTTOM = 0.14
 FIGURE_TOP = 0.94
 ROW_TITLE_OFFSET = 0.025
-BULK_ROW_TITLE_OFFSET = 0.04
+BULK_ROW_TITLE_OFFSET = ROW_TITLE_OFFSET
 HOUR_BIN_SIZE = 2
 HOUR_BINS = list(range(0, 24, HOUR_BIN_SIZE))
 HOUR_BIN_CENTERS = np.array(HOUR_BINS) + HOUR_BIN_SIZE / 2
@@ -212,7 +212,7 @@ def main():
 
     # generate a figure with three main rows each with their title and three histograms
     fig = plt.figure(figsize=(25, 20))
-    gs = GridSpec(3, 3, figure=fig, wspace=0.3, hspace=0.55)
+    gs = GridSpec(3, 3, figure=fig, wspace=0.3, hspace=0.68)
     fig.subplots_adjust(
         left=FIGURE_LEFT,
         right=FIGURE_RIGHT,
