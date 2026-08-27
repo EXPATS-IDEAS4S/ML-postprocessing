@@ -11,8 +11,8 @@ from class_colors import CLOUD_CLASS_INFO, COLORS_PER_CLASS
 # =========================
 # CONFIG
 # =========================
-input_dir = "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/epoch_800/all/"
-filename = "crop_list_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_140207.csv"
+input_dir = "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc/epoch_800/all/"
+filename = "crop_list_dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_all_140371.csv"
 
 output_dir = os.path.join(input_dir, "diurnal_cycle_plots_new_colors")
 os.makedirs(output_dir, exist_ok=True)

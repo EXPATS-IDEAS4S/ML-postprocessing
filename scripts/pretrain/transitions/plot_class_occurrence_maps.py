@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 from cmcrameri import cm as cmc
 from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FixedLocator
 
 
 # ==================================================
@@ -34,14 +35,15 @@ MAP_EXTENT = [5, 16, 42, 51.5]
 MARGIN_DEG = 2.0
 BIN_DEG = 0.2
 TARGET_CLASSES = ["EC", "DC", "OA"]
-UTC_TIME_RANGES = [(0, 6), (6, 12), (12, 18), (18, 24)]
+UTC_TIME_RANGES = [(0, 24)]#[(0, 6), (6, 12), (12, 18), (18, 24), (0, 24)]
 
 # Typography
-SUPTITLE_FONTSIZE = 24
-PANEL_TITLE_FONTSIZE = 21
-GRID_LABEL_FONTSIZE = 16
-CBAR_LABEL_FONTSIZE = 17
-CBAR_TICK_FONTSIZE = 15
+SUPTITLE_FONTSIZE = 27
+PANEL_TITLE_FONTSIZE = 20
+AXIS_TICK_FONTSIZE = 16
+GRID_LABEL_FONTSIZE = 18
+CBAR_LABEL_FONTSIZE = 20
+CBAR_TICK_FONTSIZE = 20
 CBAR_VMIN = 0.0
 CBAR_VMAX = 2e-3
 
@@ -244,15 +246,10 @@ def plot_class_occurrence_multiplot(train_df, test_df, output_file, utc_range):
     fig, axes = plt.subplots(
         2,
         3,
-        figsize=(18, 10),
+        figsize=(15.5, 8.5),
         subplot_kw={"projection": ccrs.PlateCarree()},
     )
-    fig.subplots_adjust(left=0.05, right=0.9, bottom=0.07, top=0.92, wspace=0.12, hspace=0.16)
-    fig.suptitle(
-        f"Class occurrence maps - {format_utc_range_label(utc_range)}",
-        fontsize=SUPTITLE_FONTSIZE,
-        fontweight="bold",
-    )
+    fig.subplots_adjust(left=0.05, right=0.9, bottom=0.07, top=0.95, wspace=0.12, hspace=0.16)
 
     datasets = [("Training", train_df), ("Test", test_df)]
     cmap = cmc.nuuk
@@ -309,7 +306,9 @@ def plot_class_occurrence_multiplot(train_df, test_df, output_file, utc_range):
             )
 
             ax.set_extent(REDUCED_EXTENT, crs=ccrs.PlateCarree())
+            ax.tick_params(axis='both', which='major', labelsize=AXIS_TICK_FONTSIZE)
             gl = ax.gridlines(draw_labels=True, alpha=0.3)
+            gl.xlocator = FixedLocator([8, 10, 12])
             gl.top_labels = False
             gl.right_labels = False
             gl.xlabel_style = {"size": GRID_LABEL_FONTSIZE}
@@ -325,7 +324,7 @@ def plot_class_occurrence_multiplot(train_df, test_df, output_file, utc_range):
     cax = fig.add_axes([0.92, 0.16, 0.015, 0.68])
     cbar = fig.colorbar(mesh, cax=cax, orientation="vertical")
     cbar.set_label(
-        f"Relative spatial frequency per {BIN_DEG:.1f} deg bin ($\\times 10^{{-3}}$)",
+        f"Relative frequency ($\\times 10^{{-3}}$)",
         fontsize=CBAR_LABEL_FONTSIZE,
     )
     cbar.ax.tick_params(labelsize=CBAR_TICK_FONTSIZE)

@@ -31,6 +31,10 @@ def compute_percentile(values,stat):
     values : float or array-like
         The computed percentile(s) or range of percentiles.
     """
+    values = np.asarray(values)
+    if not np.isfinite(values).any():
+        return np.nan
+
     if isinstance(stat, str) and '-' in stat:
         # Split the string into two percentile values
         lower, upper = map(int, stat.split('-'))
@@ -44,6 +48,66 @@ def compute_percentile(values,stat):
         # Compute the percentile if stat is a number or list of percentiles
         values = np.nanpercentile(values, stat)
     return values
+
+
+def compute_category_fractions(values, categories, valid_mask=None, decimals=4):
+    """Return the fraction of values in each configured category interval."""
+    values = np.asarray(values)
+    if valid_mask is not None:
+        values = values[np.asarray(valid_mask, dtype=bool)]
+    values = values[np.isfinite(values)]
+    total = values.size
+    if total == 0:
+        return {name: np.nan for name in categories}
+
+    return {
+        name: round(float(((values >= lower) & (values < upper)).sum() / total), decimals)
+        for name, (lower, upper) in categories.items()
+    }
+
+
+def classify_day_night(values, nan_fraction_threshold=0.5):
+    """Classify a crop as night when more than the threshold is NaN."""
+    values = np.asarray(values)
+    if values.size == 0:
+        return np.nan
+    return "night" if np.isnan(values).mean() > nan_fraction_threshold else "day"
+
+
+def compute_precipitation_area(rain, infrared, clear_sky_threshold=320.0,
+                               rain_threshold=0.1, min_pixel_count=100):
+    """Compute rainy cloudy-pixel fraction using infrared cloud detection."""
+    rain = np.asarray(rain)
+    infrared = np.asarray(infrared)
+    cloudy = np.isfinite(infrared) & (infrared < clear_sky_threshold)
+    cloudy_count = int(cloudy.sum())
+    if cloudy_count <= min_pixel_count:
+        return 0.0
+    rainy_count = int(((rain >= rain_threshold) & cloudy).sum())
+    if rainy_count <= min_pixel_count:
+        return 0.0
+    return rainy_count / cloudy_count
+
+
+def compute_cumulative_precipitation(rain, infrared, clear_sky_threshold=320.0,
+                                     rain_threshold=0.1, min_pixel_count=100,
+                                     accumulation_factor=2.0):
+    """Sum rainy cloudy-pixel rates and convert them by the accumulation factor."""
+    rain = np.asarray(rain)
+    infrared = np.asarray(infrared)
+    cloudy = np.isfinite(infrared) & (infrared < clear_sky_threshold)
+    rainy_cloudy = (rain >= rain_threshold) & cloudy
+    if int(cloudy.sum()) <= min_pixel_count or int(rainy_cloudy.sum()) <= min_pixel_count:
+        return 0.0
+    return float(np.nansum(rain[rainy_cloudy]) / accumulation_factor)
+
+
+def compute_rain_rate_percentile(values, percentile):
+    """Compute a percentile of rain rates, retaining zero-rain pixels."""
+    values = np.asarray(values, dtype=float)
+    if not np.isfinite(values).any():
+        return np.nan
+    return float(np.nanpercentile(values, int(percentile)))
 
 
 

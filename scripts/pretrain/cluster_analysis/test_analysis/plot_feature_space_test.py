@@ -1,3 +1,10 @@
+"""Feature-space and storm-aggregate summary plots for test data.
+
+The script produces the baseline figures using all test samples, then a second
+set of figures restricted to the test samples belonging to the top-50 unique
+rain and hail storms selected from the pathway analysis CSV.
+"""
+
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -21,6 +28,7 @@ from utils.plotting.class_colors import COLORS_PER_CLASS, CLOUD_CLASS_INFO
 run_name = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
 output_path = f"/data1/fig/{run_name}/epoch_800/test_traj"
 output_test_csv = os.path.join(output_path, f"features_train_test_{run_name}_2nd_labels.csv")
+pathway_csv = f"{output_path}/pathway_analysis/df_pathways_merged_no_dominance.csv"
 
 feature_space = os.path.join(output_path, "tsne_all_vectors_with_centroids.csv")
 
@@ -66,6 +74,24 @@ cloud_items_ordered = sorted(
 labels_ordered = [lbl for lbl, _ in cloud_items_ordered]
 short_labels = [info["short"] for _, info in cloud_items_ordered]
 colors_ordered = [info["color"] for _, info in cloud_items_ordered]
+
+
+def normalize_storm_id(series):
+    """Convert storm identifiers to canonical form: storm<digits>."""
+    s = series.astype(str).str.strip()
+    has_prefix = s.str.lower().str.startswith("storm")
+    out = pd.Series(index=s.index, dtype=object)
+
+    prefixed = s[has_prefix].str.extract(r"(storm\d+)", expand=False)
+    out.loc[has_prefix] = prefixed
+
+    numeric = pd.to_numeric(s[~has_prefix], errors="coerce")
+    out.loc[~has_prefix] = np.where(
+        numeric.notna(),
+        "storm" + numeric.astype("Int64").astype(str),
+        pd.NA,
+    )
+    return out
 
 
 #rename feature columns to tsne columns
@@ -277,6 +303,35 @@ for c, ginfo in enumerate(groups_dict):
         # axes_fs[0, c].text(
         #     -0.01, 0.5, region,
         #     transform=ax_fs.transAxes,
+
+
+    def select_top_unique_storms(pathway_df, rain_col="precipitation99", hail_col="max_hail_intensity", top_n=50):
+        """Return the top-N unique storm_ids for rain and hail, deduplicated across both lists."""
+        rain_sorted = pathway_df[pathway_df[rain_col].notna()].copy()
+        hail_sorted = pathway_df[pathway_df[hail_col].notna()].copy()
+
+        rain_sorted = rain_sorted.sort_values([rain_col, "pathway_prob"], ascending=[False, False])
+        hail_sorted = hail_sorted.sort_values([hail_col, "pathway_prob"], ascending=[False, False])
+
+        rain_unique = rain_sorted.drop_duplicates(subset=["storm_id"]).head(top_n).copy()
+        hail_unique = hail_sorted.drop_duplicates(subset=["storm_id"]).head(top_n).copy()
+
+        rain_unique["event_category"] = "RAIN"
+        hail_unique["event_category"] = "HAIL"
+
+        selected = pd.concat([rain_unique, hail_unique], ignore_index=True)
+        selected["storm_id"] = selected["storm_id"].astype(str)
+        selected["storm_id_norm"] = normalize_storm_id(selected["storm_id"])
+
+        # Keep a single record per storm, preserving the strongest event information.
+        selected = selected.sort_values(
+            ["event_category", rain_col, hail_col, "pathway_prob"],
+            ascending=[True, False, False, False],
+            na_position="last",
+        ).drop_duplicates(subset=["storm_id"], keep="first")
+
+        selected_ids = selected["storm_id_norm"].dropna().astype(str).unique().tolist()
+        return selected, sorted(selected_ids)
         #     fontsize=14,
         #     fontweight="bold",
         #     va="center",
@@ -298,9 +353,20 @@ for c, ginfo in enumerate(groups_dict):
     axes_bar[0, c].set_xticks(x)
     axes_bar[0, c].set_xticklabels(short_labels, fontsize=11, rotation=45, ha="right")
 
-    #put grid behind bars
+    # Put grid behind bars and use a light-grey guide grid for readability.
     axes_bar[0, c].set_axisbelow(True)
-    axes_bar[0, c].yaxis.grid(alpha=0.3)
+    axes_bar[0, c].grid(color='grey', alpha=0.35, linestyle='--')
+
+    # Keep only essential axes (left and bottom), make them slightly bolder.
+    axes_bar[0, c].spines['top'].set_visible(False)
+    axes_bar[0, c].spines['right'].set_visible(False)
+    axes_bar[0, c].spines['bottom'].set_linewidth(1.5)
+    axes_bar[0, c].spines['left'].set_linewidth(1.5)
+
+    # Use smaller, regular-weight tick labels.
+    axes_bar[0, c].tick_params(axis='both', which='major', labelsize=11)
+    for tick in axes_bar[0, c].get_xticklabels() + axes_bar[0, c].get_yticklabels():
+        tick.set_fontweight('normal')
 
     
 
@@ -323,7 +389,7 @@ for c, ginfo in enumerate(groups_dict):
 
 
 #shift this more to the right
-fig_bar.text(-0.12, 0.5, "Count (10^3)", va="center",
+fig_bar.text(-0.12, 0.5, r"Count ($10^{3}$)", va="center",
             rotation="vertical", fontsize=10)
 
 
@@ -396,4 +462,491 @@ fig_bar.savefig(
 print("✅ Saved:", outname_bar)
 
 
+# ================================================
+# MULTIPLOT: FEATURE SPACE + cosine similarity
+# ================================================
+multiplot_labels = [
+    lbl for lbl in labels_ordered
+    if CLOUD_CLASS_INFO[lbl]["short"] in {"EC", "DC", "OA"}
+]
+multiplot_short = [CLOUD_CLASS_INFO[lbl]["short"] for lbl in multiplot_labels]
+multiplot_colors = [CLOUD_CLASS_INFO[lbl]["color"] for lbl in multiplot_labels]
+
+distance_train = df[df["vector_type"] == "TRAIN"].copy()
+distance_test = df[df["vector_type"] != "TRAIN"].copy()
+for frame in (distance_train, distance_test):
+    frame["distance"] = pd.to_numeric(frame["distance"], errors="coerce")
+    frame["label"] = pd.to_numeric(frame["label"], errors="coerce")
+
+distance_train = distance_train[(distance_train["distance"] > 0) & (distance_train["label"] != -100)].copy()
+distance_test = distance_test[distance_test["distance"] > 0].copy()
+
+feature_x = pd.concat([
+    pd.to_numeric(df_train["tsne_dim_1"], errors="coerce"),
+    pd.to_numeric(df_centroids["tsne_dim_1"], errors="coerce"),
+], ignore_index=True).dropna()
+feature_y = pd.concat([
+    pd.to_numeric(df_train["tsne_dim_2"], errors="coerce"),
+    pd.to_numeric(df_centroids["tsne_dim_2"], errors="coerce"),
+], ignore_index=True).dropna()
+
+if len(feature_x) > 0 and len(feature_y) > 0:
+    x_pad = (feature_x.max() - feature_x.min()) * 0.05
+    y_pad = (feature_y.max() - feature_y.min()) * 0.05
+    feature_xlim = (feature_x.min() - x_pad, feature_x.max() + x_pad)
+    feature_ylim = (feature_y.min() - y_pad, feature_y.max() + y_pad)
+else:
+    feature_xlim = None
+    feature_ylim = None
+
+distance_bins = np.linspace(0.4, 1.0, 45)
+
+fig_multi, axes_multi = plt.subplots(
+    2,
+    3,
+    figsize=(14.0, 7.8),
+    sharex=False,
+    sharey=False,
+    gridspec_kw={"height_ratios": [1.0, 0.5]},
+)
+axes_multi = np.atleast_2d(axes_multi)
+
+for col, label in enumerate(multiplot_labels):
+    short_name = CLOUD_CLASS_INFO[label]["short"]
+    class_color = CLOUD_CLASS_INFO[label]["color"]
+
+    # Top row: feature space with train background, centroids, and class contours.
+    ax_fs = axes_multi[0, col]
+    plot_feature_space_dots(
+        ax_fs,
+        df_train,
+        xcol="tsne_dim_1",
+        ycol="tsne_dim_2",
+        label_col="label",
+        class_colors=CLOUD_CLASS_INFO,
+        s=5,
+        alpha=0.1,
+        rasterized=True,
+    )
+
+    for _, row in df_centroids.iterrows():
+        centroid_color = CLOUD_CLASS_INFO[int(row["label"])]
+        ax_fs.scatter(
+            row["tsne_dim_1"],
+            row["tsne_dim_2"],
+            color=centroid_color["color"],
+            marker="^",
+            s=100,
+            edgecolor="black",
+            linewidth=1,
+            zorder=5,
+        )
+
+    df_class_test = df_test_label[df_test_label["label"] == label].dropna(subset=tsne_cols).copy()
+    plot_density_contours(
+        ax_fs,
+        df_class_test,
+        xcol="tsne_dim_1",
+        ycol="tsne_dim_2",
+        percentiles=(50, 90),
+        bandwidth=0.25,
+        color="black",
+        linewidths=(2.0, 2.0),
+        alpha=1.0,
+        linestyles_list=["solid", "dashed"],
+    )
+
+    if feature_xlim is not None:
+        ax_fs.set_xlim(*feature_xlim)
+    if feature_ylim is not None:
+        ax_fs.set_ylim(*feature_ylim)
+
+    ax_fs.set_xticks([])
+    ax_fs.set_yticks([])
+    ax_fs.set_xlabel("")
+    ax_fs.set_ylabel("")
+    ax_fs.spines["top"].set_visible(False)
+    ax_fs.spines["right"].set_visible(False)
+    ax_fs.spines["left"].set_visible(False)
+    ax_fs.spines["bottom"].set_visible(False)
+    ax_fs.set_title(f"{chr(ord('c') + col)}) {short_name} feature space", fontsize=13, fontweight="bold")
+
+    # Bottom row: cosine similarity distributions for train vs test.
+    ax_dist = axes_multi[1, col]
+    train_vals = pd.to_numeric(
+        distance_train[distance_train["label"] == label]["distance"],
+        errors="coerce",
+    ).dropna()
+    test_vals = pd.to_numeric(
+        distance_test[distance_test["label"] == label]["distance"],
+        errors="coerce",
+    ).dropna()
+
+    if len(train_vals) > 0:
+        ax_dist.hist(
+            train_vals,
+            bins=distance_bins,
+            histtype="step",
+            density=True,
+            color=class_color,
+            linestyle=":",
+            linewidth=2.0,
+        )
+
+    if len(test_vals) > 0:
+        ax_dist.hist(
+            test_vals,
+            bins=distance_bins,
+            histtype="step",
+            density=True,
+            color=class_color,
+            linestyle="-",
+            linewidth=2.8,
+        )
+
+    ax_dist.set_xlim(distance_bins.min(), distance_bins.max())
+    ax_dist.set_xlabel("cosine similarity", fontsize=13)
+    if col == 0:
+        ax_dist.set_ylabel("Probability density", fontsize=13)
+    else:
+        ax_dist.set_ylabel("")
+    ax_dist.set_title(f"{chr(ord('f') + col)}) {short_name} cosine similarity", fontsize=13, fontweight="bold")
+    ax_dist.grid(color="grey", alpha=0.25, linestyle="--")
+    ax_dist.spines["top"].set_visible(False)
+    ax_dist.spines["right"].set_visible(False)
+    ax_dist.spines["bottom"].set_linewidth(1.5)
+    ax_dist.spines["left"].set_linewidth(1.5)
+    ax_dist.tick_params(axis="both", which="major", labelsize=13)
+
+line_handles = [
+    Line2D([0], [0], color="black", linestyle=":", linewidth=2.0, label="Train"),
+    Line2D([0], [0], color="black", linestyle="-", linewidth=2.8, label="Test"),
+]
+fig_multi.suptitle(
+    "",
+    fontsize=13,
+    fontweight="bold",
+    y=1.01,
+)
+
+fig_multi.subplots_adjust(wspace=0.25, hspace=0.28)
+
+axes_multi[1, -1].legend(
+    handles=line_handles,
+    loc="upper left",
+    fontsize=13,
+    frameon=False,
+    #title="Train / Test",
+    title_fontsize=13,
+)
+
+outname_multi = "feature_space_and_distance_multiplot.png"
+fig_multi.savefig(
+    os.path.join(plot_dir, outname_multi),
+    dpi=300,
+    bbox_inches="tight",
+    transparent=True,
+)
+
+print("✅ Saved:", outname_multi)
+
+
 plt.close()
+
+
+def build_summary_figures(test_df_source, output_suffix, title_suffix):
+    """Build the same summary figures using a restricted TEST subset."""
+    # -------------------------
+    # FEATURE SPACE / BAR FIGURES
+    # -------------------------
+    fig_fs_local, axes_fs_local = plt.subplots(
+        n_rows, n_cols,
+        figsize=(5 * n_cols, 5 * n_rows),
+        sharex=True, sharey=True,
+    )
+    fig_bar_local, axes_bar_local = plt.subplots(
+        n_rows, n_cols,
+        figsize=(2 * n_cols, 1 * n_rows),
+        sharex=True, sharey=True,
+    )
+    axes_fs_local = np.atleast_2d(axes_fs_local)
+    axes_bar_local = np.atleast_2d(axes_bar_local)
+
+    df_lat_local = test_df_source.copy()
+    for c, ginfo in enumerate(groups_dict):
+        event_name = ginfo["name"]
+        if event_name == "ALL":
+            df_group = df_lat_local.copy()
+        else:
+            df_group = df_lat_local[df_lat_local["storm_type"] == event_name].copy()
+
+        plot_feature_space_dots(
+            axes_fs_local[0, c],
+            df_train,
+            xcol="tsne_dim_1",
+            ycol="tsne_dim_2",
+            label_col="label",
+            class_colors=CLOUD_CLASS_INFO,
+            s=10,
+            alpha=0.1,
+            rasterized=True,
+        )
+
+        for _, row in df_centroids.iterrows():
+            axes_fs_local[0, c].scatter(
+                row["tsne_dim_1"],
+                row["tsne_dim_2"],
+                color=CLOUD_CLASS_INFO[int(row["label"])] ["color"],
+                marker="^",
+                s=300,
+                edgecolor="black",
+                linewidth=1,
+                zorder=5,
+            )
+
+        plot_density_contours(
+            axes_fs_local[0, c],
+            df_group,
+            xcol="tsne_dim_1",
+            ycol="tsne_dim_2",
+            percentiles=percentiles,
+            bandwidth=0.25,
+            color="black",
+            linewidths=(3.0, 3.0, 3.0),
+            alpha=1.0,
+            linestyles_list=linestyles_list,
+        )
+
+        axes_fs_local[0, c].set_xticks([])
+        axes_fs_local[0, c].set_yticks([])
+        axes_fs_local[0, c].set_xlabel("")
+        axes_fs_local[0, c].set_ylabel("")
+        axes_fs_local[0, c].spines["top"].set_visible(False)
+        axes_fs_local[0, c].spines["right"].set_visible(False)
+        axes_fs_local[0, c].spines["left"].set_visible(False)
+        axes_fs_local[0, c].spines["bottom"].set_visible(False)
+        #axes_fs_local[0, c].set_title("a) All samples", fontsize=13, fontweight="bold")
+
+        counts = (
+            df_group["label"]
+            .astype(int)
+            .value_counts()
+            .reindex(labels_ordered, fill_value=0)
+        )
+        x = np.arange(len(labels_ordered))
+        axes_bar_local[0, c].bar(
+            x,
+            counts.values * 1e-3,
+            color=colors_ordered,
+            alpha=0.85,
+        )
+        axes_bar_local[0, c].set_xticks(x)
+        axes_bar_local[0, c].set_xticklabels(short_labels, fontsize=11, rotation=45, ha="right")
+        axes_bar_local[0, c].set_axisbelow(True)
+        axes_bar_local[0, c].grid(color="grey", alpha=0.35, linestyle="--")
+        axes_bar_local[0, c].spines["top"].set_visible(False)
+        axes_bar_local[0, c].spines["right"].set_visible(False)
+        axes_bar_local[0, c].spines["bottom"].set_linewidth(1.5)
+        axes_bar_local[0, c].spines["left"].set_linewidth(1.5)
+        axes_bar_local[0, c].tick_params(axis="both", which="major", labelsize=11)
+        for tick in axes_bar_local[0, c].get_xticklabels() + axes_bar_local[0, c].get_yticklabels():
+            tick.set_fontweight("normal")
+        axes_bar_local[0, c].set_yticks([0, 5, 10, 15])
+
+    fig_bar_local.text(-0.12, 0.5, r"Count ($10^{3}$)", va="center", rotation="vertical", fontsize=10)
+    fig_fs_local.legend(
+        handles=[
+            Line2D([0], [0], color="black", linestyle="solid", linewidth=2.0),
+            Line2D([0], [0], color="black", linestyle="dashed", linewidth=2.0),
+        ],
+        labels=["50th percentile", "90th percentile"],
+        loc="center right",
+        bbox_to_anchor=(1.2, 0.75),
+        fontsize=11,
+        title="Density contours",
+        title_fontsize=11,
+        frameon=False,
+    )
+    fig_fs_local.tight_layout()
+    fig_fs_local.savefig(
+        os.path.join(plot_dir, f"feature_space_region_event_{output_suffix}.png"),
+        dpi=300,
+        bbox_inches="tight",
+        transparent=True,
+    )
+
+    fig_bar_local.subplots_adjust(wspace=0.15, hspace=0.15)
+    fig_bar_local.tight_layout()
+    fig_bar_local.savefig(
+        os.path.join(plot_dir, f"group_population_by_label_latitude_{output_suffix}.png"),
+        dpi=300,
+        bbox_inches="tight",
+        transparent=True,
+    )
+
+    # -------------------------
+    # MULTIPLOT FIGURE
+    # -------------------------
+    distance_test_local = test_df_source.copy()
+    for frame in (distance_train, distance_test_local):
+        frame["distance"] = pd.to_numeric(frame["distance"], errors="coerce")
+        frame["label"] = pd.to_numeric(frame["label"], errors="coerce")
+
+    distance_test_local = distance_test_local[distance_test_local["distance"] > 0].copy()
+
+    feature_x = pd.concat([
+        pd.to_numeric(df_train["tsne_dim_1"], errors="coerce"),
+        pd.to_numeric(df_centroids["tsne_dim_1"], errors="coerce"),
+    ], ignore_index=True).dropna()
+    feature_y = pd.concat([
+        pd.to_numeric(df_train["tsne_dim_2"], errors="coerce"),
+        pd.to_numeric(df_centroids["tsne_dim_2"], errors="coerce"),
+    ], ignore_index=True).dropna()
+
+    if len(feature_x) > 0 and len(feature_y) > 0:
+        x_pad = (feature_x.max() - feature_x.min()) * 0.05
+        y_pad = (feature_y.max() - feature_y.min()) * 0.05
+        feature_xlim = (feature_x.min() - x_pad, feature_x.max() + x_pad)
+        feature_ylim = (feature_y.min() - y_pad, feature_y.max() + y_pad)
+    else:
+        feature_xlim = None
+        feature_ylim = None
+
+    distance_bins = np.linspace(0.4, 1.0, 45)
+    fig_multi_local, axes_multi_local = plt.subplots(
+        2,
+        3,
+        figsize=(13.4, 7.0),
+        sharex=False,
+        sharey=False,
+        gridspec_kw={"height_ratios": [0.85, 0.38]},
+    )
+    axes_multi_local = np.atleast_2d(axes_multi_local)
+
+    for col, label in enumerate(multiplot_labels):
+        short_name = CLOUD_CLASS_INFO[label]["short"]
+        class_color = CLOUD_CLASS_INFO[label]["color"]
+
+        ax_fs = axes_multi_local[0, col]
+        plot_feature_space_dots(
+            ax_fs,
+            df_train,
+            xcol="tsne_dim_1",
+            ycol="tsne_dim_2",
+            label_col="label",
+            class_colors=CLOUD_CLASS_INFO,
+            s=5,
+            alpha=0.1,
+            rasterized=True,
+        )
+
+        for _, row in df_centroids.iterrows():
+            centroid_color = CLOUD_CLASS_INFO[int(row["label"])]
+            ax_fs.scatter(
+                row["tsne_dim_1"],
+                row["tsne_dim_2"],
+                color=centroid_color["color"],
+                marker="^",
+                s=100,
+                edgecolor="black",
+                linewidth=1,
+                zorder=5,
+            )
+
+        df_class_test = distance_test_local[distance_test_local["label"] == label].dropna(subset=tsne_cols).copy()
+        plot_density_contours(
+            ax_fs,
+            df_class_test,
+            xcol="tsne_dim_1",
+            ycol="tsne_dim_2",
+            percentiles=(50, 90),
+            bandwidth=0.25,
+            color="black",
+            linewidths=(2.6, 2.6),
+            alpha=1.0,
+            linestyles_list=["solid", "dashed"],
+        )
+
+        if feature_xlim is not None:
+            ax_fs.set_xlim(*feature_xlim)
+        if feature_ylim is not None:
+            ax_fs.set_ylim(*feature_ylim)
+        ax_fs.set_xticks([])
+        ax_fs.set_yticks([])
+        ax_fs.set_xlabel("")
+        ax_fs.set_ylabel("")
+        ax_fs.spines["top"].set_visible(False)
+        ax_fs.spines["right"].set_visible(False)
+        ax_fs.spines["left"].set_visible(False)
+        ax_fs.spines["bottom"].set_visible(False)
+        ax_fs.set_title(f"{chr(ord('c') + col)}) {short_name}", fontsize=13, fontweight="bold")
+
+        ax_dist = axes_multi_local[1, col]
+        train_vals = pd.to_numeric(
+            distance_train[distance_train["label"] == label]["distance"],
+            errors="coerce",
+        ).dropna()
+        test_vals = pd.to_numeric(
+            distance_test_local[distance_test_local["label"] == label]["distance"],
+            errors="coerce",
+        ).dropna()
+
+        if len(train_vals) > 0:
+            ax_dist.hist(
+                train_vals,
+                bins=distance_bins,
+                histtype="step",
+                density=True,
+                color=class_color,
+                linestyle=":",
+                linewidth=2.0,
+            )
+        if len(test_vals) > 0:
+            ax_dist.hist(
+                test_vals,
+                bins=distance_bins,
+                histtype="step",
+                density=True,
+                color=class_color,
+                linestyle="-",
+                linewidth=2.8,
+            )
+
+        ax_dist.set_xlim(distance_bins.min(), distance_bins.max())
+        ax_dist.set_xlabel("cosine similarity", fontsize=13)
+        if col == 0:
+            ax_dist.set_ylabel("Probability density", fontsize=13)
+        else:
+            ax_dist.set_ylabel("")
+        ax_dist.set_title(f"{chr(ord('f') + col)}) {short_name} cosine similarity", fontsize=13, fontweight="bold")
+        ax_dist.grid(color="grey", alpha=0.25, linestyle="--")
+        ax_dist.spines["top"].set_visible(False)
+        ax_dist.spines["right"].set_visible(False)
+        ax_dist.spines["bottom"].set_linewidth(1.5)
+        ax_dist.spines["left"].set_linewidth(1.5)
+        ax_dist.tick_params(axis="both", which="major", labelsize=13)
+
+    fig_multi_local.subplots_adjust(wspace=0.18, hspace=0.20)
+    axes_multi_local[1, -1].legend(
+        handles=[
+            Line2D([0], [0], color="black", linestyle=":", linewidth=2.0, label="Train"),
+            Line2D([0], [0], color="black", linestyle="-", linewidth=2.8, label="Test"),
+        ],
+        loc="upper left",
+        fontsize=13,
+        frameon=False,
+        title_fontsize=13,
+    )
+    fig_multi_local.savefig(
+        os.path.join(plot_dir, f"feature_space_and_distance_multiplot_{output_suffix}.png"),
+        dpi=300,
+        bbox_inches="tight",
+        transparent=True,
+    )
+
+
+build_summary_figures(
+    df_test_label,
+    output_suffix="all_test_samples",
+    title_suffix="All Test Samples",
+)

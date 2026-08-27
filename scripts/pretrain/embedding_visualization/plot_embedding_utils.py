@@ -921,8 +921,8 @@ def plot_embedding_crops_table_transposed_new(
     if num_labels == 1:
         axes = np.expand_dims(axes, axis=1)
 
-    FONT_COL = 18
-    FONT_ROW = 18
+    FONT_COL = 22
+    FONT_ROW = 22
     FONT_IDX = 18
 
     for j, (label, info) in enumerate(ordered_classes):

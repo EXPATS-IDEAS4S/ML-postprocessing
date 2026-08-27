@@ -14,7 +14,7 @@ SUMMARY_DIR = "/data1/crops/test_case_essl_2021-2025_100x100_ir108_cma"
 
 # === SELECT CASE ===
 SELECT_EVENT = "PRECIP"     # "HAIL" or "PRECIP"
-SELECT_DATE = "2022-09-15"  # YYYY-MM-DD
+SELECT_DATE = "2024-07-12"  # YYYY-MM-DD
 N_CLASSES = 8              # Number of classes in the model
 TARGET_LAT  = 43.51306666666667
 TARGET_LON  = 12.9618

@@ -8,16 +8,16 @@ import openTSNE
 # ================================================
 # CONFIG
 # ================================================
-run_name = "dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc"
-output_path = f"/data1/fig/{run_name}/epoch_800/teamx_test"
+run_name = "ddcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_RAMSES"
+output_path = f"/data1/fig/{run_name}/epoch_800/all"
 output_test_csv = os.path.join(
-    output_path, f"features_train_test_{run_name}_2nd_labels.csv"
+    output_path, f"features_train_{run_name}_2nd_labels.csv"
 )
 centroids_file = os.path.join(
     f"/data1/runs/{run_name}/checkpoints", "centroids0.pt"
 )
 
-splits = ["TRAIN", "TEST", "CENTROID"]
+splits = ["TRAIN", "CENTROID"]
 tsne_out_csv = os.path.join(output_path, "tsne_all_vectors_with_centroids.csv")
 
 

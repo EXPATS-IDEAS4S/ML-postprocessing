@@ -459,7 +459,14 @@ for pathway_id, event_type in most_common_pathway_info.items():
     n_storms = df_pw["storm_id"].nunique()
     #pathway description
     pathway = df_pw["pathway"].iloc[0]
-    
+    #convert pathay id to class labes (1:EC, 2:DC, 4:OA)
+    if pathway_id == 1:
+        pathway_label = "EC->DC"
+    elif pathway_id == 20:
+        pathway_label = "DC"
+    else: 
+        print(f"Pathway {pathway_id} not recognized for labeling.")
+
     if df_pw.empty:
         continue
     path = df_pw["pathway"].iloc[0]
@@ -557,7 +564,7 @@ for pathway_id, event_type in most_common_pathway_info.items():
             zorder=10
         )
 
-    ax_feat.set_title("a) Feature space", fontsize=15, fontweight="bold")
+    ax_feat.set_title(f"a) {pathway_label} Feature space", fontsize=15, fontweight="bold")
     ax_feat.set_xticks([])
     ax_feat.set_yticks([])
 
@@ -565,12 +572,12 @@ for pathway_id, event_type in most_common_pathway_info.items():
     # CLOUD PROPERTIES HISTOGRAM FOR THIS PATHWAY
     # ==========================================================
     # Extract cloud properties for this pathway (normalized to 0-1)
-    cc_pathway = df_pw["cma"].dropna()
-    cth_very_high_pathway = df_pw["cth_very_high"].dropna()
-    cot_thick_pathway = df_pw["cot_thick"].dropna()
-    
+    cc_pathway = df_pw["cma"].dropna() * 100.0  # Convert to percentage
+    cth_very_high_pathway = df_pw["cth_very_high"].dropna() * 100.0  # Convert to percentage
+    cot_thick_pathway = df_pw["cot_thick"].dropna() * 100.0  # Convert to percentage
+
     # Plot histograms with different line styles
-    bins_props = np.linspace(0, 1, 31)
+    bins_props = np.linspace(0, 100, 31)
     ax_cloud_props.hist(cc_pathway, bins=bins_props, histtype="step", linewidth=2.5, 
                   label="CC", color="steelblue", linestyle="-", density=True)
     ax_cloud_props.hist(cth_very_high_pathway, bins=bins_props, histtype="step", linewidth=2.5, 
@@ -579,13 +586,13 @@ for pathway_id, event_type in most_common_pathway_info.items():
                   label="COT30+", color="green", linestyle="-", density=True)
     
     ax_cloud_props.set_ylabel("Density Function", fontsize=16)
-    ax_cloud_props.set_xlabel("Cloud Area Fraction", fontsize=16)
-    ax_cloud_props.set_title("b) Cloud Properties Distribution", fontsize=16, fontweight="bold")
+    ax_cloud_props.set_xlabel("Cloud Area Fraction (%)", fontsize=16)
+    ax_cloud_props.set_title(f"b) {pathway_label}", fontsize=16, fontweight="bold")
     ax_cloud_props.legend(fontsize=13, title_fontsize=14, loc="upper right", frameon=True)
     #ax_cloud_props.set_yscale("log")
     ax_cloud_props.grid(True, which="major", axis="both", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
     ax_cloud_props.tick_params(axis="both", labelsize=15)
-    ax_cloud_props.xaxis.set_major_locator(ticker.FixedLocator([0.0, 0.25, 0.50, 0.75, 1.0]))
+    ax_cloud_props.xaxis.set_major_locator(ticker.FixedLocator([0, 25, 50, 75, 100]))
     style_clean_axis(ax_cloud_props, grid_axis="both")
 
     # ==========================================================
@@ -647,29 +654,29 @@ for pathway_id, event_type in most_common_pathway_info.items():
     p75_cot = stat_by_time_percentile(df_pw, "cot_thick", 0.75)
     
     # Plot median trends
-    ax_cloud.plot(median_cc["t_bin"], median_cc["cma_p50"], lw=2, label="CC", color="steelblue")
-    ax_cloud.plot(median_cth["t_bin"], median_cth["cth_very_high_p50"], lw=2, label="CTH10+", color="darkorange")
-    ax_cloud.plot(median_cot["t_bin"], median_cot["cot_thick_p50"], lw=2, label="COT30+", color="green")
+    ax_cloud.plot(median_cc["t_bin"], median_cc["cma_p50"] * 100.0, lw=2, label="CC", color="steelblue")
+    ax_cloud.plot(median_cth["t_bin"], median_cth["cth_very_high_p50"] * 100.0, lw=2, label="CTH10+", color="darkorange")
+    ax_cloud.plot(median_cot["t_bin"], median_cot["cot_thick_p50"] * 100.0, lw=2, label="COT30+", color="green")
     
     # Fill between 25th and 75th percentiles with low alpha
     ax_cloud.fill_between(
         median_cc["t_bin"],
-        p25_cc["cma_p25"],
-        p75_cc["cma_p75"],
+        p25_cc["cma_p25"] * 100.0,
+        p75_cc["cma_p75"] * 100.0,
         color="steelblue",
         alpha=0.2
     )
     ax_cloud.fill_between(
         median_cth["t_bin"],
-        p25_cth["cth_very_high_p25"],
-        p75_cth["cth_very_high_p75"],
+        p25_cth["cth_very_high_p25"] * 100.0,
+        p75_cth["cth_very_high_p75"] * 100.0,
         color="darkorange",
         alpha=0.2
     )
     ax_cloud.fill_between(
         median_cot["t_bin"],
-        p25_cot["cot_thick_p25"],
-        p75_cot["cot_thick_p75"],
+        p25_cot["cot_thick_p25"] * 100.0,
+        p75_cot["cot_thick_p75"] * 100.0,
         color="green",
         alpha=0.2
     )
@@ -679,12 +686,12 @@ for pathway_id, event_type in most_common_pathway_info.items():
         ax_cloud.axvspan(t_low, t_high, color="gray", alpha=0.2, zorder=0)
         ax_cloud.axvline(t_med, color="gray", ls="--", lw=1)
 
-    ax_cloud.set_ylabel("Cloud Area\nFraction", fontsize=16)
-    ax_cloud.set_title("c) Time-aligned cloud area fraction properties and rain rate", fontsize=16, fontweight="bold")
+    ax_cloud.set_ylabel("Cloud Area\nFraction (%)", fontsize=16)
+    ax_cloud.set_title("a) Time-aligned cloud area fraction properties and rain rate", fontsize=16, fontweight="bold")
     ax_cloud.axvline(0, color="k", ls="--", lw=1, alpha=0.5)
     ax_cloud.grid(True, which="major", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
     ax_cloud.tick_params(axis="both", labelsize=15)
-    ax_cloud.set_yticks([0.0, 0.25, 0.50, 0.75])
+    ax_cloud.set_yticks([0, 25, 50, 75])
     ax_cloud.legend(fontsize=12, loc="upper left")
     style_clean_axis(ax_cloud)
     
@@ -773,7 +780,7 @@ for pathway_id, event_type in most_common_pathway_info.items():
 
     ax_cth_cot_trend.set_ylabel("CTH p50\n(km)", fontsize=16, color="darkorange")
     ax_cot_pathway.set_ylabel("COT p50", fontsize=16, color="green")
-    ax_cth_cot_trend.set_title("d) Time-aligned CTH and COT Medians", fontsize=16, fontweight="bold")
+    ax_cth_cot_trend.set_title("b) Time-aligned CTH and COT Medians", fontsize=16, fontweight="bold")
     ax_cth_cot_trend.tick_params(axis="both", labelsize=15)
     ax_cot_pathway.tick_params(axis="y", labelsize=15)
     ax_cth_cot_trend.set_yticks([3, 7, 11])
@@ -812,7 +819,7 @@ for pathway_id, event_type in most_common_pathway_info.items():
         mean_rain["n_precip"],
         color="steelblue",
         lw=2,
-        label="Rain events"
+        label="Rain Events"
     )
 
     ax_events.plot(
@@ -830,7 +837,7 @@ for pathway_id, event_type in most_common_pathway_info.items():
         ax_events.axvline(t_med, color="gray", ls="--", lw=1)
 
     ax_events.set_ylabel("Count", fontsize=16)
-    ax_events.set_title("e) Time-aligned event counts", fontsize=16, fontweight="bold")
+    ax_events.set_title("c) Time-aligned event counts", fontsize=16, fontweight="bold")
     ax_events.axvline(0, color="k", ls="--", lw=1, alpha=0.5)
     ax_events.grid(True, which="major", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
     ax_events.tick_params(axis="both", labelsize=15)
@@ -849,7 +856,7 @@ for pathway_id, event_type in most_common_pathway_info.items():
                 edgecolor="black", linewidth=0.8, alpha=0.7)
     ax_time_dist.set_xlabel("Aligned time (hours)", fontsize=16, fontweight="bold")
     ax_time_dist.set_ylabel("Count", fontsize=16)
-    ax_time_dist.set_title("f) Crop occurrence by time bin", fontsize=16, fontweight="bold")
+    ax_time_dist.set_title("d) Crop occurrence by time bin", fontsize=16, fontweight="bold")
     ax_time_dist.set_yscale("log")
     ax_time_dist.grid(True, which="major", color="0.86", linestyle="--", linewidth=0.8, alpha=0.85)
     ax_time_dist.tick_params(axis="both", labelsize=15)
@@ -876,12 +883,24 @@ for pathway_id, event_type in most_common_pathway_info.items():
     # Find extreme precip and hail within this pathway
     extreme_precip_pw_idx = df_pw["precipitation99"].idxmax()
     extreme_hail_pw_idx = df_pw["max_hail_intensity"].idxmax()
-    
+
+    #get the second max
+    df_pw_sorted = df_pw.sort_values("precipitation99", ascending=False)
+    second_extreme_precip_pw_idx = df_pw_sorted.index[0]
+
+    df_pw_sorted = df_pw.sort_values("max_hail_intensity", ascending=False)
+    second_extreme_hail_pw_idx = df_pw_sorted.index[0]
+
     extreme_precip_pw_row = df_pw.loc[extreme_precip_pw_idx]
     extreme_hail_pw_row = df_pw.loc[extreme_hail_pw_idx]
-    
+    second_extreme_precip_pw_row = df_pw.loc[second_extreme_precip_pw_idx]
+    second_extreme_hail_pw_row = df_pw.loc[second_extreme_hail_pw_idx]
+
     precip_pw_storm_id = int(extreme_precip_pw_row["storm_id"].replace('storm', '')) if 'storm' in str(extreme_precip_pw_row["storm_id"]) else int(extreme_precip_pw_row["storm_id"])
     hail_pw_storm_id = int(extreme_hail_pw_row["storm_id"].replace('storm', '')) if 'storm' in str(extreme_hail_pw_row["storm_id"]) else int(extreme_hail_pw_row["storm_id"])
+    second_precip_pw_storm_id = int(second_extreme_precip_pw_row["storm_id"].replace('storm', '')) if 'storm' in str(second_extreme_precip_pw_row["storm_id"]) else int(second_extreme_precip_pw_row["storm_id"])
+    second_hail_pw_storm_id = int(second_extreme_hail_pw_row["storm_id"].replace('storm', '')) if 'storm' in str(second_extreme_hail_pw_row["storm_id"]) else int(second_extreme_hail_pw_row["storm_id"])
+    
     
     def plot_crop_row(ax, storm_id, trajectory_df, crop_dir, event_col, ax_events, n_crops=6, gap_pixels=20):
         """Plot crop images: show evenly spaced frames with class-colored borders."""
@@ -1023,31 +1042,48 @@ for pathway_id, event_type in most_common_pathway_info.items():
         ax.set_xticklabels(titles, fontsize=12)
         ax.set_yticks([])
     
-    # Display precipitation crops
-    plot_crop_row(ax_crops_precip, precip_pw_storm_id, df_pw, crop_dir, "n_precip", None)
-    precip_dt = pd.to_datetime(extreme_precip_pw_row["datetime"])
-    precip_val = extreme_precip_pw_row["precipitation99"]
+    # Display precipitation crops (using max)
+    # plot_crop_row(ax_crops_precip, precip_pw_storm_id, df_pw, crop_dir, "n_precip", None)
+    # precip_dt = pd.to_datetime(extreme_precip_pw_row["datetime"])
+    # precip_val = extreme_precip_pw_row["precipitation99"]
+    # hail_val = extreme_precip_pw_row["max_hail_intensity"]
+
+    # Display precipitation crops (using 2nd max)
+    plot_crop_row(ax_crops_precip, second_precip_pw_storm_id, df_pw, crop_dir, "n_precip", None)
+    precip_dt = pd.to_datetime(second_extreme_precip_pw_row["datetime"])
+    precip_val = second_extreme_precip_pw_row["precipitation99"]
+    hail_val = second_extreme_precip_pw_row["max_hail_intensity"]
+
     ax_crops_precip.set_title(
-        f"g) {precip_dt.strftime('%Y-%m-%d')} | Max rain rate: {precip_val:.2f}",
-        fontsize=15,
+        f"e) {precip_dt.strftime('%Y-%m-%d')} | Max hail diameter: {hail_val:.2f} cm | Max rain rate: {precip_val:.2f} mm/h",
+        fontsize=14,
         fontweight="bold"
     )
-    ax_crops_precip.set_ylabel("Precip", fontsize=12, fontweight="bold")
+    #ax_crops_precip.set_ylabel("Precip", fontsize=12, fontweight="bold")
     ax_crops_precip.yaxis.set_label_position("left")
     # Set spine colors to white
     for spine in ax_crops_precip.spines.values():
         spine.set_color('white')
     
     # Display hail crops
-    plot_crop_row(ax_crops_hail, hail_pw_storm_id, df_pw, crop_dir, "n_hail", None)
-    hail_dt = pd.to_datetime(extreme_hail_pw_row["datetime"])
-    hail_val = extreme_hail_pw_row["max_hail_intensity"]
+    # plot_crop_row(ax_crops_hail, hail_pw_storm_id, df_pw, crop_dir, "n_hail", None)
+    # hail_dt = pd.to_datetime(extreme_hail_pw_row["datetime"])
+    # hail_val = extreme_hail_pw_row["max_hail_intensity"]
+    # rain_val = extreme_hail_pw_row["precipitation99"]
+
+    # Display hail crops (using 2nd max)
+    plot_crop_row(ax_crops_hail, second_hail_pw_storm_id, df_pw, crop_dir, "n_hail", None)
+    hail_dt = pd.to_datetime(second_extreme_hail_pw_row["datetime"])
+    hail_val = second_extreme_hail_pw_row["max_hail_intensity"]
+    rain_val = second_extreme_hail_pw_row["precipitation99"]
+    
+    
     ax_crops_hail.set_title(
-        f"h) {hail_dt.strftime('%Y-%m-%d')} | Max hail diameter: {hail_val:.2f}",
-        fontsize=15,
+        f"e) {hail_dt.strftime('%Y-%m-%d')} | Max hail diameter: {hail_val:.2f} cm | Max rain rate: {rain_val:.2f} mm/h",
+        fontsize=14,
         fontweight="bold"
     )
-    ax_crops_hail.set_ylabel("Hail", fontsize=12, fontweight="bold")
+    #ax_crops_hail.set_ylabel("Hail", fontsize=12, fontweight="bold")
     ax_crops_hail.yaxis.set_label_position("left")
     # Set spine colors to white
     for spine in ax_crops_hail.spines.values():

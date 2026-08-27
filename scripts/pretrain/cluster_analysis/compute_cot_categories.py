@@ -1,8 +1,10 @@
 """
-Compute fractional area of Cloud Optical Thickness (COT) categories for each crop
-and add them to the existing CSV file.
+Compute Cloud Optical Thickness (COT) summary statistics for each crop and
+add them to the existing CSV file.
 
-Also, generate a stacked bar plot showing the composition of COT categories per cloud class.
+The script can write:
+- fractional area of COT categories (thin / medium / thick)
+- COT percentiles (25, 50, 75, 99)
 
 """
 
@@ -44,11 +46,19 @@ COT_BINS = {
 }
 
 COMPUTE_COT = True
+COMPUTE_COT_PERCENTILES = True
 PLOT_RESULTS = False
 
 PERCENTILE_COLS = ["25", "50", "75", "99"]
+PERCENTILE_VAR_MAP = {
+    "25": "cot_p25",
+    "50": "cot_p50",
+    "75": "cot_p75",
+    "99": "cot_p99",
+}
 
-MIN_VALID_FRACTION = 0.5
+MIN_VALID_FRACTION = 0.1
+MIN_VALID_FRACTION_PERCENTILES = 0.1
 
 S3_BUCKET_NAME = "expats-cmsaf-cloud"
 bucket_filename_prefix = "MCP_"
@@ -65,6 +75,11 @@ csv_path = os.path.join(
 output_path = os.path.join(
     path_to_dir,
     "merged_crops_stats_cot_fractions.csv"
+)
+
+output_percentiles_path = os.path.join(
+    path_to_dir,
+    "merged_crops_stats_cot_percentiles.csv"
 )
 
 cloud_items = sorted(CLOUD_CLASS_INFO.items(), key=lambda x: x[1]["order"])
@@ -128,6 +143,37 @@ def compute_cot_fractions(ds, ds_cma):
         fractions[name] = round(fractions[name], 4)
 
     return fractions
+
+
+def compute_cot_percentiles(ds, ds_cma):
+    """
+    Compute COT percentiles for one crop.
+    Returns dict or None if not enough valid pixels.
+    """
+
+    cot = ds.values
+    valid = np.isfinite(cot)
+
+    # Only compute percentiles when at least half of the crop has valid values.
+    if valid.mean() < MIN_VALID_FRACTION_PERCENTILES:
+        return None
+
+    cma = ds_cma.values
+    cma = binary_closing(cma == 1, structure=np.ones((3, 3))).astype(int)
+    cloud_mask = cma == 1
+
+    cot_valid = cot[valid & cloud_mask]
+    # check if the valid cloud pixels are at least 10% of the total crop area
+    if cot_valid.size / cot.size < MIN_VALID_FRACTION_PERCENTILES:
+        return None
+    #if cot_valid.size == 0:
+    #    return None
+
+    percentiles = {}
+    for p in PERCENTILE_COLS:
+        percentiles[p] = round(float(np.percentile(cot_valid, int(p))), 4)
+
+    return percentiles
 
 
 
@@ -393,6 +439,55 @@ def process_crop_statistics(df, crop_indices, crop_base_dir=None):
         print("  ✅ COT fractions computed")
 
     return new_rows
+
+
+def process_crop_percentiles(df, crop_indices, crop_base_dir=None):
+    new_rows = []
+    for crop_idx in crop_indices:
+
+        row = df[df["crop"] == crop_idx].iloc[0]
+        nc_key = row["crop"]
+        if crop_base_dir is not None:
+            nc_key = os.path.join(crop_base_dir, nc_key)
+        time = row["time"]
+        print(time)
+        date = pd.to_datetime(time).strftime("%Y-%m-%d")
+        ds, ds_cma = read_s3_nc(date, s3, S3_BUCKET_NAME, var="cot")
+        if ds is None:
+            print(f"  ❌ Failed to open dataset: {date}")
+            continue
+
+        print(f"\n▶ Crop {crop_idx}")
+        print(f"  File: {nc_key}")
+        try:
+            ds_bt = xr.open_dataset(nc_key, engine="h5netcdf")
+        except Exception as e:
+            print(f"  ❌ Failed to open dataset: {e}")
+            continue
+
+        latmin, latmax = round(ds_bt["lat"].min().item(), 2), round(ds_bt["lat"].max().item(), 2)
+        lonmin, lonmax = round(ds_bt["lon"].min().item(), 2), round(ds_bt["lon"].max().item(), 2)
+        ds = ds.sel(lat=slice(latmin, latmax), lon=slice(lonmin, lonmax))
+        ds_cma = ds_cma.sel(lat=slice(latmin, latmax), lon=slice(lonmin, lonmax))
+        ds = ds.sel(time=pd.to_datetime(time), method="nearest")
+        ds_cma = ds_cma.sel(time=pd.to_datetime(time), method="nearest")
+
+        cot_percentiles = compute_cot_percentiles(ds, ds_cma)
+
+        if cot_percentiles is None:
+            print("  ⚠️ Not enough valid COT pixels")
+            continue
+
+        new_row = row.copy()
+        new_row["var"] = "cot_percentiles"
+        new_row["None"] = np.nan
+        for p in PERCENTILE_COLS:
+            new_row[p] = cot_percentiles[p]
+        new_rows.append(new_row)
+
+        print("  ✅ COT percentiles computed")
+
+    return new_rows
     
 
 
@@ -405,6 +500,15 @@ def save_results(new_rows, df):
         print("\n⚠️ No new rows added")
 
 
+def save_percentile_results(new_rows, df):
+    if len(new_rows) > 0:
+        df_out = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+        df_out.to_csv(output_percentiles_path, index=False)
+        print(f"\n✅ Saved updated CSV with cot percentiles → {output_percentiles_path}")
+    else:
+        print("\n⚠️ No new percentile rows added")
+
+
 
 if __name__ == "__main__":
     
@@ -413,6 +517,11 @@ if __name__ == "__main__":
         new_rows = process_crop_statistics(df, crop_indices, crop_base_dir=crop_base_dir)
         print(new_rows)
         save_results(new_rows, df)
+    if COMPUTE_COT_PERCENTILES:
+        df, crop_indices = load_csv(csv_path)
+        percentile_rows = process_crop_percentiles(df, crop_indices, crop_base_dir=crop_base_dir)
+        print(percentile_rows)
+        save_percentile_results(percentile_rows, df)
     if PLOT_RESULTS:
     # Load updated dataframe for plotting
         df_out = pd.read_csv(output_path)
@@ -425,6 +534,6 @@ if __name__ == "__main__":
         #plot_cot_violin_by_class(df_out, cloud_items, path_to_dir + "cot_violin_by_class.png")
         
 
-#221767
+#710477
 
 

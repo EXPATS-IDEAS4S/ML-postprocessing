@@ -42,6 +42,18 @@ sys.path.append("/home/Daniele/codes/VISSL_postprocessing/scripts/pretrain/")
 from transitions.plot_utils import plot_orography_map  # noqa: E402
 
 
+plt.rcParams.update(
+    {
+        "font.size": 13,
+        "axes.titlesize": 15,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
+        "legend.fontsize": 13,
+    }
+)
+
+
 # ==================================================
 # CONFIGURATION
 # ==================================================
@@ -72,6 +84,10 @@ BUSIEST_DAYS_15MIN = 5
 
 DBSCAN_RADIUS_KM = 150.0
 EARTH_RADIUS_KM = 6371.0
+
+MAP_TITLE_SIZE = 15
+MAP_LABEL_SIZE = 14
+MAP_LEGEND_SIZE = 13
 
 
 # ==================================================
@@ -117,19 +133,20 @@ def load_eswd_events(path: str) -> pd.DataFrame:
 # ==================================================
 # PLOTTING HELPERS
 # ==================================================
-def style_geo_axes(ax, label_size: int = 14) -> None:
+def style_geo_axes(ax, label_size: int = MAP_LABEL_SIZE) -> None:
     """Apply consistent map styling."""
     ax.coastlines("50m", linewidth=0.8, color="black")
     ax.add_feature(cfeature.BORDERS, linewidth=0.5, edgecolor="black")
     ax.set_extent(DOMAIN_EXTENT, crs=ccrs.PlateCarree())
+    ax.tick_params(labelsize=label_size)
 
     gl = ax.gridlines(draw_labels=True, alpha=0.35, linewidth=0.6, linestyle="--")
     gl.top_labels = False
     gl.right_labels = False
     gl.xlocator = mticker.FixedLocator([6, 9, 12, 15])
     gl.ylocator = mticker.FixedLocator([42, 45, 48, 51])
-    gl.xlabel_style = {"size": label_size}
-    gl.ylabel_style = {"size": label_size}
+    gl.xlabel_style = {"size": label_size, "weight": "bold"}
+    gl.ylabel_style = {"size": label_size, "weight": "bold"}
 
 
 def add_orography(ax) -> None:
@@ -187,7 +204,7 @@ def plot_density_contours(ax, events_df: pd.DataFrame, title: str) -> None:
             )
 
     style_geo_axes(ax)
-    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_title(title, fontsize=MAP_TITLE_SIZE, fontweight="bold")
 
 
 def plot_event_points(ax, events_df: pd.DataFrame, title: str, point_size: float = 7.0) -> None:
@@ -217,7 +234,7 @@ def plot_event_points(ax, events_df: pd.DataFrame, title: str, point_size: float
             hail["LATITUDE"],
             s=point_size,
             c="orange",
-            marker="o",
+            marker="^",
             alpha=0.7,
             linewidths=0,
             transform=ccrs.PlateCarree(),
@@ -226,7 +243,7 @@ def plot_event_points(ax, events_df: pd.DataFrame, title: str, point_size: float
         )
 
     style_geo_axes(ax)
-    ax.legend(loc="lower left", frameon=True, fontsize=12)
+    ax.legend(loc="lower left", frameon=True, fontsize=12, markerscale=2.4)
     #ax.set_title(title, fontsize=11, fontweight="bold")
 
 
@@ -266,8 +283,8 @@ def plot_timestep_events(ax, events_df: pd.DataFrame, ts: pd.Timestamp) -> None:
         )
 
     style_geo_axes(ax, label_size=12)
-    ax.set_title(f"{ts:%Y-%m-%d %H:%M} UTC", fontsize=13, fontweight="bold")
-    ax.legend(loc="lower left", frameon=True, fontsize=12)
+    ax.set_title(f"{ts:%Y-%m-%d %H:%M} UTC", fontsize=MAP_TITLE_SIZE, fontweight="bold")
+    ax.legend(loc="lower left", frameon=True, fontsize=MAP_LEGEND_SIZE)
 
 
 # ==================================================
@@ -306,7 +323,7 @@ def plot_dbscan_clusters_for_slot(ax, slot_df: pd.DataFrame, slot_ts: pd.Timesta
 
     if slot_df.empty:
         style_geo_axes(ax, label_size=12)
-        ax.set_title(f"{slot_ts:%Y-%m-%d %H:%M} UTC", fontsize=13, fontweight="bold")
+        ax.set_title(f"{slot_ts:%Y-%m-%d %H:%M} UTC", fontsize=MAP_TITLE_SIZE, fontweight="bold")
         return
 
     lon = slot_df["LONGITUDE"].to_numpy()
@@ -377,7 +394,7 @@ def plot_dbscan_clusters_for_slot(ax, slot_df: pd.DataFrame, slot_ts: pd.Timesta
     style_geo_axes(ax, label_size=12)
     ax.set_title(
         f"{slot_ts:%Y-%m-%d %H:%M} UTC",
-        fontsize=13,
+        fontsize=MAP_TITLE_SIZE,
         fontweight="bold",
     )
 
@@ -398,7 +415,7 @@ def save_density_maps(events: pd.DataFrame, out_dir: Path) -> None:
 
     for fname, df_plot, title in sets:
         print(f"[density] Plotting {fname} with {len(df_plot)} events")
-        fig = plt.figure(figsize=(8.2, 6.6))
+        fig = plt.figure(figsize=(7.2, 5.8))
         ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
         plot_density_contours(ax, df_plot, title)
         fig.savefig(out_dir / fname, dpi=250, bbox_inches="tight")
@@ -412,7 +429,7 @@ def save_orography_point_maps(events: pd.DataFrame, out_dir: Path) -> None:
     print(f"[points] Output dir: {out_dir}")
     print(f"[points] Plotting all-events map with {len(events)} events")
 
-    fig = plt.figure(figsize=(6, 6))
+    fig = plt.figure(figsize=(6.5, 6.5))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
     plot_event_points(ax, events, "All Events on Orography", point_size=8.0)
     fig.savefig(out_dir / "all_events_points.png", dpi=250, bbox_inches="tight")
@@ -482,7 +499,7 @@ def save_busiest_days_15min_maps(events: pd.DataFrame, out_dir: Path) -> None:
         for ts in selected_slots:
             slot_df = day_events[day_events["time_15min"] == ts].copy()
             print(f"[busiest-days] {ts:%Y-%m-%d %H:%M}: n_events={len(slot_df)}")
-            fig = plt.figure(figsize=(7.2, 5.8))
+            fig = plt.figure(figsize=(6.2, 5.0))
             ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
             plot_timestep_events(ax, slot_df, ts)
 
@@ -530,7 +547,7 @@ def save_top10_timeslots_dbscan(events: pd.DataFrame, out_dir: Path) -> None:
             print(f"[dbscan] Rank {rank:02d} slot {slot_ts:%Y-%m-%d %H:%M}: n_events={n_events}")
             
             # Plot 1: Events only
-            fig = plt.figure(figsize=(7.2, 5.8))
+            fig = plt.figure(figsize=(6.2, 5.0))
             ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
             plot_timestep_events(ax, slot_df, slot_ts)
             fname_events = f"rank_{rank:02d}_{slot_ts:%Y%m%d_%H%M}_events.png"
@@ -539,7 +556,7 @@ def save_top10_timeslots_dbscan(events: pd.DataFrame, out_dir: Path) -> None:
             print(f"[dbscan] Saved events: {out_dir / fname_events}")
             
             # Plot 2: DBSCAN clustering
-            fig = plt.figure(figsize=(7.2, 5.8))
+            fig = plt.figure(figsize=(6.2, 5.0))
             ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
             plot_dbscan_clusters_for_slot(ax, slot_df, slot_ts)
             fname_dbscan = f"rank_{rank:02d}_{slot_ts:%Y%m%d_%H%M}_dbscan150km.png"
@@ -573,7 +590,7 @@ def save_global_top10_timeslots_dbscan(events: pd.DataFrame, out_dir: Path) -> N
             f"[global-dbscan] Rank {rank:02d} {slot_ts:%Y-%m-%d %H:%M}: n_events={len(slot_df)} (count={count})"
         )
 
-        fig = plt.figure(figsize=(7.2, 5.8))
+        fig = plt.figure(figsize=(6.2, 5.0))
         ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
         plot_dbscan_clusters_for_slot(ax, slot_df, slot_ts)
 

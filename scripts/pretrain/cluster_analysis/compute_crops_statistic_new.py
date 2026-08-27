@@ -448,13 +448,14 @@ def main(config_path: str = "config.yaml", var_config_path: str = "variables_met
     filter_suffix = "_" + "_".join(filter_tags) if filter_tags else ""
 
     if test_data_set:
-        output_path = f"{output_root}/{run_name}/epoch_{epoch}/test_traj/"
+        output_path = f"{output_root}/{run_name}/epoch_{epoch}/teamx_test/"
         csv_filename = f"{output_path}features_train_test_{run_name}_2nd_labels.csv"
         df_labels = pd.read_csv(csv_filename)
         #print unique values of vector_type column
         #print(df_labels)
+      
         #get only the rows with test set (remove vector_type column == TRAIN)
-        df_labels = df_labels[df_labels["vector_type"] != "TRAIN"]
+        df_labels = df_labels[df_labels["split"] == "TEST"]
     else:
         output_path = f"{output_root}/{run_name}/epoch_{epoch}/{sampling_type}/"
         csv_filename = f"{output_path}crop_list_{run_name}_{sampling_type}_{n_subsample}{filter_suffix}.csv"
@@ -527,5 +528,6 @@ if __name__ == "__main__":
     main(config_path, var_config_path)
 
 
-#nohup stat test: 79853
-#nohup stat train: 80305
+#1623513
+
+#closst: 2503112

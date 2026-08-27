@@ -257,7 +257,7 @@ def plot_eswd_events(ax, events_df):
             hail_events["LONGITUDE"],
             hail_events["LATITUDE"],
             marker="^",
-            s=70,
+            s=150,
             color="yellow",
             edgecolors="black",
             linewidths=0.6,
@@ -270,7 +270,7 @@ def plot_eswd_events(ax, events_df):
             precip_events["LONGITUDE"],
             precip_events["LATITUDE"],
             marker="s",
-            s=55,
+            s=150,
             color="lightblue",
             edgecolors="black",
             linewidths=0.6,
@@ -283,7 +283,7 @@ def plot_eswd_events(ax, events_df):
             other_events["LONGITUDE"],
             other_events["LATITUDE"],
             marker="o",
-            s=45,
+            s=150,
             color="white",
             edgecolors="black",
             linewidths=0.6,
@@ -413,7 +413,7 @@ def main():
     print(f"Loading pathway dataframe: {PATHWAY_CSV}")
     pathway_df = pd.read_csv(PATHWAY_CSV, low_memory=False)
     print(pathway_df.columns.to_list())
-    exit()
+
     events_df = load_eswd_events(ESWD_CSV)
 
     parsed_cols = pathway_df["crop"].apply(parse_crop_metadata)
@@ -457,10 +457,15 @@ def main():
 
     # Iterate through pathways in order of storm count
     for pathway_id in sorted_pathways:
+        
         pathway_data = pathway_df[pathway_df["pathway"] == pathway_id].sort_values(
             "parsed_datetime"
         )
         pathway_label = pathway_to_class_label(pathway_id)
+        
+        if pathway_label != "DC->OA":
+                    continue  # Only process DC for now
+
         pathway_out = os.path.join(OUTPUT_DIR, f"pathway_{pathway_id}")
         os.makedirs(pathway_out, exist_ok=True)
 
@@ -468,10 +473,15 @@ def main():
             f"\nProcessing pathway {pathway_label} "
             f"({pathway_data['parsed_storm_id'].nunique()} storms)"
         )
+     
 
         grouped_by_storm = pathway_data.groupby("parsed_storm_id")
 
         for storm_id, storm_df in grouped_by_storm:
+            
+            if storm_id != 10558:
+                continue  # Only process storm 10690 for now
+            
             storm_out = os.path.join(pathway_out, f"storm_{storm_id}")
             os.makedirs(storm_out, exist_ok=True)
 

@@ -20,6 +20,59 @@ COLORS_PER_CLASS = {
     '14': 'crimson'
 }
 
+#run 2013-2020 
+CLOUD_CLASS_INFO_OLD = {
+    3: {
+        "short": "CS",
+        "name": "Clear sky",
+        "group": "CLEAR_LOW",
+        "color": "#dbe9ff",
+        "order": 1,
+    },
+    2: {
+        "short": "SC",
+        "name": "Shallow clouds",
+        "group": "CLEAR_LOW",
+        "color": "#88a4cf",
+        "order": 2,
+    },
+    4: {#??? not sure about that class name, it is very similar to class 5
+        "short": "MC1",
+        "name": "Mid-level clouds 1", #this has slightly lower CC and CTH, but higher COT than class 5
+        "group": "STRATIFORM",
+        "color":  "#78fba0",
+        "order": 3,
+    },
+    0: {
+        "short": "MC2",
+        "name": "Mid-level clouds 2",
+        "group": "STRATIFORM",
+        "color": "#239b4d",
+        "order": 4,
+    },
+    5: {
+        "short": "EC",
+        "name": "Early convection",
+        "group": "DEVELOPING_CONVECTION",
+        "color": "#fdae61",
+        "order": 5,
+    },
+    1: {
+        "short": "DC",
+        "name": "Deep convection",
+        "group": "DEEP_CONVECTION",
+        "color": "#d73027",
+        "order": 6,
+    },
+    6: {
+        "short": "OA",
+        "name": "Overcast anvils",
+        "group": "ANVIL_OVERCAST",
+        "color": "#8b46a1", #indigo purple
+        "order": 7,
+    },
+}
+
 
 CLOUD_CLASS_INFO = {
     3: {

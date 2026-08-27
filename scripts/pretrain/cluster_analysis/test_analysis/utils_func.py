@@ -552,6 +552,37 @@ def plot_feature_space_dots(
     )
 
 
+def kde_mass_thresholds(density, masses=(50, 90), grid_x=None, grid_y=None):
+    """Return KDE density thresholds that enclose the requested mass fractions."""
+
+    density = np.asarray(density)
+    valid = density[np.isfinite(density) & (density > 0)]
+    if valid.size == 0:
+        return np.asarray([])
+
+    if grid_x is not None and grid_y is not None and len(grid_x) > 1 and len(grid_y) > 1:
+        dx = float(np.mean(np.diff(np.asarray(grid_x))))
+        dy = float(np.mean(np.diff(np.asarray(grid_y))))
+        cell_area = abs(dx * dy)
+    else:
+        cell_area = 1.0
+
+    sorted_density = np.sort(valid)[::-1]
+    cumulative_mass = np.cumsum(sorted_density * cell_area)
+    total_mass = cumulative_mass[-1]
+    if total_mass <= 0:
+        return np.asarray([])
+
+    thresholds = []
+    for mass in masses:
+        target_mass = float(mass) / 100.0 * total_mass
+        idx = np.searchsorted(cumulative_mass, target_mass, side="left")
+        idx = min(idx, sorted_density.size - 1)
+        thresholds.append(sorted_density[idx])
+
+    return np.asarray(thresholds)
+
+
 
 def plot_class_kde_background(
     ax,
@@ -651,13 +682,13 @@ def plot_density_contours(
     grid_size=300,
 ):
     """
-    Plot KDE density contours using percentile-based levels.
+    Plot KDE density contours using enclosed KDE mass thresholds.
 
     Parameters
     ----------
     ax : matplotlib axis
     df : DataFrame with feature space columns
-    percentiles : tuple of percentiles (e.g. 50, 90)
+    percentiles : tuple of enclosed-mass fractions (e.g. 50, 90)
     bandwidth : KDE bandwidth
     color : contour color
     linewidths : line widths for each percentile
@@ -687,13 +718,17 @@ def plot_density_contours(
     grid = np.vstack([xx.ravel(), yy.ravel()])
     density = kde(grid).reshape(xx.shape)
 
-    # percentile-based contour levels
-    levels = np.percentile(density, percentiles)
+    # Compute highest-density thresholds that enclose the requested KDE mass.
+    levels = kde_mass_thresholds(density, masses=percentiles, grid_x=xx[0, :], grid_y=yy[:, 0])
+    if levels.size == 0:
+        return
+    order = np.argsort(levels)
+    levels = levels[order]
 
     #define different linestyle for each level
     #linesyles_list = ['solid', 'dashed','dotted', 'dashdot']
     if linestyles_list is not None and len(levels) <= len(linestyles_list):
-        linestyles = linestyles_list[:len(levels)]
+        linestyles = [linestyles_list[i] for i in order]
     else:
         linestyles = ['solid'] * len(levels)  # default to solid if too many levels
 

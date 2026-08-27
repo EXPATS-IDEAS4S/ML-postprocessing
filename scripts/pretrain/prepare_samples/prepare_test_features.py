@@ -1,3 +1,7 @@
+"""
+This script needs to be merged with prepare_feature_dataset which uses config parameters and is more general. The main purpose of this script is to prepare a test dataset with features and metadata, and merge it with the training dataset, for visualization and analysis.
+"""
+
 import numpy as np
 import pandas as pd
 import os
@@ -8,28 +12,28 @@ from sklearn.metrics.pairwise import cosine_similarity
 import xarray as xr
 
 # ================= CONFIGURATION =================
-run_name = 'dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc'
+run_name = 'dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc'
 
 #features directories
 feat_train_dir = f'/data1/runs/{run_name}/features/epoch_800/'
-feat_test_dir = f'/data1/runs/{run_name}/test_features/epoch_800/'
+feat_test_dir = f'/data1/runs/{run_name}/teamx_features/epoch_800/'
 
-feat_2d_train_dir = '/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/epoch_800/all'
-feat_2d_test_dir = '/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/epoch_800/test'
-feat_2d_train_file = 'tsne_opentsne_perpl-50_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_3_epoch_800.npy'
-feat_2d_test_file = 'tsne_opentsne_perpl-50_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_3_epoch_800'  
+#feat_2d_train_dir = '/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc/epoch_800/all'
+#feat_2d_test_dir = '/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc/epoch_800/test'
+#feat_2d_train_file = 'tsne_opentsne_perpl-50_dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_3_epoch_800.npy'
+#feat_2d_test_file = 'tsne_opentsne_perpl-50_dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc_3_epoch_800'  
 
 # Output path
-output_path = f'/data1/fig/{run_name}/test_traj/'
+output_path = f'/data1/fig/{run_name}/teamx_test/'
 os.makedirs(output_path, exist_ok=True)
 
 # Paths to crops
-image_train_path = '/data1/crops/ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/nc/1/'
-image_test_path = '/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj/nc/1/'
+image_train_path = '/data1/crops/ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc/nc/1/'
+image_test_path = '/data1/crops/teamx_Apr-Sep_2025_icon_msg/nc/1/'
 
 # Summary directory
-summury_events_dir = "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/epoch_800/test_traj"
-summury_filename = "test_set_storms_summary.csv"
+#summury_events_dir = "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/epoch_800/test_traj"
+#summury_filename = "test_set_storms_summary.csv"
 #event_types = ["PRECIP", "HAIL", "MIXED"]
 
 # Feature files
@@ -86,9 +90,9 @@ def extract_latlon_centre(path: str, from_filename: bool = False) -> str:
 def load_features_to_df(
     feature_path: str, indices_file: str, features_file: str, 
     assignments_file: str, distances_file: str, centroids_file: str, 
-    vector_type: str, crops_path: str, include_timestamp: bool, 
+    split: str, crops_path: str, include_timestamp: bool, 
     include_latlon: bool, subsample: int = None, extract_latlon_from_filename: bool = False,
-    features_2d_file: str = None, features_2d_dir: str = None
+    add_2nd_label: bool = False, features_2d_file: str = None, features_2d_dir: str = None
 ) -> pd.DataFrame:
     """Load features and indices, with an optional simple first-N subsample."""
 
@@ -141,7 +145,7 @@ def load_features_to_df(
     # ----------------------------
     # 6. Add labels and distances
     # ----------------------------
-    if vector_type == "TRAIN":
+    if split == "TRAIN":
         assignments = torch.load(os.path.join(feature_path, assignments_file),
                                  map_location="cpu")[0].cpu().numpy()
         distances = torch.load(os.path.join(feature_path, distances_file),
@@ -151,25 +155,14 @@ def load_features_to_df(
         df["distance"] = distances[indices]
 
     else:
-        df = add_labels_to_test(df, centroids_file)
+        df = add_labels_to_test(df, centroids_file, add_2nd_label=add_2nd_label)
 
-    df["vector_type"] = vector_type
-
-    #add 2d features if required
-    if features_2d_file is not None and features_2d_dir is not None:
-        if vector_type != "TRAIN":
-            features_2d_file = feat_2d_test_file + '_' + vector_type + '.npy'
-        features_2d = np.load(os.path.join(features_2d_dir, features_2d_file))
-        #print(f"2D features shape: {features_2d.shape}") #shape (n_samples, 2)
-        if subsample is not None and subsample > 0:
-            features_2d = features_2d[:subsample]
-        for i in range(features_2d.shape[1]):
-            df[f'2d_dim_{i+1}'] = features_2d[:, i]
+    df["split"] = split
 
     return df.reset_index(drop=True)
 
 
-def add_labels_to_test(df: pd.DataFrame, centroids_file: str) -> pd.DataFrame:
+def add_labels_to_test(df: pd.DataFrame, centroids_file: str, add_2nd_label: bool = False) -> pd.DataFrame:
     """Assign labels to test DataFrame based on cosine similarity to centroids."""
     # Load centroids
     centroids = torch.load(centroids_file, map_location="cpu").cpu().numpy()
@@ -186,10 +179,16 @@ def add_labels_to_test(df: pd.DataFrame, centroids_file: str) -> pd.DataFrame:
     df["label"] = np.argmax(sim, axis=1)
 
     #add second most similar centroid as well (that is the 2nd highest similarity)
-    df["label_2nd"] = np.argsort(sim, axis=1)[:, -2]
+    if add_2nd_label:
+        df["label_2nd"] = np.argsort(sim, axis=1)[:, -2]
     
     # Optionally, also keep the similarity score for confidence
     df["distance"] = np.max(sim, axis=1)
+
+    #from path extract vector type (msg or icon) is the first  part of the basename, before the first underscore
+    #e.g. path is /data1/crops/teamx_Apr-Sep_2025_icon_msg/nc/1/ICON500m_IR10.8_CLCT_20250401_00_2025-04-01_01_central.nc
+    #and vector type is icon, because the basename is ICON500m_IR10.8_CLCT_20250401_00_2025-04-01_01_central.nc and the first part before the first underscore is ICON500m, that contains "icon"    
+    df["vector_type"] = df["path"].apply(lambda p: "icon" if "ICON" in os.path.basename(p) else "msg")
     
     return df
 
@@ -296,55 +295,65 @@ def prepare_and_save_dataset():
     gc.collect()
 
     #Load train features
-    df_train = load_features_to_df(
-        feature_path=feat_train_dir,
-        indices_file=feature_file_inds,
-        features_file=feature_file_features,
-        assignments_file=train_assignments_file,
-        distances_file=train_distances_file,
-        centroids_file=train_centroids_file,
-        vector_type="TRAIN",
-        crops_path=image_train_path,
-        include_timestamp=True,
-        include_latlon=True,
-        subsample=None,
-        extract_latlon_from_filename=False,
-        #features_2d_file=feat_2d_train_file,
-        #features_2d_dir=feat_2d_train_dir
-    )
+    # df_train = load_features_to_df(
+    #     feature_path=feat_train_dir,
+    #     indices_file=feature_file_inds,
+    #     features_file=feature_file_features,
+    #     assignments_file=train_assignments_file,
+    #     distances_file=train_distances_file,
+    #     centroids_file=train_centroids_file,
+    #     vector_type="TRAIN",
+    #     crops_path=image_train_path,
+    #     include_timestamp=True,
+    #     include_latlon=True,
+    #     subsample=None,
+    #     extract_latlon_from_filename=False,
+    #     #features_2d_file=feat_2d_train_file,
+    #     #features_2d_dir=feat_2d_train_dir
+    # )
+    
+    #load train from csv file
+    df_train = pd.read_csv('/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc/epoch_800/all/features_dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc.csv')
     print(df_train)#.columns.to_list())
- 
+    #print(df_train.columns.to_list())
+    #rename column case_study to split
+    df_train = df_train.rename(columns={"case_study": "split"})
+    #add value TRAIN if vector_type is msg
+    df_train.loc[df_train["vector_type"] == "msg", "split"] = "TRAIN"
+    df_train.loc[df_train["vector_type"] == "centroid", "split"] = "None"
+    print(df_train)
 
     #df_test_list = []
     #for event_type in event_types:
-    image_test_path = f'/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj/nc/1/'
-    test_feat_dir = f'/data1/runs/{run_name}/test_features/epoch_800/TRAJ/'
+    #image_test_path = f'/data1/crops/test_case_essl_14-15-16-18-19-20-22-23-24_100x100_ir108_cma_traj/nc/1/'
+    #test_feat_dir = f'/data1/runs/{run_name}/test_features/epoch_800/TRAJ/'
 
     # ---- Load TEST FEATURES ----
     df_test = load_features_to_df(
-        feature_path=test_feat_dir,
+        feature_path=feat_test_dir,
         indices_file=feature_file_inds,
         features_file=feature_file_features,
         assignments_file=train_assignments_file,
         distances_file=train_distances_file,
         centroids_file=train_centroids_file,
-        vector_type="TEST",
+        split="TEST",
         crops_path=image_test_path,
         include_timestamp=True,
-        include_latlon=True,
+        include_latlon=False,
         subsample=None,
         extract_latlon_from_filename=False,
+        add_2nd_label=False,
         #features_2d_file=feat_2d_test_file,
         #features_2d_dir=feat_2d_test_dir
     )
-    #print(df_test)
+    print(df_test)
 
     # ---- Load EVENT SUMMARY ----
-    df_summary = load_summary(summury_filename, summury_events_dir, date_col="date")
+    #df_summary = load_summary(summury_filename, summury_events_dir, date_col="date")
     #print(df_summary)
 
     # ---- Merge EVENT METADATA ----
-    df_test = merge_test_with_summary(df_test, df_summary)
+    #df_test = merge_test_with_summary(df_test, df_summary)
     #print(df_test.columns.to_list())
 
     #df_test_list.append(df_test)
@@ -353,7 +362,7 @@ def prepare_and_save_dataset():
     # Merge datasets
     
     #rename df_train column lat_centre and lon_centr to lat and lon
-    df_train = df_train.rename(columns={"lat_centre": "lat", "lon_centre": "lon"})
+    #df_train = df_train.rename(columns={"lat_centre": "lat", "lon_centre": "lon"})
     print(df_train.columns.to_list())
     print(df_test.columns.to_list())
    
@@ -371,4 +380,4 @@ def prepare_and_save_dataset():
 
 if __name__ == "__main__":
     prepare_and_save_dataset()
-    #  4032398
+    # 2470621

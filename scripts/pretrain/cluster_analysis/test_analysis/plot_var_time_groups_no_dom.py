@@ -99,16 +99,22 @@ t_bin_min = df["t_bin"].min()
 t_bin_max = df["t_bin"].max()
 print(f"t_bin_min: {t_bin_min}, t_bin_max: {t_bin_max}")
 
-#create a new column 'time_group' based on t_bin values
-def assign_time_group(t_bin):
-    if t_bin < -2:
+#create a new column 'time_group' based on crop_type and t_aligned
+def assign_time_group(row):
+    crop_type = row['crop_type']
+    t_aligned = row['t_aligned']
+    
+    if crop_type == 'extrapolated' and t_aligned < 0:
         return "pre-2h"
-    elif -2 <= t_bin <= 2:
+    elif crop_type in ['observed', 'interpolated']:
         return "center"
-    else:  # t_bin > 2
+    elif crop_type == 'extrapolated' and t_aligned > 0:
         return "post-2h"
+    else:
+        # fallback for edge cases (e.g., extrapolated with t_aligned == 0)
+        return "center"
 
-df["time_group"] = df["t_bin"].apply(assign_time_group)
+df["time_group"] = df.apply(assign_time_group, axis=1)
 
 df_tsne = pd.read_csv(base_dir + "/" + csv_tnse_file)
 
@@ -165,24 +171,15 @@ def plot_tsne_density_percentile(
 # -------------------------
 n_labels = len(interesting_labels)
 fig, axes = plt.subplots(
-    nrows=4,
+    nrows=1,
     ncols=n_labels,
-    figsize=(3 * n_labels, 10),
-    sharey="row",
-    gridspec_kw={"height_ratios": [1.2, 0.75, 0.75, 0.75]}
+    figsize=(3 * n_labels, 4),
+    sharey=True
 )
-#reduce space from first row and second row and increase space between second and third row
-plt.subplots_adjust(hspace=0.45, wspace=0.05)
-
-delta = 0.04  # figure fraction
-
-for ax in axes[0, :]:
-    pos = ax.get_position()
-    ax.set_position([pos.x0, pos.y0 - delta, pos.width, pos.height])
-
+plt.subplots_adjust(hspace=0.3, wspace=0.05)
 
 if n_labels == 1:
-    axes = axes.reshape(2, 1)
+    axes = [axes]
 
 #define groups based on time_group column
 time_groups = ["pre-2h", "center", "post-2h"]
@@ -196,73 +193,73 @@ for col, time_group in enumerate(time_groups):
     if df_time.empty:
         continue
 
-    # =========================
-    # ROW 0 — TSNE FEATURE SPACE
-    # =========================
-    ax_tsne = axes[0, col]
+    # # =========================
+    # # ROW 0 — TSNE FEATURE SPACE (REMOVED)
+    # # =========================
+    # ax_tsne = axes[0, col]
 
-    # --- background: TRAIN vectors ---
-    for lbl in labels_ordered:
-        df_bg = df_tsne_train[df_tsne_train["label"] == lbl]
-        ax_tsne.scatter(
-            df_bg["tsne_dim_1"],
-            df_bg["tsne_dim_2"],
-            s=3,
-            color=colors[lbl],
-            alpha=0.04,
-            rasterized=True
-        )
+    # # --- background: TRAIN vectors ---
+    # for lbl in labels_ordered:
+    #     df_bg = df_tsne_train[df_tsne_train["label"] == lbl]
+    #     ax_tsne.scatter(
+    #         df_bg["tsne_dim_1"],
+    #         df_bg["tsne_dim_2"],
+    #         s=3,
+    #         color=colors[lbl],
+    #         alpha=0.04,
+    #         rasterized=True
+    #     )
 
-        # --- centroid ---
-        df_cent = df_tsne_centroids[df_tsne_centroids["label"] == lbl]
-        ax_tsne.scatter(
-            df_cent["tsne_dim_1"],
-            df_cent["tsne_dim_2"],
-            marker="^",
-            s=120,
-            color=colors[lbl],
-            edgecolor="black",
-            zorder=5,
-        )
-    #increase slightly ylim of ax_tsne (only top value)
-    ylim = ax_tsne.get_ylim()
-    ax_tsne.set_ylim(ylim[0], ylim[1] + (ylim[1] - ylim[0]) * 0.005)
+    #     # --- centroid ---
+    #     df_cent = df_tsne_centroids[df_tsne_centroids["label"] == lbl]
+    #     ax_tsne.scatter(
+    #         df_cent["tsne_dim_1"],
+    #         df_cent["tsne_dim_2"],
+    #         marker="^",
+    #         s=120,
+    #         color=colors[lbl],
+    #         edgecolor="black",
+    #         zorder=5,
+    #     )
+    # #increase slightly ylim of ax_tsne (only top value)
+    # ylim = ax_tsne.get_ylim()
+    # ax_tsne.set_ylim(ylim[0], ylim[1] + (ylim[1] - ylim[0]) * 0.005)
 
-    # --- density contours ---
-    plot_tsne_density_percentile(
-        ax_tsne,
-        df_time["tsne_dim_1"].values,
-        df_time["tsne_dim_2"].values,
-        percentile=50,
-        colors="black",
-        linewidths=2,
-        linestyles="-"
-    )
+    # # --- density contours ---
+    # plot_tsne_density_percentile(
+    #     ax_tsne,
+    #     df_time["tsne_dim_1"].values,
+    #     df_time["tsne_dim_2"].values,
+    #     percentile=50,
+    #     colors="black",
+    #     linewidths=2,
+    #     linestyles="-"
+    # )
 
-    plot_tsne_density_percentile(
-        ax_tsne,
-        df_time["tsne_dim_1"].values,
-        df_time["tsne_dim_2"].values,
-        percentile=90,
-        colors="black",
-        linewidths=2,
-        linestyles="--"
-    )
+    # plot_tsne_density_percentile(
+    #     ax_tsne,
+    #     df_time["tsne_dim_1"].values,
+    #     df_time["tsne_dim_2"].values,
+    #     percentile=90,
+    #     colors="black",
+    #     linewidths=2,
+    #     linestyles="--"
+    # )
 
-    ax_tsne.set_xticks([])
-    ax_tsne.set_yticks([])
-    if col == 0:
-        ax_tsne.set_title(f"{time_group} \n a)", fontsize=12, fontweight="bold")
-    elif col == 1:
-        ax_tsne.set_title(f"{time_group} \n b)", fontsize=12, fontweight="bold")
-    elif col == 2:
-        ax_tsne.set_title(f"{time_group} \n c) ", fontsize=12, fontweight="bold")
+    # ax_tsne.set_xticks([])
+    # ax_tsne.set_yticks([])
+    # if col == 0:
+    #     ax_tsne.set_title(f"{time_group} \n a)", fontsize=12, fontweight="bold")
+    # elif col == 1:
+    #     ax_tsne.set_title(f"{time_group} \n b)", fontsize=12, fontweight="bold")
+    # elif col == 2:
+    #     ax_tsne.set_title(f"{time_group} \n c) ", fontsize=12, fontweight="bold")
 
     # -----------------------------------
     # BARPLOT: counts by class (no dominance split)
     # -----------------------------------
 
-    ax_count = axes[1, col]
+    ax_count = axes[col]
 
     for l, label in enumerate(interesting_labels):
         # class-specific color
@@ -302,37 +299,38 @@ for col, time_group in enumerate(time_groups):
     ax_count.set_xticklabels(INTERESTING_CLASSES, fontsize=12)
 
 
-    for row, var in enumerate(physical_vars, start=2):
-        ax = axes[row, col]
+    # # Physical variables plotting - COMMENTED OUT
+    # for row, var in enumerate(physical_vars, start=2):
+    #     ax = axes[row, col]
 
 
-        data = df_time[var].dropna()
+    #     data = df_time[var].dropna()
 
-        ax.hist(
-            data,
-            bins=30,
-            #density=True,
-            histtype="step",
-            color='darkblue',
-        )
+    #     ax.hist(
+    #         data,
+    #         bins=30,
+    #         #density=True,
+    #         histtype="step",
+    #         color='darkblue',
+    #     )
 
-        if col == 0:
-            ax.set_ylabel("Counts", fontsize=12)
-            #ax.set_title("d)", fontsize=12, fontweight="bold")
-        # elif col == 1:
-        #     ax.set_title("e)", fontsize=12, fontweight="bold")
-        # elif col == 2:
-        #     ax.set_title("f)", fontsize=12, fontweight="bold")
-        ax.set_xlabel(var_names.get(var, var), fontsize=12)
-        ax.set_yscale("log")
-        #set manuely ticks label of ry axis
-        yticks = [10, 100, 1000]#, 10000]
-        ax.set_yticks(yticks)
-        ax.grid(True, which="both", ls="--", alpha=0.5)
-        ax.tick_params(axis="both", which="major", labelsize=10)
-        #set xlim based on var_xlim dict
-        #if var in var_xlim:
-        #    ax.set_xlim(var_xlim[var])
+    #     if col == 0:
+    #         ax.set_ylabel("Counts", fontsize=12)
+    #         #ax.set_title("d)", fontsize=12, fontweight="bold")
+    #     # elif col == 1:
+    #     #     ax.set_title("e)", fontsize=12, fontweight="bold")
+    #     # elif col == 2:
+    #     #     ax.set_title("f)", fontsize=12, fontweight="bold")
+    #     ax.set_xlabel(var_names.get(var, var), fontsize=12)
+    #     ax.set_yscale("log")
+    #     #set manuely ticks label of ry axis
+    #     yticks = [10, 100, 1000]#, 10000]
+    #     ax.set_yticks(yticks)
+    #     ax.grid(True, which="both", ls="--", alpha=0.5)
+    #     ax.tick_params(axis="both", which="major", labelsize=10)
+    #     #set xlim based on var_xlim dict
+    #     #if var in var_xlim:
+    #     #    ax.set_xlim(var_xlim[var])
 
 
 # -------------------------

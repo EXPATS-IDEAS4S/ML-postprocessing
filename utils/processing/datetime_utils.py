@@ -13,6 +13,29 @@ import numpy as np
 
 
 
+def extract_timestamp(path: str, from_filename: bool = True) -> str:
+    """Return a timestamp string (YYYYmmdd_HHMM) for a crop file.
+
+    Parameters
+    ----------
+    path : str
+        Full path to the crop file.
+    from_filename : bool
+        If True, parse the timestamp from the filename stem (fast, no I/O);
+        otherwise open the file with xarray and read the ``time`` dimension.
+    """
+    if from_filename:
+        stem = os.path.basename(path)
+        for ext in (".nc", ".tif", ".png"):
+            stem = stem.replace(ext, "")
+        raw = stem.split("_")[0]
+        return pd.to_datetime(raw).strftime("%Y%m%d_%H%M")
+
+    with xr.open_dataset(path, engine="h5netcdf") as ds:
+        ts = pd.to_datetime(ds.time[0].values).strftime("%Y%m%d_%H%M")
+    return ts
+
+
 def get_time_from_ds(ds):
     """
     Extracts the year, month, day, and hour from the time variable in the dataset.

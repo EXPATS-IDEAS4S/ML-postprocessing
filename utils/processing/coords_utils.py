@@ -9,6 +9,32 @@ Handles parsing of crop filenames and NetCDF metadata for latitude/longitude.
 import os
 import xarray as xr
 
+def extract_latlon_centre(path: str, from_filename: bool = False):
+    """Return (lat_centre, lon_centre) for a crop file.
+
+    Parameters
+    ----------
+    path : str
+        Full path to the crop file.
+    from_filename : bool
+        If True, parse lat/lon from filename tokens of the form
+        ``<stem>_lat<value>_lon<value>``; otherwise open the file with xarray.
+    """
+    if from_filename:
+        stem = os.path.basename(path)
+        for ext in (".nc", ".tif"):
+            stem = stem.replace(ext, "")
+        parts = stem.split("_")
+        lat_centre = float(parts[1].replace("lat", ""))
+        lon_centre = float(parts[2].replace("lon", ""))
+        return lat_centre, lon_centre
+
+    with xr.open_dataset(path, engine="h5netcdf") as ds:
+        lat_centre = round(float((ds.lat.values.min() + ds.lat.values.max()) / 2.0), 2)
+        lon_centre = round(float((ds.lon.values.min() + ds.lon.values.max()) / 2.0), 2)
+    return lat_centre, lon_centre
+
+
 def find_latlon_boundaries_from_ds(ds_crops):
     """
     Extracts latitude and longitude boundaries from the crop dataset.

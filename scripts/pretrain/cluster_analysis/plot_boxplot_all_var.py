@@ -13,9 +13,9 @@ sys.path.append('/home/Daniele/codes/VISSL_postprocessing/utils/plotting')
 from class_colors import CLOUD_CLASS_INFO, COLORS_PER_CLASS
 
 # === CONFIG ===
-RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc"
-path_to_dir = f"/data1/fig/{RUN_NAME}/epoch_800/all/"
-merged_path = os.path.join(path_to_dir, "merged_crops_stats_all_cvc_cot_cth_fractions.csv")
+RUN_NAME = "dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc"
+path_to_dir = f"/data1/fig/{RUN_NAME}/epoch_800/closest/"
+merged_path = os.path.join(path_to_dir, "merged_crops_stats_cvc_imergtime_closest_1000.csv")
 
 
 # crop_list_path = os.path.join(path_to_dir, "crop_list_dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_all_140207.csv")
@@ -48,14 +48,14 @@ cloud_items = sorted(CLOUD_CLASS_INFO.items(), key=lambda x: x[1]["order"])
 VARIABLES = [
     {"var": "cma", "short_name": "d) CC", "label": "Cloud Cover (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
     #{"var": "cth", "short_name": "e) CTH50", "label": "Cloud Top \n Height (km)", "percentile": 50, "scale": 0.001, "log": False, "vmin": 0, "vmax": 12},
-    {"var": "cth_very_high", "short_name": "e) CTH(10+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
+    #{"var": "cth_very_high", "short_name": "e) CTH(10+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
     #{"var": "cth", "short_name": "CTH99", "label": "Cloud Top \n Height (km)", "percentile": 99, "scale": 0.001, "log": False, "vmin": 0, "vmax": 15},
     #{"var": "ccv", "short_name": "CVC", "label": "Convective \n Cover (%)", "percentile": None, "scale": 100, "log": True, "vmin": 1, "vmax": 100},
     #{"var": "cot", "short_name": "COT50", "label": "Cloud Optical \n Thickness", "percentile": 50, "scale": 1, "log": False, "vmin": 0, "vmax": 35},
     #{"var": "cot", "short_name": "COT99", "label": "Cloud Optical \n Thickness", "percentile": 99, "scale": 1, "log": False, "vmin": 0, "vmax": 155},
     #{"var": "cot_thin", "short_name": "COT(0-5)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
     #{"var": "cot_medium", "short_name": "COT(5-30)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 100},
-    {"var": "cot_thick", "short_name": "f) COT(30+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 70},
+    #{"var": "cot_thick", "short_name": "f) COT(30+)", "label": "Percentage \n Area (%)", "percentile": None, "scale": 100, "log": False, "vmin": 0, "vmax": 70},
     #{"var": "precip_area", "short_name": "PA", "label": "Precipitating \n Area (%)", "percentile": None, "scale": 100, "log": True, "vmin": 1, "vmax": 100},
     #{"var": "precipitation", "short_name": "RR99", "label": "Rain Rate \n (mm/h)", "percentile": 99, "scale": 1, "log": True, "vmin": 0.1, "vmax": 40},
     #{"var": "euclid_msg_grid", "short_name": "LC", "label": "Lightning \n Count", "percentile": None, "scale": 1, "log": True, "vmin": 1, "vmax": 200},

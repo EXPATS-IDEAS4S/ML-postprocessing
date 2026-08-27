@@ -50,8 +50,21 @@ variables:
     bucket_filename_prefix: MCP_
     bucket_filename_suffix: _regrid.nc
 
-  precipitation:
+  rain_rate:
     long_name: "IMERG rain rate"
+    unit: "mm/h"
+    categorical: false
+    source_variable: precipitation
+    logscale: false
+    direction: "incr"
+    vmin: 0
+    vmax: 20
+    bucket_name: expats-imerg-prec
+    bucket_filename_prefix: IMERG_daily_
+    bucket_filename_suffix: .nc
+
+  precipitation:
+    long_name: "IMERG precipitation source data"
     unit: "mm/h"
     categorical: false
     logscale: false
@@ -76,6 +89,7 @@ variables:
 
   euclid_msg_grid:
     long_name: "EUCLID total lightning"
+    output_name: lightning_count
     #actual_variable_name: "euclid_msg_grid"
     unit: null
     categorical: true
@@ -125,4 +139,56 @@ variables:
     direction: "incr"
     vmin: 5
     vmax: 16
+
+  cth_categories:
+    long_name: "cloud top height category fractions"
+    unit: fraction
+    categorical: true
+    derived_type: category_fractions
+    source_variable: cth
+    categories:
+      cth_low: [0, 2000]
+      cth_medium: [2000, 7000]
+      cth_high: [7000, 10000]
+      cth_very_high: [10000, .inf]
+
+  cot_categories:
+    long_name: "cloud optical thickness category fractions"
+    unit: fraction
+    categorical: true
+    derived_type: category_fractions
+    source_variable: cot
+    categories:
+      cot_thin: [0, 5]
+      cot_medium: [5, 30]
+      cot_thick: [30, .inf]
+
+  day_night:
+    long_name: "day or night classification from COT validity"
+    unit: null
+    categorical: true
+    derived_type: day_night
+    source_variable: cot
+    nan_fraction_threshold: 0.5
+
+  area_prec:
+    long_name: "rainy area fraction over cloudy pixels"
+    unit: fraction
+    categorical: false
+    derived_type: precipitation_area
+    source_variable: precipitation
+    clear_sky_threshold: 320.0
+    rain_threshold: 0.1
+    min_pixel_count: 100
+
+  cum_prec:
+    long_name: "cumulative precipitation over rainy cloudy pixels"
+    unit: mm
+    categorical: false
+    derived_type: cumulative_precipitation
+    source_variable: precipitation
+    clear_sky_threshold: 320.0
+    rain_threshold: 0.1
+    min_pixel_count: 100
+    accumulation_factor: 2.0
     bucket_name: null

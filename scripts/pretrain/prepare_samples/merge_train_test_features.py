@@ -26,20 +26,21 @@ import pandas as pd
 import os
 from glob import glob
 import gc
+import argparse
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
 import xarray as xr
 
 # ================= CONFIGURATION =================
-run_name = 'dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc'
+run_name = 'dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc'
 event_types = ["PRECIP", "HAIL"]
 train_feat_dir = f'/data1/runs/{run_name}/features/epoch_800/'
 n_dim = 128  # Feature vector dimension
-output_path = f'/data1/fig/{run_name}/test/'
+output_path = f'/data1/fig/{run_name}/all/'
 os.makedirs(output_path, exist_ok=True)
 
 # Paths to crops
-image_train_path = '/data1/crops/ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc/nc/1/'
+image_train_path = '/data1/crops/ir108_100x100_2013-2020_3xrandomcrops_1xtimestamp_cma_nc/nc/1/'
 # Feature files
 feature_file_train_inds = 'rank0_chunk0_train_heads_inds.npy'
 feature_file_train_features = 'rank0_chunk0_train_heads_features.npy'
@@ -122,8 +123,26 @@ def add_labels_to_test(df: pd.DataFrame, centroids_file: str) -> pd.DataFrame:
     return df
 
 
-def prepare_and_save_dataset():
-    """Main function to load, merge, and save training and test datasets."""
+def load_centroids_to_df(centroids_file: str, vector_type: str = 'centroid') -> pd.DataFrame:
+    """Load centroids as feature vectors and return a DataFrame aligned with feature schema."""
+    centroids = torch.load(centroids_file, map_location="cpu").cpu().numpy()
+
+    df = pd.DataFrame(
+        centroids,
+        columns=[f'dim_{i+1}' for i in range(centroids.shape[1])]
+    )
+    df['path'] = pd.NA
+    df['datetime'] = pd.NA
+    df['label'] = np.arange(centroids.shape[0])
+    df['distance'] = 1.0
+    df['vector_type'] = vector_type
+    df['case_study'] = False
+
+    return df
+
+
+def prepare_and_save_dataset(include_test: bool = False):
+    """Main function to load and save train+centroids, with optional test datasets."""
     gc.collect()
 
     # Load training features
@@ -140,40 +159,52 @@ def prepare_and_save_dataset():
         crops_path=image_train_path
     )
     print(df_train)
+
+    # Load centroids to include them in the merged dataset.
+    df_centroids = load_centroids_to_df(
+        centroids_file=train_centroids_file,
+        vector_type='centroid'
+    )
+    print(df_centroids)
     
     # # Save to CSV
     # output_train_csv = os.path.join(output_path, f'features_train_{run_name}.csv')
     # df_train.to_csv(output_train_csv, index=False)
     # print(f"Saved merged dataset with metadata to: {output_train_csv}")
     
-    df_test_list = []
-    for event_type in event_types:
-        image_test_path = f'/data1/crops/test_case_essl_13-14-15-17-18-19-20-22-23-24_100x100_ir108_cma/{event_type}/nc/1/' #png for visualization
-        test_feat_dir = f'/data1/runs/{run_name}/test_features/epoch_800/{event_type}/'
+    dataframes_to_merge = [df_train, df_centroids]
 
-        # Load test features
-        df_test = load_features_to_df(
-            feature_path=test_feat_dir,
-            indices_file=feature_file_test_inds,
-            features_file=feature_file_test_features,
-            assignments_file=train_assignments_file,  # Using train assignments for test set
-            distances_file=train_distances_file,      # Using train distances for test set
-            centroids_file=train_centroids_file,
-            vector_type=event_type,
-            dataset='test',  # For logging purposes
-            case_study=True,
-            crops_path=image_test_path
-        )
-        print(df_test)
-        df_test_list.append(df_test)
-    
-        #save test case study crops
-        output_test_csv = os.path.join(output_path, f'features_test_case_study_{run_name}_{event_type}.csv')
-        df_test.to_csv(output_test_csv, index=False)
-        print(f"Saved test case-study dataset with metadata to: {output_test_csv}")
-    
+    if include_test:
+        df_test_list = []
+        for event_type in event_types:
+            image_test_path = f'/data1/crops/test_case_essl_13-14-15-17-18-19-20-22-23-24_100x100_ir108_cma/{event_type}/nc/1/' #png for visualization
+            test_feat_dir = f'/data1/runs/{run_name}/test_features/epoch_800/{event_type}/'
+
+            # Load test features
+            df_test = load_features_to_df(
+                feature_path=test_feat_dir,
+                indices_file=feature_file_test_inds,
+                features_file=feature_file_test_features,
+                assignments_file=train_assignments_file,  # Using train assignments for test set
+                distances_file=train_distances_file,      # Using train distances for test set
+                centroids_file=train_centroids_file,
+                vector_type=event_type,
+                dataset='test',  # For logging purposes
+                case_study=True,
+                crops_path=image_test_path
+            )
+            print(df_test)
+            df_test_list.append(df_test)
+
+            # save test case study crops
+            output_test_csv = os.path.join(output_path, f'features_test_case_study_{run_name}_{event_type}.csv')
+            df_test.to_csv(output_test_csv, index=False)
+            print(f"Saved test case-study dataset with metadata to: {output_test_csv}")
+
+        dataframes_to_merge.extend(df_test_list)
+
     # Merge datasets
-    df_final = pd.concat([df_train, *df_test_list], ignore_index=True)
+    df_final = pd.concat(dataframes_to_merge, ignore_index=True)
     print(df_final)
     
     # Save to CSV
@@ -182,5 +213,15 @@ def prepare_and_save_dataset():
     print(f"Saved merged dataset with metadata to: {output_csv}")
 
 if __name__ == "__main__":
-    prepare_and_save_dataset()
-#649788
+    parser = argparse.ArgumentParser(
+        description="Merge train and centroid features, with optional test features."
+    )
+    parser.add_argument(
+        "--include-test",
+        action="store_true",
+        help="Include test features in the merged output.",
+    )
+    args = parser.parse_args()
+
+    prepare_and_save_dataset(include_test=args.include_test)
+# 1630568

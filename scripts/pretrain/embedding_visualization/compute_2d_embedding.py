@@ -52,13 +52,13 @@ import openTSNE
 
 # ---------------- CONFIG ---------------- #
 CONFIG = {
-    "scales": ["dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc"],
+    "scales": ["dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_RAMSES"],
     "epochs": [800],
-    "feature_folder": "/data1/runs/dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc/teamx_features/epoch_800/", 
-    "output_path": "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2020_1xrandomcrops_1xtimestamp_cma_nc/epoch_800/teamx_test/",
+    "feature_folder": "/data1/runs/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_RAMSES/features/epoch_800/", 
+    "output_path": "/data1/fig/dcv2_resnet_k7_ir108_100x100_2013-2017-2021-2025_2xrandomcrops_1xtimestamp_cma_nc_RAMSES/epoch_800/",
     "filename_suffix": "",
     "random_states": [3], #[0, 3, 16, 23, 57],
-    "n_crops": 25368,
+    "n_crops": 140207,
     "sampling_type": "all",  # Options: 'random', 'closest', 'farthest', 'all'
     "methods": ["tsne_opentsne"],#["isomap", "tsne_sklearn", "tsne_opentsne"],
     # Parameters for Isomap

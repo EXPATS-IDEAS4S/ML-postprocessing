@@ -1,6 +1,7 @@
 nohup.out
 
 utils/buckets/credentials_buckets.py
+utils/buckets/credentials_buckets_old.py
 
 # Ignore Python cache
 __pycache__/
@@ -9,3 +10,8 @@ __pycache__/
 
 old/
 /home/claudia/codes/.venv
+
+#add logs folder and *.log
+log/
+*.log
+

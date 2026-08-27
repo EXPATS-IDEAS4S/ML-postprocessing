@@ -130,8 +130,9 @@ def main():
     print(f"TEST image files: {len(TEST_LIST_IMAGE_CROPS)}")
 
     df_feat_labels, df_centroids = load_labels(OUTPUT_PATH, FILENAME_TSNE, FILENAME_LABELS, labels)
-    print(df_feat_labels)
+    print(df_feat_labels.columns)
     print(df_centroids)
+    exit()
 
     #in df_feat_labels only retain split == TRAIN
     df_feat_labels = df_feat_labels[df_feat_labels["split"].isin(["TRAIN"])]
