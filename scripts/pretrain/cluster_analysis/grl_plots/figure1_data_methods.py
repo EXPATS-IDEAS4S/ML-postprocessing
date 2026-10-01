@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
-from matplotlib.colors import Normalize
+from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Patch, Rectangle
 from matplotlib.transforms import ScaledTranslation
@@ -43,9 +43,12 @@ except ImportError:  # pragma: no cover - optional dependency
 try:
     import cartopy.crs as ccrs
     import cartopy.feature as cfeature
+    from cartopy.mpl.ticker import LatitudeFormatter, LongitudeFormatter
 except ImportError:  # pragma: no cover - optional dependency
     ccrs = None
     cfeature = None
+    LatitudeFormatter = None
+    LongitudeFormatter = None
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(REPO_ROOT) not in sys.path:
@@ -88,6 +91,8 @@ SMALL_TITLE_SIZE = 21
 TIME_LABEL_SIZE = 14
 COLORBAR_LABEL_SIZE = 18
 COLORBAR_TICK_LABEL_SIZE = 18
+BT_COLORBAR_LABEL_SIZE = 21
+BT_COLORBAR_TICK_LABEL_SIZE = 20
 OUTPUT_FILENAME = "figure1_data_methods.png"
 MSG_VARIABLE_CANDIDATES = ("IR_108", "ir_108", "BT108", "bt108")
 CMA_VARIABLE_CANDIDATES = ("cma", "CMA")
@@ -96,6 +101,7 @@ LIGHTNING_COLORMAP = getattr(cmc, "lipari_r", plt.get_cmap("magma")) if cmc is n
 PRECIPITATION_COLORMAP = getattr(cmc, "lapaz_r", plt.get_cmap("Blues")) if cmc is not None else plt.get_cmap("Blues")
 CTH_COLORMAP = getattr(cmc, "batlow", plt.get_cmap("viridis")) if cmc is not None else plt.get_cmap("viridis")
 COT_COLORMAP = getattr(cmc, "bam", plt.get_cmap("cividis")) if cmc is not None else plt.get_cmap("cividis")
+CMA_COLORMAP = ListedColormap(["white", "#fdae61"])
 HORIZONTAL_COLORBAR_BOUNDS = [0.1, -0.02, 0.8, 0.035]
 PANEL_B_COLORBAR_BOUNDS = [0.12, 0.35, 0.76, 0.25]
 TOP_VIEW_COUNT = 4
@@ -590,6 +596,9 @@ def get_variable_norm(variable_name: str, variable_metadata: dict, values: list[
         finite = np.concatenate(finite_batches)
         return Normalize(vmin=float(np.nanpercentile(finite, 2)), vmax=float(np.nanpercentile(finite, 98)))
 
+    if variable_name.lower() == "cma":
+        return BoundaryNorm(boundaries=[-0.5, 0.5, 1.5], ncolors=CMA_COLORMAP.N)
+
     if variable_name == "cth":
         if vmin is None:
             vmin = 0.0
@@ -631,11 +640,11 @@ def add_panel_label(ax: plt.Axes, label: str) -> None:
     )
 
 
-def add_panel_title(ax: plt.Axes, title: str, x_offset_cm: float = 0.0) -> None:
+def add_panel_title(ax: plt.Axes, title: str, x_offset_cm: float = 0.0, y_offset_axes: float = 0.0) -> None:
     title_transform = ax.transAxes + ScaledTranslation(x_offset_cm / 2.54, 0.0, ax.figure.dpi_scale_trans)
     ax.text(
         0.0,
-        1.02,
+        1.02 + y_offset_axes,
         title,
         transform=title_transform,
         ha="left",
@@ -703,6 +712,7 @@ def plot_panel_a(
 
     # Plot the MSG 10.8 micron channel over the EXPATS domain with orography contours and a rectangle for the crop extent
     lon_min, lon_max, lat_min, lat_max = EXPATS_DOMAIN
+    lat_mid_domain_split = 42 + (52 - 42) / 2
     use_geo_axes = ccrs is not None and hasattr(ax, "add_feature")
     mesh = None
     if domain_ir is not None:
@@ -726,8 +736,18 @@ def plot_panel_a(
     plot_orography_contours(ax, orography, EXPATS_DOMAIN)
 
     if cfeature is not None and use_geo_axes:
-        ax.add_feature(cfeature.BORDERS, edgecolor="black", linewidth=0.8, zorder=4)
-        ax.add_feature(cfeature.COASTLINE, edgecolor="black", linewidth=0.6, zorder=4)
+        ax.add_feature(cfeature.BORDERS, edgecolor="white", linewidth=2.0, zorder=4)
+        ax.add_feature(cfeature.COASTLINE, edgecolor="white", linewidth=2.0, zorder=4)
+
+    ax.plot(
+        [lon_min, lon_max],
+        [lat_mid_domain_split, lat_mid_domain_split],
+        color="white",
+        linestyle="--",
+        linewidth=2.0,
+        transform=ccrs.PlateCarree() if use_geo_axes else ax.transData,
+        zorder=4.5,
+    )
 
     rect = Rectangle(
         (crop_extent[0], crop_extent[2]),
@@ -742,12 +762,28 @@ def plot_panel_a(
     ax.add_patch(rect)
     if use_geo_axes:
         ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
+        lon_ticks = np.arange(np.ceil(lon_min), np.floor(lon_max) + 0.1, 2.0)
+        lat_ticks = np.arange(np.ceil(lat_min), np.floor(lat_max) + 0.1, 2.0)
+        ax.set_xticks(lon_ticks, crs=ccrs.PlateCarree())
+        ax.set_yticks(lat_ticks, crs=ccrs.PlateCarree())
+        if LongitudeFormatter is not None and LatitudeFormatter is not None:
+            ax.xaxis.set_major_formatter(LongitudeFormatter())
+            ax.yaxis.set_major_formatter(LatitudeFormatter())
+        ax.gridlines(
+            crs=ccrs.PlateCarree(),
+            xlocs=lon_ticks,
+            ylocs=lat_ticks,
+            draw_labels=False,
+            color="0.88",
+            linewidth=0.8,
+        )
     else:
         ax.set_xlim(lon_min, lon_max)
         ax.set_ylim(lat_min, lat_max)
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.grid(True, color="0.88", linewidth=0.8)
+        ax.grid(True, color="0.88", linewidth=0.8)
+    ax.set_xlabel("Longitude", fontsize=COLORBAR_LABEL_SIZE)
+    ax.set_ylabel("Latitude", fontsize=COLORBAR_LABEL_SIZE)
+    ax.tick_params(axis="both", labelsize=COLORBAR_TICK_LABEL_SIZE)
     add_panel_title(ax, f"a) {panel_title}", x_offset_cm=-1.7)
 
     #add_panel_label(ax, "A")
@@ -780,8 +816,8 @@ def plot_cloud_mask_hatching(ax: plt.Axes, lon: np.ndarray, lat: np.ndarray, cma
 def plot_panel_b(parent_spec, fig: plt.Figure, ds_crop: xr.Dataset, times: np.ndarray, label_color: str) -> None:
     panel_ax = fig.add_subplot(parent_spec)
     panel_ax.set_axis_off()
-    add_panel_title(panel_ax, "b) Video sequence for the crop")
-    subgrid = parent_spec.subgridspec(4, len(times), height_ratios=[0.15, 0.5, 0.25, 0.15], hspace=0.0, wspace=0.02)
+    add_panel_title(panel_ax, "b) Image sequence for the crop")
+    subgrid = parent_spec.subgridspec(4, len(times), height_ratios=[0.15, 0.5, 0.15, 0.25], hspace=0.0, wspace=0.02)
     ir_data = find_data_array(ds_crop, MSG_VARIABLE_CANDIDATES)
     cma_data = find_data_array(ds_crop, CMA_VARIABLE_CANDIDATES)
     ir_values = [np.asarray(get_frame_data(ir_data, frame_index).values, dtype=float) for frame_index in range(len(times))]
@@ -789,6 +825,8 @@ def plot_panel_b(parent_spec, fig: plt.Figure, ds_crop: xr.Dataset, times: np.nd
     hatch_shown = False
     axes = []
     mesh = None
+    cbar_host = None
+    legend_host = None
 
     for frame_index, timestamp in enumerate(times):
         ax = fig.add_subplot(subgrid[1, frame_index])
@@ -825,28 +863,31 @@ def plot_panel_b(parent_spec, fig: plt.Figure, ds_crop: xr.Dataset, times: np.nd
 
         ax.set_title(pd.Timestamp(timestamp).strftime("%H:%M") + " UTC", fontsize=SMALL_TITLE_SIZE)
 
+    if hatch_shown and mesh is not None:
+        legend_host = fig.add_subplot(subgrid[2, :])
+        legend_host.set_axis_off()
+    if hatch_shown:
+        legend_host = legend_host if legend_host is not None else panel_ax
+        legend_host.legend(
+            handles=[Patch(facecolor="0.7", edgecolor="white", hatch="////", label="No-cloud pixels (from cloud mask)")],
+            loc="center",
+            fontsize=BT_COLORBAR_LABEL_SIZE,
+            frameon=True,
+        )
     if mesh is not None:
-        cbar_host = fig.add_subplot(subgrid[2, :])
+        cbar_host = fig.add_subplot(subgrid[3, :])
         cbar_host.set_axis_off()
         cbar_ax = cbar_host.inset_axes(PANEL_B_COLORBAR_BOUNDS)
         colorbar = fig.colorbar(mesh, cax=cbar_ax, orientation="horizontal")
-        colorbar.set_label("MSG 10.8 µm brightness temperature (K)", fontsize=COLORBAR_LABEL_SIZE)
-        colorbar.ax.tick_params(labelsize=COLORBAR_TICK_LABEL_SIZE)
-    if hatch_shown:
-        axes[-1].legend(
-            handles=[Patch(facecolor="none", edgecolor="white", hatch="////", label="No-cloud pixels")],
-            loc="lower right",
-            fontsize=9,
-            frameon=True,
-        )
+        colorbar.set_label("MSG 10.8 µm brightness temperature (K)", fontsize=BT_COLORBAR_LABEL_SIZE)
+        colorbar.ax.tick_params(labelsize=BT_COLORBAR_TICK_LABEL_SIZE)
 
 
-def compute_inset_positions(n_frames: int) -> list[tuple[float, float, float, float]]:
+def compute_inset_positions(n_frames: int, *, y_start: float = 0.04) -> list[tuple[float, float, float, float]]:
     size = 0.34
     x_start = 0.02
-    y_start = 0.04
-    x_step = 0.09
-    y_step = 0.075
+    x_step = 0.055
+    y_step = 0.09
     return [(x_start + index * x_step, y_start + index * y_step, size, size) for index in range(n_frames)]
 
 
@@ -861,6 +902,7 @@ def plot_diagonal_panel(
     variable_metadata: dict,
     cmap: str,
     hatch_frames: list[xr.DataArray] | None = None,
+    inset_y_start: float = 0.04,
 ) -> None:
     ax.set_axis_off()
     add_panel_title(ax, title)
@@ -891,9 +933,9 @@ def plot_diagonal_panel(
 
     display_values = [scale_variable_for_display(variable_name, frame) for frame in frames]
     norm = get_variable_norm(variable_name, variable_metadata, display_values)
-    positions = compute_inset_positions(len(frames))
+    positions = compute_inset_positions(len(frames), y_start=inset_y_start)
     mesh = None
-    text_color = "white" if variable_name in {"IR_108", "euclid_msg_grid"} else "black"
+    text_color = "white" if variable_name in {"IR_108", "euclid_msg_grid", "cma"} else "black"
     text_box_color = "black" if text_color == "white" else "white"
     hatch_shown = False
 
@@ -933,10 +975,15 @@ def plot_diagonal_panel(
     if mesh is not None:
         metadata = variable_metadata.get(variable_name, {})
         label = metadata.get("long_name", variable_name)
+        if variable_name.lower() == "cma":
+            label = "Cloud mask"
         unit = metadata.get("unit")
         if unit:
             label = f"{label} ({unit})"
-        add_horizontal_inset_colorbar(fig, ax, mesh, label)
+        colorbar = add_horizontal_inset_colorbar(fig, ax, mesh, label)
+        if variable_name.lower() == "cma":
+            colorbar.set_ticks([0, 1])
+            colorbar.set_ticklabels(["no cloud", "cloud"])
     if hatch_shown:
         ax.legend(
             handles=[Patch(facecolor="none", edgecolor="white", hatch="////", label="No-cloud pixels")],
@@ -948,7 +995,7 @@ def plot_diagonal_panel(
 
 def plot_panel_g(ax: plt.Axes) -> None:
     ax.set_axis_off()
-    add_panel_title(ax, "g) Deep learning model")
+    add_panel_title(ax, "c) Self-supervised deep learning model", y_offset_axes=-0.12)
 
 
 def save_ir108_diagonal_figure(
@@ -960,8 +1007,8 @@ def save_ir108_diagonal_figure(
     diagonal_output_path = output_path.with_name(f"{output_path.stem}_ir108_diagonal{output_path.suffix}")
     ir_frames = build_local_variable_frames(ds_crop, MSG_VARIABLE_CANDIDATES, times)
     cma_frames = build_local_variable_frames(ds_crop, CMA_VARIABLE_CANDIDATES, times)
-    if len(times) > 5:
-        selected_indices = np.linspace(0, len(times) - 1, 5, dtype=int)
+    if len(times) > 8:
+        selected_indices = np.linspace(0, len(times) - 1, 8, dtype=int)
         selected_times = times[selected_indices]
         ir_frames = [ir_frames[index] for index in selected_indices]
         cma_frames = [cma_frames[index] for index in selected_indices]
@@ -1182,18 +1229,22 @@ def main() -> None:
             precipitation_frames = try_prepare_remote_frames(cache, "precipitation", times, crop_extent)
             cth_frames = try_prepare_remote_frames(cache, "cth", times, crop_extent)
             cot_frames = try_prepare_remote_frames(cache, "cot", times, crop_extent)
-            fig = plt.figure(figsize=(24, 20), constrained_layout=False)
-            outer = GridSpec(3, 12, figure=fig, height_ratios=[1.0, 1.1, 1.0], hspace=0.18, wspace=0.12)
+            cma_frames = build_local_variable_frames(ds_crop, CMA_VARIABLE_CANDIDATES, times)
+            fig = plt.figure(figsize=(24, 22), constrained_layout=False)
+            outer = GridSpec(3, 15, figure=fig, height_ratios=[1.0, 1.375, 1.0], hspace=0.18, wspace=0.12)
         else:
             lightning_frames = None
             precipitation_frames = None
             cth_frames = None
             cot_frames = None
+            cma_frames = None
             fig = plt.figure(figsize=(24, 15), constrained_layout=False)
             outer = GridSpec(2, 12, figure=fig, height_ratios=[1.0, 1.0], hspace=0.18, wspace=0.12)
 
         panel_a_projection = ccrs.PlateCarree() if ccrs is not None else None
-        ax_a = fig.add_subplot(outer[0, 0:4], projection=panel_a_projection)
+        top_row_columns = outer.ncols
+        panel_a_span = top_row_columns // 3
+        ax_a = fig.add_subplot(outer[0, 0:panel_a_span], projection=panel_a_projection)
         plot_panel_a(
             ax_a,
             fig,
@@ -1204,20 +1255,23 @@ def main() -> None:
             panel_title=f"Domain overview",
         )
 
-        plot_panel_b(outer[0, 4:12], fig, ds_crop, times, label_color)
+        plot_panel_b(outer[0, panel_a_span:top_row_columns], fig, ds_crop, times, label_color)
 
         if INCLUDE_ANCILLARY_PANELS:
             ax_c = fig.add_subplot(outer[2, 0:3])
-            plot_diagonal_panel(ax_c, fig, "d", "d) Lightning density", "euclid_msg_grid", lightning_frames, times, variable_metadata, cmap=LIGHTNING_COLORMAP)
+            plot_diagonal_panel(ax_c, fig, "d", "d) Lightning density", "euclid_msg_grid", lightning_frames, times, variable_metadata, cmap=LIGHTNING_COLORMAP, inset_y_start=0.0)
 
             ax_d = fig.add_subplot(outer[2, 3:6])
-            plot_diagonal_panel(ax_d, fig, "e", "e) Precipitation rate", "precipitation", precipitation_frames, times, variable_metadata, cmap=PRECIPITATION_COLORMAP)
+            plot_diagonal_panel(ax_d, fig, "e", "e) Precipitation rate", "precipitation", precipitation_frames, times, variable_metadata, cmap=PRECIPITATION_COLORMAP, inset_y_start=0.0)
 
             ax_e = fig.add_subplot(outer[2, 6:9])
-            plot_diagonal_panel(ax_e, fig, "f", "f) Cloud top height", "cth", cth_frames, times, variable_metadata, cmap=CTH_COLORMAP)
+            plot_diagonal_panel(ax_e, fig, "f", "f) Cloud top height", "cth", cth_frames, times, variable_metadata, cmap=CTH_COLORMAP, inset_y_start=0.0)
 
             ax_f = fig.add_subplot(outer[2, 9:12])
-            plot_diagonal_panel(ax_f, fig, "g", "g) Cloud optical thickness", "cot", cot_frames, times, variable_metadata, cmap=COT_COLORMAP)
+            plot_diagonal_panel(ax_f, fig, "g", "g) Cloud optical thickness", "cot", cot_frames, times, variable_metadata, cmap=COT_COLORMAP, inset_y_start=0.0)
+
+            ax_h = fig.add_subplot(outer[2, 12:15])
+            plot_diagonal_panel(ax_h, fig, "h", "h) Cloud mask", "cma", cma_frames, times, variable_metadata, cmap=CMA_COLORMAP, inset_y_start=0.0)
 
             ax_g = fig.add_subplot(outer[1, :])
             plot_panel_g(ax_g)
