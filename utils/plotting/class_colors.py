@@ -30,7 +30,7 @@ colors_per_class1_names = {
     '1': 'orangered',
     '2': 'darkslategrey',
     '3': 'orange',
-    '4': 'deepskyblue',
+    '4': 'paleturquoise',
     '5': 'navajowhite',
     '6': 'orchid',
     '7': 'royalblue',
@@ -39,28 +39,27 @@ colors_per_class1_names = {
 }
 
 colors_per_class_codes_grl = {
-    # Decaying daytime (teals)
-    '0': "#2CA25F",
-    '8': "#006D2C",
 
-    # Decaying nighttime (blues)
-    '3': "#807DBA",
-    '9': "#54278F",
+    # daytime: warm colors
+    '5': "#A43A00", # dark vermillion
+    '6': "#E69F00", # orange
+    '7': "#F0E442", # yellow
 
-    # Growing convection (oranges)
-    '5': "#FDBE85",
-    '6': "#F16913",
-    '7': "#B30000",
+    # nighttime: blue family only
+    '0': "#332288", # navy blue
+    '8': "#0072B2", # medium blue
+    '1': "#56B4E9", # sky blue
+    '4': "#A7D5F2", # light sky blue derived from the blue family
 
-    # Other
-    '1': "#A7A6BA", 
-    '2': "#C4C3D0",
-    '4': "#91A3B0",
+    # anytime: green / teal family
+    '2': "#117733", # dark green
+    '3': "#009E73", # bluish green
+    '9': "#66CCAA", # light teal
 }
 
 class_groups_diurnal_cycle = {
     'day': [5, 6, 7 ],
-    'night': [0, 1,4,8],
+    'night': [0,1,4,8],
     'anytime': [2,3,9]
 }
 

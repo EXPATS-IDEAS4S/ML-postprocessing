@@ -1,6 +1,7 @@
 """
 GRL pipeline script to run all figure generation scripts in order.
 Usage:
+conda activate vissl
 python scripts/pretrain/cluster_analysis/grl_plots/grl_pipeline.py
 """
 
