@@ -386,11 +386,11 @@ def plot_second_row_bulk_properties(fig, gs, config):
     style_axis(ax2)
 
 
-    # third scatter plot: lightning counts vs CTH
+    # third scatter plot: COT30+ vs CTH10+
     ax3 = row2_axes[2]
     ax3.scatter(
-        class_means["euclid_msg_grid_mean"],
-        class_means["cth_mean"],
+        class_means["cot30plus_mean"],
+        class_means["cth10plus_mean"],
         c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
@@ -399,16 +399,16 @@ def plot_second_row_bulk_properties(fig, gs, config):
     plot_class_errorbars(
         ax3,
         class_means,
-        "euclid_msg_grid_mean",
-        "cth_mean",
-        "euclid_msg_grid_std",
-        "cth_std",
+        "cot30plus_mean",
+        "cth10plus_mean",
+        "cot30plus_std",
+        "cth10plus_std",
         color="dimgray",
     )
-    ax3.set_xlabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_title("3. Lightning Counts vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax3, class_means, "euclid_msg_grid_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE)
+    ax3.set_xlabel("COT30+", fontsize=FONT_SIZE_TEXT)
+    ax3.set_ylabel("CTH10+", fontsize=FONT_SIZE_TEXT)
+    ax3.set_title("3. COT30+ vs CTH10+", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    highlight_selected_classes(ax3, class_means, "cot30plus_mean", "cth10plus_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax3)
     return row2_axes
 
@@ -475,11 +475,11 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     highlight_selected_classes(ax2, class_means, "precipitation_mean", "euclid_msg_grid_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax2)
 
-    # third scatter plot: cumulated precipitation vs cloud optical thickness
+    # third scatter plot: lightning counts vs CTH
     ax3 = row3_axes[2]
     ax3.scatter(
-        class_means["precipitation_mean"],
-        class_means["cot_mean"],
+        class_means["euclid_msg_grid_mean"],
+        class_means["cth_mean"],
         c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
@@ -488,16 +488,16 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     plot_class_errorbars(
         ax3,
         class_means,
-        "precipitation_mean",
-        "cot_mean",
-        "precipitation_std",
-        "cot_std",
+        "euclid_msg_grid_mean",
+        "cth_mean",
+        "euclid_msg_grid_std",
+        "cth_std",
         color="dimgray",
     )
-    ax3.set_xlabel("Cumulated Precipitation (mm)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_ylabel("Cloud Optical Thickness", fontsize=FONT_SIZE_TEXT)
-    ax3.set_title("3. Cumulated Prec vs \n Cloud Optical Thickness", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax3, class_means, "precipitation_mean", "cot_mean", size=HIGHLIGHT_MARKER_SIZE)
+    ax3.set_xlabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_title("3. Lightning Counts vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    highlight_selected_classes(ax3, class_means, "euclid_msg_grid_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax3)
     return row3_axes
 
