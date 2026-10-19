@@ -1,5 +1,7 @@
 """
 This figure demonstrates the physical interpretability of the classes.
+The aim here is to distinguish the classes based on their cloud properties. 
+The aim of the figure is to identify the classes that can be considered conevctive. 
 It is a multipanel figure with 3 main rows. Each row contains 3 histogram plots corresponding
  to a different set of properties:
 - Row 1: Diurnal cycle of cloud classes. First histogram is for clouds with prominence 
@@ -7,13 +9,13 @@ of presence during night, second histogram is for clouds with prominence during 
  third histogram is for clouds with no strong diurnal preference.
 - Row 2: Cloud bulk properties of cloud classs. We have 3 histograms with:
     - cloud cover vs CTH
-    - cloud fraction vs precipitation fraction
-    - cumulated precipitation vs lightning counts
+    - cloud optical thickness vs CTH
+    - lightning counts vs CTH
     
-- Row 3: Temporal characteristics of cloud classes. HEre we have 3 histograms with:
-    - gradient of COT vs grad CTH
-    - grad cloud cover vs grad CTH
-    - grad COT30+ vs grad CTH10+
+- Row 3: Precipitation-related properties of cloud classes. We have 3 histograms with:
+    - cloud cover vs precipitation fraction
+    - cumulated precipitation vs mean lightning counts
+    - cumulated precipitation vs cloud optical thickness
 
 The plot stores the figure in the output directory specified in the config file.
 Author: Claudia Acquistapace
@@ -28,7 +30,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.gridspec import GridSpec
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(REPO_ROOT) not in sys.path:
@@ -43,7 +44,10 @@ from utils.plotting.class_colors import (
     class_groups_diurnal_cycle,
 )
 from utils.plotting.plot_class_analysis import plot_hourly_histogram
-from scripts.pretrain.cluster_analysis.scatter_video_csv import style_zero_centered_axes, get_axis_values_with_training_percentiles, clean_video_summary_df, plot_class_percentile_errorbar_points, plot_class_errorbar_points
+from scripts.pretrain.cluster_analysis.scatter_video_csv import (
+    clean_video_summary_df,
+    plot_class_errorbar_points,
+)
 try:
     import cmcrameri.cm as cmc
 except ImportError:  # pragma: no cover - optional dependency
@@ -65,6 +69,7 @@ FIGURE_BOTTOM = 0.14
 FIGURE_TOP = 0.94
 ROW_TITLE_OFFSET = 0.025
 BULK_ROW_TITLE_OFFSET = ROW_TITLE_OFFSET
+BOTTOM_ROW_TITLE_OFFSET = 0.04
 HOUR_BIN_SIZE = 2
 HOUR_BINS = list(range(0, 24, HOUR_BIN_SIZE))
 HOUR_BIN_CENTERS = np.array(HOUR_BINS) + HOUR_BIN_SIZE / 2
@@ -100,9 +105,7 @@ CSV_FILES = {
     "training_distances": config["output_files"]["training_features_distances_centroid"],
 }
 HIGHLIGHT_CLASSES = {0, 1, 4, 8}
-CMA_GRADIENT_LIMIT = 0.2
 CTH_MEAN_LIMIT = 8000
-CTH_GRADIENT_LIMIT = 800
 
 def style_axis(ax):
     ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
@@ -159,7 +162,17 @@ def add_class_legend(fig):
     )
 
 
-def plot_class_errorbars(ax, class_means, x_mean, y_mean, x_std, y_std, color="gray"):
+def plot_class_errorbars(
+    ax,
+    class_means,
+    x_mean,
+    y_mean,
+    x_std,
+    y_std,
+    color="gray",
+    zorder=2,
+    capsize=0,
+):
     percent_scaled_columns = {"cma_mean", "prec_fraction_mean"}
     x_scale = 100 if x_mean in percent_scaled_columns else 1
     y_scale = 100 if y_mean in percent_scaled_columns else 1
@@ -175,8 +188,8 @@ def plot_class_errorbars(ax, class_means, x_mean, y_mean, x_std, y_std, color="g
             fmt="none",
             ecolor=color,
             elinewidth=1.2,
-            capsize=0,
-            zorder=2,
+            capsize=capsize,
+            zorder=zorder,
         )
 
 
@@ -238,9 +251,15 @@ def main():
         offset=BULK_ROW_TITLE_OFFSET,
     )
 
-    plot_third_row_temporal_characteristics(fig, gs, config)
+    plot_third_row_precipitation_properties(fig, gs, config)
 
-    add_row_title(fig, gs, 2, "c) Temporal characteristics of cloud classes")
+    add_row_title(
+        fig,
+        gs,
+        2,
+        "c) Precipitation-related properties of cloud classes",
+        offset=BOTTOM_ROW_TITLE_OFFSET,
+    )
     add_class_legend(fig)
     fig.savefig(output_dir / OUTPUT_FILENAME, dpi=OUTPUT_DPI, bbox_inches="tight")
     plt.close(fig)
@@ -290,7 +309,7 @@ def plot_single_class_groups(ax, df_grouped: pd.DataFrame, group_labels, hours, 
             linewidth=DIURNAL_LINEWIDTH,
         )
 
-    ax.set_xlabel("Hour of the day (hh)", fontsize=FONT_SIZE_TEXT)
+    ax.set_xlabel("Hour of the day (hh:hh) [UTC]", fontsize=FONT_SIZE_TEXT)
     ax.set_ylabel("Occurrence (%)", fontsize=FONT_SIZE_TEXT)
     ax.set_ylim(0, COMMON_YMAX)
     ax.set_title(title, fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
@@ -317,16 +336,13 @@ def plot_second_row_bulk_properties(fig, gs, config):
 
     # first scatter plot: cloud cover vs CTH
     ax1 = row2_axes[0]
-    cot_values = pd.to_numeric(class_means["cot_mean"], errors="coerce")
-    cot_cmap = plt.cm.Greys
-    scatter_cot = ax1.scatter(
+    ax1.scatter(
         class_means["cma_mean"]*100,  # convert to percentage
         class_means["cth_mean"],
-        c=cot_values,
-        cmap=cot_cmap,
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA_LARGE,
-        edgecolors=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
-        linewidths=2.5, 
+        edgecolor="black",
+        linewidths=1.4,
         zorder=3,
     )
     plot_class_errorbars(
@@ -337,24 +353,6 @@ def plot_second_row_bulk_properties(fig, gs, config):
         "cma_std",
         "cth_std",
     )
-    cax = inset_axes(
-        ax1,
-        width="42%",
-        height="5%",
-        loc="lower right",
-        bbox_to_anchor=(0.0, 0.14, 1.0, 1.0),
-        bbox_transform=ax1.transAxes,
-        borderpad=0,
-    )
-    cbar = fig.colorbar(
-        scatter_cot,
-        cax=cax,
-        orientation="horizontal",
-    )
-    cbar.set_ticks([5, 10, 15, 20, 25])
-    cbar.ax.xaxis.set_label_position("top")
-    cbar.set_label("Mean COT", fontsize=18)
-    cbar.ax.tick_params(labelsize=18, length=3)
     ax1.set_xlabel("Cloud Cover (%)", fontsize=FONT_SIZE_TEXT)
     ax1.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
     ax1.set_title("1.Cloud Cover vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
@@ -362,11 +360,11 @@ def plot_second_row_bulk_properties(fig, gs, config):
     highlight_selected_classes(ax1, class_means, "cma_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE_LARGE)
     style_axis(ax1) 
 
-    # second scatter plot: cloud cover vs precipitation fraction
+    # second scatter plot: COT vs CTH
     ax2 = row2_axes[1]
     ax2.scatter(
-        class_means["cma_mean"]*100, # convert to percentage
-        class_means["prec_fraction_mean"]*100, # convert to percentage
+        class_means["cot_mean"],
+        class_means["cth_mean"],
         c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
@@ -375,31 +373,94 @@ def plot_second_row_bulk_properties(fig, gs, config):
     plot_class_errorbars(
         ax2,
         class_means,
+        "cot_mean",
+        "cth_mean",
+        "cot_std",
+        "cth_std",
+        color="dimgray",
+    )
+    ax2.set_xlabel("Cloud Optical Thickness", fontsize=FONT_SIZE_TEXT)
+    ax2.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
+    ax2.set_title("2. Cloud Optical Thickness vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    highlight_selected_classes(ax2, class_means, "cot_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE)
+    style_axis(ax2)
+
+
+    # third scatter plot: lightning counts vs CTH
+    ax3 = row2_axes[2]
+    ax3.scatter(
+        class_means["euclid_msg_grid_mean"],
+        class_means["cth_mean"],
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
+        s=SCATTER_MARKER_AREA,
+        edgecolor="black",
+        zorder=3,
+    )
+    plot_class_errorbars(
+        ax3,
+        class_means,
+        "euclid_msg_grid_mean",
+        "cth_mean",
+        "euclid_msg_grid_std",
+        "cth_std",
+        color="dimgray",
+    )
+    ax3.set_xlabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_title("3. Lightning Counts vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    highlight_selected_classes(ax3, class_means, "euclid_msg_grid_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE)
+    style_axis(ax3)
+    return row2_axes
+
+
+def plot_third_row_precipitation_properties(fig, gs, config):
+    # read the data to use for the scatter plots
+    video_stats_df = pd.read_csv(CSV_FILES["training_video_summary"])
+    video_stats_df = clean_video_summary_df(video_stats_df)
+    class_means = video_stats_df.groupby("label")[SCATTER_COLUMNS].mean()
+
+    row3_axes = [fig.add_subplot(gs[2, index]) for index in range(3)]
+
+    # first scatter plot: cloud cover vs precipitation fraction
+    ax1 = row3_axes[0]
+    ax1.scatter(
+        class_means["cma_mean"] * 100,
+        class_means["prec_fraction_mean"] * 100,
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
+        s=SCATTER_MARKER_AREA,
+        edgecolor="black",
+        zorder=3,
+    )
+    plot_class_errorbars(
+        ax1,
+        class_means,
         "cma_mean",
         "prec_fraction_mean",
         "cma_std",
         "prec_fraction_std",
         color="dimgray",
+        zorder=5,
+        capsize=3,
     )
-    ax2.set_xlabel("Cloud Cover (%)", fontsize=FONT_SIZE_TEXT)
-    ax2.set_ylabel("Precipitation Fraction (%)", fontsize=FONT_SIZE_TEXT)
-    ax2.set_title("2.Cloud Cover vs Precipitation Fraction", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    ax2.set_xlim(0., 100.)
-    highlight_selected_classes(ax2, class_means, "cma_mean", "prec_fraction_mean", size=HIGHLIGHT_MARKER_SIZE)
-    style_axis(ax2)
+    ax1.set_xlabel("Cloud Cover (%)", fontsize=FONT_SIZE_TEXT)
+    ax1.set_ylabel("Precipitation Fraction (%)", fontsize=FONT_SIZE_TEXT)
+    ax1.set_title("1. Cloud Cover vs Prec. Fraction", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    ax1.set_xlim(0.0, 100.0)
+    highlight_selected_classes(ax1, class_means, "cma_mean", "prec_fraction_mean", size=HIGHLIGHT_MARKER_SIZE)
+    style_axis(ax1)
 
-
-    # third scatter plot: cumulated precipitation vs lightning counts
-    ax3 = row2_axes[2]
-    ax3.scatter(
+    # second scatter plot: cumulated precipitation vs mean lightning counts
+    ax2 = row3_axes[1]
+    ax2.scatter(
         class_means["precipitation_mean"],
         class_means["euclid_msg_grid_mean"],
         c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
         edgecolor="black",
+        zorder=3,
     )
     plot_class_errorbar_points(
-        ax3,
+        ax2,
         class_means,
         "precipitation_mean",
         "euclid_msg_grid_mean",
@@ -408,157 +469,36 @@ def plot_second_row_bulk_properties(fig, gs, config):
         dataset="training",
         marker_size=SCATTER_MARKER_SIZE,
     )
-    ax3.set_xlabel("Cumulated Precipitation (mm)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_ylabel("Mean lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_title("3.Cumulated Precipitation vs Lightning Counts", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax3, class_means, "precipitation_mean", "euclid_msg_grid_mean", size=HIGHLIGHT_MARKER_SIZE)
-    style_axis(ax3)
-    return row2_axes
-
-
-def plot_third_row_temporal_characteristics(fig, gs, config):
-
-
-   # read the data to use for the scatter plots
-    video_stats_df = pd.read_csv(CSV_FILES["training_video_summary"])
-    # drop class with label -100
-    video_stats_df = clean_video_summary_df(video_stats_df)
-
-    # calculate now mean and std of all columns ending with _gradient for each class
-    gradient_columns = [col for col in video_stats_df.columns if col.endswith("_gradient")]
-    class_gradients = video_stats_df.groupby("label")[gradient_columns].mean()  
-    class_gradients_q25 = video_stats_df.groupby("label")[gradient_columns].quantile(0.25)
-    class_gradients_q75 = video_stats_df.groupby("label")[gradient_columns].quantile(0.75)
-
-
-    # create the axes for the 3 scatter plots in the second row
-    row3_axes = [fig.add_subplot(gs[2, index]) for index in range(3)]
-
-    # first scatter plot: cloud cover gradient vs CTH gradient
-    ax1 = row3_axes[0]
-    plot_class_percentile_errorbar_points( 
-        ax1,
-        class_gradients,
-        class_gradients_q25,
-        class_gradients_q75,
-        "cma_gradient",
-        "cth_gradient",
-        dataset="training",
-        marker_size=SCATTER_MARKER_SIZE,
-    )
-
-    ax1.set_xlabel("Cloud cover fraction gradient (%$\mathrm{h}^{-1}$)", fontsize=FONT_SIZE_TEXT)
-    ax1.set_ylabel("CTH gradient (m$\mathrm{h}^{-1}$)", fontsize=FONT_SIZE_TEXT)
-    ax1.set_title("1. Cloud cover gradient vs CTH gradient", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax1, class_gradients, "cma_gradient", "cth_gradient", size=HIGHLIGHT_MARKER_SIZE)
-    style_axis(ax1)
-    style_zero_centered_axes(
-        ax1,
-        get_axis_values_with_training_percentiles(
-            class_gradients,
-            class_gradients_q25,
-            class_gradients_q75,
-            None,
-            "cma_gradient",
-            False,
-        ),
-        get_axis_values_with_training_percentiles(
-            class_gradients,
-            class_gradients_q25,
-            class_gradients_q75,
-            None,
-            "cth_gradient",
-            False,
-        ),
-        x_limit_cap=CMA_GRADIENT_LIMIT,
-        y_limit_cap=CTH_GRADIENT_LIMIT,
-    )
-    style_axis(ax1)
-    ax1.set_xlim(-0.02, 0.02)
-    ax1.set_ylim(-220, 220)
-
-    # second scatter plot: COT gradient vs CTH gradient
-    ax2 = row3_axes[1]
-    plot_class_percentile_errorbar_points(
-        ax2,
-        class_gradients,
-        class_gradients_q25,
-        class_gradients_q75,
-        "cot_gradient",
-        "cth_gradient",
-        dataset="training",
-        marker_size=SCATTER_MARKER_SIZE,
-    )
-
-    ax2.set_xlabel("COT gradient ($\mathrm{h}^{-1}$)", fontsize=FONT_SIZE_TEXT)
-    ax2.set_ylabel("CTH gradient (m$\mathrm{h}^{-1}$)", fontsize=FONT_SIZE_TEXT)
-    ax2.set_title("2. COT gradient vs CTH gradient", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax2, class_gradients, "cot_gradient", "cth_gradient", size=HIGHLIGHT_MARKER_SIZE)
+    ax2.set_xlabel("Cumulated Precipitation (mm)", fontsize=FONT_SIZE_TEXT)
+    ax2.set_ylabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
+    ax2.set_title("2. Cumulated Prec vs \n Lightning Counts", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    highlight_selected_classes(ax2, class_means, "precipitation_mean", "euclid_msg_grid_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax2)
-    style_zero_centered_axes(
-        ax2,
-        get_axis_values_with_training_percentiles(
-            class_gradients,
-            class_gradients_q25,
-            class_gradients_q75,
-            None,
-            "cot_gradient",
-            False,
-        ),
-        get_axis_values_with_training_percentiles(
-            class_gradients,
-            class_gradients_q25,
-            class_gradients_q75,
-            None,
-            "cth_gradient",
-            False,
-        ),
-        y_limit_cap=CTH_GRADIENT_LIMIT,
-    )
-    style_axis(ax2)
-    ax2.set_xlim(-4.5, 4.5)
-    ax2.set_ylim(-220, 220)
 
-    # third scatter plot: CTH10+ gradient vs COT30+ gradient
+    # third scatter plot: cumulated precipitation vs cloud optical thickness
     ax3 = row3_axes[2]
-    plot_class_percentile_errorbar_points(
-        ax3,
-        class_gradients,
-        class_gradients_q25,
-        class_gradients_q75,
-        "cot30plus_gradient",
-        "cth10plus_gradient",
-        dataset="training",
-        marker_size=SCATTER_MARKER_SIZE,
+    ax3.scatter(
+        class_means["precipitation_mean"],
+        class_means["cot_mean"],
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
+        s=SCATTER_MARKER_AREA,
+        edgecolor="black",
+        zorder=3,
     )
-
-    ax3.set_xlabel("COT30+ gradient ($\mathrm{h}^{-1}$)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_ylabel("CTH10+ gradient (m$\mathrm{h}^{-1}$)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_title("3. CTH10+ gradient vs COT30+ gradient", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax3, class_gradients, "cot30plus_gradient", "cth10plus_gradient", size=HIGHLIGHT_MARKER_SIZE)
-    style_axis(ax3)
-    style_zero_centered_axes(
+    plot_class_errorbars(
         ax3,
-        get_axis_values_with_training_percentiles(
-            class_gradients,
-            class_gradients_q25,
-            class_gradients_q75,
-            None,
-            "cot30plus_gradient",
-            False,
-        ),
-        get_axis_values_with_training_percentiles(
-            class_gradients,
-            class_gradients_q25,
-            class_gradients_q75,
-            None,
-            "cth10plus_gradient",
-            False,
-        ),
+        class_means,
+        "precipitation_mean",
+        "cot_mean",
+        "precipitation_std",
+        "cot_std",
+        color="dimgray",
     )
+    ax3.set_xlabel("Cumulated Precipitation (mm)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_ylabel("Cloud Optical Thickness", fontsize=FONT_SIZE_TEXT)
+    ax3.set_title("3. Cumulated Prec vs \n Cloud Optical Thickness", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    highlight_selected_classes(ax3, class_means, "precipitation_mean", "cot_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax3)
-    ax3.set_xlim(-0.03, 0.03)
-    ax3.set_ylim(-0.018, 0.018)
     return row3_axes
 
 
