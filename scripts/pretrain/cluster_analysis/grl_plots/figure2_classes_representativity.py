@@ -1,18 +1,21 @@
-"""
+r"""
 This code produces the structural layout for Figure 2, with 2 main rows:
 - 1st row: a subgrid of 10 rows and 9 columns. Each row starts with a colored
-  class box containing the class number, followed by 8 placeholder boxes for
-  centroid-video frames ordered in time from left to right.
+    class box containing the class number, followed by 8 placeholder boxes for
+    centroid-video frames ordered in time from left to right.
 - 2nd row: a row with 3 plots for class representativity summaries:
-    - bar plot for the number of videos per class
+        - bar plot for the number of videos per class
         - whisker plot for centroid-distance distributions per class
             Outliers are shown using the default boxplot definition, i.e. points beyond
-            $1.5 \times \mathrm{IQR}$ from the first and third quartiles. IQR is the interquartile range, 
-            i.e. the difference between the third and first quartiles, that are 75th and 25th percentiles of the distribution, respectively.
-    - plot the distributions of the classes in the northern and southern parts of the domain
+            $1.5 \times \mathrm{IQR}$ from the first and third quartiles. IQR is the
+            interquartile range, i.e. the difference between the third and first quartiles,
+            that are 75th and 25th percentiles of the distribution, respectively.
+        - plot the distributions of the classes in the northern and southern parts of the domain
 
-The current implementation builds the figure structure only, so it can be used
-as a scaffold before wiring in the real data products.
+The current implementation can generate two variants:
+- Figure 2: class box plus the 8 frames of the centroid video for each class.
+- Figure 2bis: class box plus the first frame of the centroid video and the
+    first frame of the 8 largest-distance videos for each class.
 """
 
 from __future__ import annotations
@@ -44,8 +47,10 @@ from utils.plotting.class_colors import colors_per_class_codes_grl  # noqa: E402
 
 CONFIG_PATH = REPO_ROOT / "configs" / "process_run_GRL.yaml"
 OUTPUT_FILENAME = "figure2_classes_representativity_structure.png"
+OUTPUT_FILENAME_BIS = "figure2bis_classes_representativity_structure.png"
 N_CLASSES = 10
 N_FRAMES = 8
+N_CLOSEST_VIDEOS = 8
 OUTPUT_DPI = 220
 TRANSITION_GAMMA = 0.5
 FONT_SIZE_TEXT = 23 
@@ -58,7 +63,7 @@ CSV_FILES = {
 }
 
 
-def prepare_input_data():
+def prepare_input_data(*, figure2bis: bool = False):
     """
     prepare input data for the figure scaffold. This function reads the csv of the features and provides
     a dataframe with:
@@ -115,8 +120,15 @@ def prepare_input_data():
             "Check that features 'path' filenames match the video summary 'crop' values."
         )
 
-    # create a dataframe with the centroid videos only, by selecting the rows with the minimum distance per class
-    centroid_indices = merged_df.groupby("label")["distance"].idxmax()
+    merged_df["distance"] = pd.to_numeric(merged_df["distance"], errors="coerce")
+    merged_df = merged_df.dropna(subset=["distance"]).copy()
+
+    if figure2bis:
+        centroid_indices = merged_df.groupby("label")["distance"].idxmax()
+    else:
+        # Select the true class centroid representative, i.e. the video with the
+        # minimum distance to the class centroid.
+        centroid_indices = merged_df.groupby("label")["distance"].idxmin()
     centroid_videos_df = merged_df.loc[centroid_indices].sort_values("label")
     if centroid_videos_df.empty:
         raise ValueError("No centroid videos found in training features distances.")
@@ -133,10 +145,15 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional output path. Defaults to the configured figures directory.",
     )
+    parser.add_argument(
+        "--figure2bis",
+        action="store_true",
+        help="Plot the Figure 2bis variant with the centroid first frame and the 8 largest-distance videos per class.",
+    )
     return parser.parse_args()
 
 
-def resolve_output_path(output_argument: str | None) -> Path:
+def resolve_output_path(output_argument: str | None, *, figure2bis: bool = False) -> Path:
     if output_argument:
         output_path = Path(output_argument).expanduser()
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,7 +162,8 @@ def resolve_output_path(output_argument: str | None) -> Path:
     config = load_config(str(CONFIG_PATH))
     output_dir = Path(config["output_files"]["figures_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir / OUTPUT_FILENAME
+    output_name = OUTPUT_FILENAME_BIS if figure2bis else OUTPUT_FILENAME
+    return output_dir / output_name
 
 def style_axis(ax):
     ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
@@ -170,6 +188,13 @@ def style_square_axis(ax: plt.Axes, *, facecolor: str = "#f4f4f4") -> None:
     ax.spines["right"].set_linewidth(1.5)
     ax.spines["top"].set_linewidth(1.5)
     ax.set_box_aspect(1)
+
+
+def get_preview_frame_path(row: pd.Series, frame_index: int = 0) -> str | None:
+    frame_path = row.get(f"t{frame_index}")
+    if isinstance(frame_path, str) and Path(frame_path).exists():
+        return frame_path
+    return None
 
 
 def draw_class_and_frames(parent_spec, centroid_videos_df, fig: plt.Figure) -> None:
@@ -246,6 +271,119 @@ def draw_class_and_frames(parent_spec, centroid_videos_df, fig: plt.Figure) -> N
     return anchor_ax
 
 
+def select_figure2bis_videos(features_df: pd.DataFrame) -> pd.DataFrame:
+    selected_videos_df = (
+        features_df.sort_values(["label", "distance"], ascending=[True, False])
+        .groupby("label", group_keys=False)
+        .head(N_CLOSEST_VIDEOS)
+        .copy()
+    )
+    return selected_videos_df
+
+
+def draw_class_centroid_and_figure2bis_videos(
+    parent_spec,
+    centroid_videos_df: pd.DataFrame,
+    figure2bis_videos_df: pd.DataFrame,
+    fig: plt.Figure,
+):
+    subgrid = parent_spec.subgridspec(
+        N_CLASSES,
+        N_CLOSEST_VIDEOS + 2,
+        wspace=0.005,
+        hspace=0.04,
+        width_ratios=[1.0] * (N_CLOSEST_VIDEOS + 2),
+    )
+    anchor_ax = None
+
+    for class_index in range(N_CLASSES):
+        color = colors_per_class_codes_grl.get(str(class_index), "lightgray")
+
+        class_ax = fig.add_subplot(subgrid[class_index, 0])
+        if anchor_ax is None:
+            anchor_ax = class_ax
+        style_square_axis(class_ax, facecolor=color)
+        class_ax.spines["right"].set_linewidth(1.5)
+        class_ax.spines["top"].set_linewidth(1.5)
+        class_ax.text(
+            0.5,
+            0.5,
+            str(class_index),
+            ha="center",
+            va="center",
+            fontsize=FONT_SIZE_TEXT,
+            fontweight="bold",
+            color="white" if np.mean(mcolors.to_rgb(color)) < 0.45 else "black",
+        )
+        if class_index == 0:
+            class_ax.set_title("Class", fontsize=FONT_SIZE_TEXT, pad=8)
+
+        centroid_row = centroid_videos_df[centroid_videos_df["label"] == class_index]
+        centroid_ax = fig.add_subplot(subgrid[class_index, 1])
+        style_square_axis(centroid_ax)
+        if class_index == 0:
+            centroid_ax.set_title("Centroid", fontsize=FONT_SIZE_TEXT, pad=8)
+        if centroid_row.empty:
+            centroid_ax.text(
+                0.5,
+                0.5,
+                "missing\ncentroid",
+                ha="center",
+                va="center",
+                fontsize=9,
+                color="#666666",
+            )
+        else:
+            frame_path = get_preview_frame_path(centroid_row.iloc[0], frame_index=0)
+            if frame_path is not None:
+                centroid_ax.imshow(plt.imread(frame_path), aspect="equal")
+            else:
+                centroid_ax.text(
+                    0.5,
+                    0.5,
+                    "missing\nt0",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    color="#666666",
+                )
+
+        closest_rows = figure2bis_videos_df[figure2bis_videos_df["label"] == class_index].reset_index(drop=True)
+        for video_index in range(N_CLOSEST_VIDEOS):
+            frame_ax = fig.add_subplot(subgrid[class_index, video_index + 2])
+            style_square_axis(frame_ax)
+            if class_index == 0:
+                frame_ax.set_title(f"Far {video_index + 1}", fontsize=FONT_SIZE_TEXT - 2, pad=8)
+
+            if video_index >= len(closest_rows):
+                frame_ax.text(
+                    0.5,
+                    0.5,
+                    "missing\nvideo",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    color="#666666",
+                )
+                continue
+
+            frame_path = get_preview_frame_path(closest_rows.iloc[video_index], frame_index=0)
+            if frame_path is not None:
+                frame_ax.imshow(plt.imread(frame_path), aspect="equal")
+            else:
+                frame_ax.text(
+                    0.5,
+                    0.5,
+                    "missing\nt0",
+                    ha="center",
+                    va="center",
+                    fontsize=9,
+                    color="#666666",
+                )
+
+    return anchor_ax
+
+
 def draw_count_placeholder(ax: plt.Axes, features_df: pd.DataFrame) -> None:
     """Plot normalized class population as percent of the total sample count."""
     class_counts = (
@@ -286,7 +424,7 @@ def draw_count_placeholder(ax: plt.Axes, features_df: pd.DataFrame) -> None:
 
 
 def draw_distance_placeholder(ax: plt.Axes, features_df: pd.DataFrame) -> None:
-    """Plot the raw distance distribution per class as boxplots.
+    r"""Plot the raw distance distribution per class as boxplots.
     The boxplots are drawn with the default matplotlib definition, i.e. points beyond
     $1.5 \times \mathrm{IQR}$ from the first and third quartiles are 
     considered outliers and plotted as individual points.
@@ -491,10 +629,11 @@ def draw_spatial_placeholder(ax: plt.Axes, fig: plt.Figure, features_df) -> None
     )
     style_axis(ax)
 
-def build_figure() -> plt.Figure:
+def build_figure(*, figure2bis: bool = False) -> plt.Figure:
 
     # call function to create input dataset
-    features_df, centroid_videos_df = prepare_input_data()
+    features_df, centroid_videos_df = prepare_input_data(figure2bis=figure2bis)
+    figure2bis_videos_df = select_figure2bis_videos(features_df) if figure2bis else None
 
     # Create the main figure and the outer grid for the two main rows
     fig = plt.figure(figsize=(18, 20), constrained_layout=False)
@@ -506,7 +645,15 @@ def build_figure() -> plt.Figure:
         hspace=0.18,
     )
 
-    top_row_anchor_ax = draw_class_and_frames(outer[0], centroid_videos_df, fig)
+    if figure2bis:
+        top_row_anchor_ax = draw_class_centroid_and_figure2bis_videos(
+            outer[0],
+            centroid_videos_df,
+            figure2bis_videos_df,
+            fig,
+        )
+    else:
+        top_row_anchor_ax = draw_class_and_frames(outer[0], centroid_videos_df, fig)
 
     bottom = outer[1].subgridspec(
         2,
@@ -553,7 +700,7 @@ def build_figure() -> plt.Figure:
         fig.text(
             count_bbox.x0,
             anchor_bbox.y1 + 0.03,
-            "a) Class representation",
+            "a) Class representation" if not figure2bis else "a) Class representation: centroid and largest-distance videos",
             fontsize=FONT_SIZE_TEXT,
             fontweight="bold",
             ha="left",
@@ -565,10 +712,15 @@ def build_figure() -> plt.Figure:
 
 def main() -> None:
     args = parse_args()
-    output_path = resolve_output_path(args.output)
-    fig = build_figure()
+    output_path = resolve_output_path(args.output, figure2bis=args.figure2bis)
+    if args.figure2bis:
+        print("Generating Figure 2bis with centroid previews and largest-distance videos per class.")
+    fig = build_figure(figure2bis=args.figure2bis)
     fig.savefig(output_path, dpi=OUTPUT_DPI)
     plt.close(fig)
+    if args.figure2bis:
+        print(f"Saved Figure 2bis to {output_path}")
+        return
     print(f"Saved figure scaffold to {output_path}")
 
 
