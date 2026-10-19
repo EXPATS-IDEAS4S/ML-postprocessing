@@ -64,7 +64,7 @@ from utils.buckets.get_data_from_buckets import (  # noqa: E402
     read_file,
 )
 from utils.configs import load_config  # noqa: E402
-from utils.plotting.class_colors import colors_per_class1_names  # noqa: E402
+from utils.plotting.class_colors import colors_per_class_codes_grl  # noqa: E402
 
 CONFIG_PATH = REPO_ROOT / "configs" / "process_run_GRL.yaml"
 VARIABLE_METADATA_PATH = REPO_ROOT / "configs" / "variables_metadata.yaml"
@@ -1212,7 +1212,7 @@ def main() -> None:
     crop_path = resolve_crop_path(selected_row, crop_root)
     ds_crop = normalize_time_coordinate(open_dataset_any(crop_path))
     label_value = int(selected_row["label"])
-    label_color = colors_per_class1_names.get(str(label_value), "crimson")
+    label_color = colors_per_class_codes_grl.get(str(label_value), "crimson")
     times = get_time_values(ds_crop)
     crop_extent = get_crop_extent(ds_crop)
 
