@@ -460,7 +460,7 @@ def draw_spatial_placeholder(ax: plt.Axes, fig: plt.Figure, features_df) -> None
         label="Northern",
     )
     ax.set_title(
-        "d) Class variability over \n the domain",
+        "d) Class spatial distribution over the domain",
         fontsize=FONT_SIZE_TEXT,
         pad=8,
         loc="left",
