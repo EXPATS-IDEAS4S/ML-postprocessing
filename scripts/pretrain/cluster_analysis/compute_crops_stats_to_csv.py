@@ -103,9 +103,36 @@ Notes:
   chunking therefore falls back to the date prefix in the crop filename when
   needed.
 
+for each crop video, the precipitation-related video-summary outputs are:
+precipitation_mean, precipitation_std, precipitation_gradient
+Per frame: compute cosine-latitude-weighted mean precipitation rate over the whole crop.
+Then convert that framewise rate from mm/h to 15-minute accumulated precipitation by multiplying by 0.25 h.
+Over the video:
+    precipitation_mean: mean of those framewise accumulated values, in mm
+    precipitation_std: std of those framewise accumulated values, in mm
+    precipitation_gradient: linear trend over time, in mm h^{-1}
+    precipitation_p95_mean, precipitation_p95_std, precipitation_p95_gradient
+Per frame: take the 95th percentile of precipitation over rainy pixels only.
+“Rainy” means precipitation >= 0.1.
+This stays a rate quantity.
+Over the video:
+    precipitation_p95_mean: mean framewise rainy-pixel p95, in mm/h
+    precipitation_p95_std: std of framewise rainy-pixel p95, in mm/h
+    precipitation_p95_gradient: linear trend over time, in mm h^{-2} if read strictly as rate change per hour
+    prec_fraction_mean, prec_fraction_std, prec_fraction_gradient
+Per frame: compute cosine-latitude-weighted rainy area fraction.
+Over the video:
+    prec_fraction_mean: mean rainy-area fraction
+    prec_fraction_std: std of rainy-area fraction
+    prec_fraction_gradient: trend in fraction per hour
+So the final interpretation is:
+    precipitation_* describes average accumulated precipitation over the crop
+    precipitation_p95_* describes intense precipitation within raining pixels
+    prec_fraction_* describes spatial coverage of precipitation
+
 
 How to run for benchmarking and debugging:
-conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_stats_to_csv.py --mode test --benchmark-rows 2000
+conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_stats_to_csv.py --mode test --benchmark-rows 200
 
 How to run on the training dataset:
 conda run -n vissl python scripts/pretrain/cluster_analysis/compute_crops_stats_to_csv.py --mode train
@@ -139,6 +166,8 @@ ps -o etime= -p 294705
 to check memory usage: RSS (resident set size, actual RAM used), VSZ (virtual memory size)
 ------
 ps -o pid,etime,rss,vsz,pmem,pcpu,cmd -p 294705
+
+PID 3691414
 
 """
 import argparse
@@ -359,6 +388,8 @@ def get_video_summary_vars(sel_vars):
     summary_vars = sel_vars + get_derived_fraction_vars(sel_vars)
     if "precipitation" in sel_vars and "prec_fraction" not in summary_vars:
         summary_vars.append("prec_fraction")
+    if "precipitation" in sel_vars and "precipitation_p95" not in summary_vars:
+        summary_vars.append("precipitation_p95")
     return summary_vars
 
 
@@ -368,6 +399,54 @@ def get_fraction_bins_for_derived_var(derived_var):
         if configured_derived_var == derived_var:
             return bins
     return None
+
+
+PRECIPITATION_RAIN_THRESHOLD = 0.1
+
+
+def compute_precipitation_metrics(rain, latitudes, threshold=PRECIPITATION_RAIN_THRESHOLD):
+    """Compute crop-scale precipitation metrics from one 2-D frame."""
+    rain = np.asarray(rain, dtype=float)
+    latitudes = np.asarray(latitudes, dtype=float)
+
+    if rain.ndim != 2:
+        raise ValueError("Precipitation field must be 2-D.")
+    if latitudes.ndim != 1:
+        raise ValueError("Latitude array must be 1-D.")
+
+    if rain.shape[0] == latitudes.size:
+        weights = np.cos(np.deg2rad(latitudes))[:, None]
+    elif rain.shape[1] == latitudes.size:
+        weights = np.cos(np.deg2rad(latitudes))[None, :]
+    else:
+        raise ValueError(
+            "Latitude array must match one spatial dimension of the precipitation field."
+        )
+
+    valid = np.isfinite(rain)
+    if not valid.any():
+        return {
+            "precip_area_fraction": np.nan,
+            "precip_area_fraction_coslat": np.nan,
+            "mean_precip_rate_coslat": np.nan,
+            "mean_precip_rate_rainy_coslat": np.nan,
+            "p95_precip_rate_rainy": np.nan,
+        }
+
+    full_weights = np.broadcast_to(weights, rain.shape)
+    valid_rain = rain[valid]
+    valid_weights = full_weights[valid]
+    rainy = valid_rain >= threshold
+
+    return {
+        "precip_area_fraction": float(rainy.mean()),
+        "precip_area_fraction_coslat": float(valid_weights[rainy].sum() / valid_weights.sum()),
+        "mean_precip_rate_coslat": float(np.average(valid_rain, weights=valid_weights)),
+        "mean_precip_rate_rainy_coslat": float(
+            np.average(valid_rain[rainy], weights=valid_weights[rainy])
+        ) if rainy.any() else np.nan,
+        "p95_precip_rate_rainy": float(np.percentile(valid_rain[rainy], 95)) if rainy.any() else np.nan,
+    }
 
 
 def close_cloud_mask(cma_values):
@@ -950,6 +1029,8 @@ def extract_block_values(block_context, var, crop_request, mode, logger, day_key
             }
             if var == "precipitation":
                 frame_result["raw_values"] = frame_values
+                frame_result["raw_field"] = np.asarray(frame_data, dtype=float)
+                frame_result["latitudes"] = np.asarray(ds_subset["lat"].values, dtype=float)
             per_frame_list.append(frame_result)
 
             if derived_var is not None:
@@ -1384,14 +1465,36 @@ def get_video_scalar(var, values, var_config, frame_dict=None):
 
     if var == "prec_fraction":
         if frame_dict is not None:
+            raw_field = frame_dict.get("raw_field")
+            latitudes = frame_dict.get("latitudes")
+            if raw_field is not None and latitudes is not None:
+                metrics = compute_precipitation_metrics(raw_field, latitudes)
+                return metrics["precip_area_fraction_coslat"]
             values = frame_dict.get("raw_values", frame_dict["values"])
         return compute_single_stat(values, "prec_fraction", "precipitation")
+
+    if var == "precipitation_p95":
+        if frame_dict is not None:
+            raw_field = frame_dict.get("raw_field")
+            latitudes = frame_dict.get("latitudes")
+            if raw_field is not None and latitudes is not None:
+                metrics = compute_precipitation_metrics(raw_field, latitudes)
+                return metrics["p95_precip_rate_rainy"]
+            values = frame_dict.get("raw_values", frame_dict["values"])
+        return compute_single_stat(values, "95", "precipitation")
 
     if frame_dict is not None:
         values = frame_dict["values"]
 
     if var == "precipitation":
-        return compute_single_stat(values, "sum[mm]", var)
+        if frame_dict is not None:
+            raw_field = frame_dict.get("raw_field")
+            latitudes = frame_dict.get("latitudes")
+            if raw_field is not None and latitudes is not None:
+                metrics = compute_precipitation_metrics(raw_field, latitudes)
+                return metrics["mean_precip_rate_coslat"] * 0.25
+        values = np.asarray(values, dtype=float)
+        return np.nanmean(values) * 0.25 if values.size > 0 else np.nan
 
     if var in var_config["variables"] and var_config["variables"][var]["categorical"]:
         return compute_single_stat(values, "None", var)
@@ -1446,8 +1549,15 @@ def update_video_summary_records(summary_by_crop, block_result, crop_requests_by
                     get_video_scalar("prec_fraction", None, var_config, frame_dict=item)
                     for item in frame_values
                 ]
+                precipitation_p95_scalars = [
+                    get_video_scalar("precipitation_p95", None, var_config, frame_dict=item)
+                    for item in frame_values
+                ]
             else:
                 fraction_scalars = [get_video_scalar("prec_fraction", values, var_config)]
+                precipitation_p95_scalars = [
+                    get_video_scalar("precipitation_p95", values, var_config)
+                ]
 
             fraction_scalars = np.asarray(fraction_scalars, dtype=float)
             fraction_mean, fraction_std = summarize_temporal_series(fraction_scalars)
@@ -1455,6 +1565,16 @@ def update_video_summary_records(summary_by_crop, block_result, crop_requests_by
             row["prec_fraction_std"] = fraction_std
             row["prec_fraction_gradient"] = compute_temporal_gradient(
                 times, fraction_scalars
+            )
+
+            precipitation_p95_scalars = np.asarray(precipitation_p95_scalars, dtype=float)
+            precipitation_p95_mean, precipitation_p95_std = summarize_temporal_series(
+                precipitation_p95_scalars
+            )
+            row["precipitation_p95_mean"] = precipitation_p95_mean
+            row["precipitation_p95_std"] = precipitation_p95_std
+            row["precipitation_p95_gradient"] = compute_temporal_gradient(
+                times, precipitation_p95_scalars
             )
 
 
