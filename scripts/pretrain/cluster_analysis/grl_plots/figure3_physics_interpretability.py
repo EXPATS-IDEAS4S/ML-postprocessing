@@ -193,27 +193,6 @@ def plot_class_errorbars(
         )
 
 
-def highlight_selected_classes(ax, df, x_column, y_column, size=340):
-    selected = df[df.index.isin(HIGHLIGHT_CLASSES)]
-    if selected.empty:
-        return
-
-    percent_scaled_columns = {"cma_mean", "prec_fraction_mean"}
-    x_scale = 100 if x_column in percent_scaled_columns else 1
-    y_scale = 100 if y_column in percent_scaled_columns else 1
-
-    highlight = ax.scatter(
-        selected[x_column] * x_scale,
-        selected[y_column] * y_scale,
-        s=size,
-        marker="D",
-        facecolors="none",
-        edgecolors="black",
-        linewidths=1.8,
-        zorder=4,
-    )
-    highlight.set_linestyle("--")
-
 def main():
 
     # load config file  
@@ -357,7 +336,6 @@ def plot_second_row_bulk_properties(fig, gs, config):
     ax1.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
     ax1.set_title("1.Cloud Cover vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
     ax1.set_xlim(0., 100.)
-    highlight_selected_classes(ax1, class_means, "cma_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE_LARGE)
     style_axis(ax1) 
 
     # second scatter plot: COT vs CTH
@@ -382,7 +360,6 @@ def plot_second_row_bulk_properties(fig, gs, config):
     ax2.set_xlabel("Cloud Optical Thickness", fontsize=FONT_SIZE_TEXT)
     ax2.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
     ax2.set_title("2. Cloud Optical Thickness vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax2, class_means, "cot_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax2)
 
 
@@ -408,7 +385,6 @@ def plot_second_row_bulk_properties(fig, gs, config):
     ax3.set_xlabel("COT30+", fontsize=FONT_SIZE_TEXT)
     ax3.set_ylabel("CTH10+", fontsize=FONT_SIZE_TEXT)
     ax3.set_title("3. COT30+ vs CTH10+", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax3, class_means, "cot30plus_mean", "cth10plus_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax3)
     return row2_axes
 
@@ -446,7 +422,6 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     ax1.set_ylabel("Precipitation Fraction (%)", fontsize=FONT_SIZE_TEXT)
     ax1.set_title("1. Cloud Cover vs Prec. Fraction", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
     ax1.set_xlim(0.0, 100.0)
-    highlight_selected_classes(ax1, class_means, "cma_mean", "prec_fraction_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax1)
 
     # second scatter plot: cumulated precipitation vs mean lightning counts
@@ -472,7 +447,6 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     ax2.set_xlabel("Cumulated Precipitation (mm)", fontsize=FONT_SIZE_TEXT)
     ax2.set_ylabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
     ax2.set_title("2. Cumulated Prec vs \n Lightning Counts", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax2, class_means, "precipitation_mean", "euclid_msg_grid_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax2)
 
     # third scatter plot: lightning counts vs CTH
@@ -497,7 +471,6 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     ax3.set_xlabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
     ax3.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
     ax3.set_title("3. Lightning Counts vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    highlight_selected_classes(ax3, class_means, "euclid_msg_grid_mean", "cth_mean", size=HIGHLIGHT_MARKER_SIZE)
     style_axis(ax3)
     return row3_axes
 
