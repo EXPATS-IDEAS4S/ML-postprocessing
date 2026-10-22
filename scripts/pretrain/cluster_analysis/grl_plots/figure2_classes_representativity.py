@@ -15,7 +15,12 @@ This code produces the structural layout for Figure 2, with 2 main rows:
 The current implementation can generate two variants:
 - Figure 2: class box plus the 8 frames of the centroid video for each class.
 - Figure 2bis: class box plus the first frame of the centroid video and the
-    first frame of the 8 largest-distance videos for each class.
+    first frame of the 8 next-largest-distance videos for each class.
+
+how to call the script:
+python scripts/pretrain/cluster_analysis/grl_plots/figure2_classes_representativity.py
+ with figure2bis flag if needed, e.g.:
+python scripts/pretrain/cluster_analysis/grl_plots/figure2_classes_representativity.py --figure2bis
 """
 
 from __future__ import annotations
@@ -271,9 +276,12 @@ def draw_class_and_frames(parent_spec, centroid_videos_df, fig: plt.Figure) -> N
     return anchor_ax
 
 
-def select_figure2bis_videos(features_df: pd.DataFrame) -> pd.DataFrame:
+def select_figure2bis_videos(
+    features_df: pd.DataFrame, centroid_videos_df: pd.DataFrame
+) -> pd.DataFrame:
     selected_videos_df = (
-        features_df.sort_values(["label", "distance"], ascending=[True, False])
+        features_df.drop(index=centroid_videos_df.index)
+        .sort_values(["label", "distance"], ascending=[True, False])
         .groupby("label", group_keys=False)
         .head(N_CLOSEST_VIDEOS)
         .copy()
@@ -598,7 +606,7 @@ def draw_spatial_placeholder(ax: plt.Axes, fig: plt.Figure, features_df) -> None
         label="Northern",
     )
     ax.set_title(
-        "d) Class spatial distribution over the domain",
+        "d) Class spatial \n distribution over \n the domain",
         fontsize=FONT_SIZE_TEXT,
         pad=8,
         loc="left",
@@ -633,7 +641,11 @@ def build_figure(*, figure2bis: bool = False) -> plt.Figure:
 
     # call function to create input dataset
     features_df, centroid_videos_df = prepare_input_data(figure2bis=figure2bis)
-    figure2bis_videos_df = select_figure2bis_videos(features_df) if figure2bis else None
+    figure2bis_videos_df = (
+        select_figure2bis_videos(features_df, centroid_videos_df)
+        if figure2bis
+        else None
+    )
 
     # Create the main figure and the outer grid for the two main rows
     fig = plt.figure(figsize=(18, 20), constrained_layout=False)

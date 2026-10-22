@@ -105,8 +105,9 @@ Notes:
 
 for each crop video, the precipitation-related video-summary outputs are:
 precipitation_mean, precipitation_std, precipitation_gradient
-Per frame: compute cosine-latitude-weighted mean precipitation rate over the whole crop.
+Per frame: compute cosine-latitude-weighted mean precipitation rate over the rainy pixels only (>= 0.1 mm/h).
 Then convert that framewise rate from mm/h to 15-minute accumulated precipitation by multiplying by 0.25 h.
+Frames without rainy pixels are NaN and ignored in the video statistics.
 Over the video:
     precipitation_mean: mean of those framewise accumulated values, in mm
     precipitation_std: std of those framewise accumulated values, in mm
@@ -126,7 +127,7 @@ Over the video:
     prec_fraction_std: std of rainy-area fraction
     prec_fraction_gradient: trend in fraction per hour
 So the final interpretation is:
-    precipitation_* describes average accumulated precipitation over the crop
+    precipitation_* describes average accumulated precipitation over the rainy pixels of the crop
     precipitation_p95_* describes intense precipitation within raining pixels
     prec_fraction_* describes spatial coverage of precipitation
 
@@ -167,7 +168,7 @@ to check memory usage: RSS (resident set size, actual RAM used), VSZ (virtual me
 ------
 ps -o pid,etime,rss,vsz,pmem,pcpu,cmd -p 294705
 
-PID 3691414
+PID 3871947 
 
 """
 import argparse
@@ -1492,7 +1493,7 @@ def get_video_scalar(var, values, var_config, frame_dict=None):
             latitudes = frame_dict.get("latitudes")
             if raw_field is not None and latitudes is not None:
                 metrics = compute_precipitation_metrics(raw_field, latitudes)
-                return metrics["mean_precip_rate_coslat"] * 0.25
+                return metrics["mean_precip_rate_rainy_coslat"] * 0.25
         values = np.asarray(values, dtype=float)
         return np.nanmean(values) * 0.25 if values.size > 0 else np.nan
 

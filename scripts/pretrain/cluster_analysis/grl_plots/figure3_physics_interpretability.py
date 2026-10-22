@@ -15,7 +15,7 @@ of presence during night, second histogram is for clouds with prominence during 
 - Row 3: Precipitation-related properties of cloud classes. We have 3 histograms with:
     - cloud cover vs precipitation fraction
     - cumulated precipitation vs mean lightning counts
-    - cumulated precipitation vs cloud optical thickness
+    - p95 of precipitation vs mean lightning counts
 
 The plot stores the figure in the output directory specified in the config file.
 Author: Claudia Acquistapace
@@ -88,6 +88,8 @@ SCATTER_COLUMNS = [
     "cot_std",
     "precipitation_mean",
     "precipitation_std",
+    "precipitation_p95_mean",
+    "precipitation_p95_std",
     "euclid_msg_grid_mean",
     "euclid_msg_grid_std",
     "cth10plus_mean",
@@ -255,10 +257,8 @@ def plot_first_row_diurnal_cycle(axes, mode, video_summary_csv):
         axes: matplotlib axes for day, night, and anytime groups
         video_summary_csv: path to the video summary CSV file
     """
-    _ = video_summary_csv
-
     # Load the hourly occurrence DataFrame for the specified mode (training or testing)
-    df_grouped = load_hourly_occurrence(mode)
+    df_grouped = load_hourly_occurrence(mode, video_summary_csv)
 
     # Get the hour bin centers for the x-axis
     hours = HOUR_BIN_CENTERS
@@ -393,7 +393,14 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     # read the data to use for the scatter plots
     video_stats_df = pd.read_csv(CSV_FILES["training_video_summary"])
     video_stats_df = clean_video_summary_df(video_stats_df)
-    class_means = video_stats_df.groupby("label")[SCATTER_COLUMNS].mean()
+    ratio_column = "precipitation_p95_to_mean_rate_ratio"
+    mean_rain_rate = video_stats_df["precipitation_mean"] * 4
+    video_stats_df[ratio_column] = video_stats_df["precipitation_p95_mean"].div(
+        mean_rain_rate.where(mean_rain_rate != 0)
+    )
+    grouped_stats = video_stats_df.groupby("label")
+    class_means = grouped_stats[SCATTER_COLUMNS + [ratio_column]].mean()
+    ratio_std = grouped_stats[ratio_column].std()
 
     row3_axes = [fig.add_subplot(gs[2, index]) for index in range(3)]
 
@@ -424,10 +431,35 @@ def plot_third_row_precipitation_properties(fig, gs, config):
     ax1.set_xlim(0.0, 100.0)
     style_axis(ax1)
 
-    # second scatter plot: cumulated precipitation vs mean lightning counts
+    # second scatter plot: p95-to-mean rain-rate ratio vs mean lightning counts
     ax2 = row3_axes[1]
     ax2.scatter(
-        class_means["precipitation_mean"],
+        class_means[ratio_column],
+        class_means["euclid_msg_grid_mean"],
+        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
+        s=SCATTER_MARKER_AREA,
+        edgecolor="black",
+        zorder=3,
+    )
+    ax2.errorbar(
+        class_means[ratio_column],
+        class_means["euclid_msg_grid_mean"],
+        xerr=ratio_std.reindex(class_means.index).fillna(0),
+        yerr=class_means["euclid_msg_grid_std"].fillna(0),
+        fmt="none",
+        ecolor="dimgray",
+        elinewidth=1.2,
+        zorder=2,
+    )
+    ax2.set_xlabel("P95 / Mean Rain Rate (dimensionless)", fontsize=FONT_SIZE_TEXT)
+    ax2.set_ylabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
+    ax2.set_title("2. Precipitation Intensity Ratio \n vs Lightning", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    style_axis(ax2)
+
+    # third scatter plot: p95 of precipitation vs mean lightning counts
+    ax3 = row3_axes[2]
+    ax3.scatter(
+        class_means["precipitation_p95_mean"],
         class_means["euclid_msg_grid_mean"],
         c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
         s=SCATTER_MARKER_AREA,
@@ -435,42 +467,18 @@ def plot_third_row_precipitation_properties(fig, gs, config):
         zorder=3,
     )
     plot_class_errorbar_points(
-        ax2,
+        ax3,
         class_means,
-        "precipitation_mean",
+        "precipitation_p95_mean",
         "euclid_msg_grid_mean",
-        "precipitation_std",
+        "precipitation_p95_std",
         "euclid_msg_grid_std",
         dataset="training",
         marker_size=SCATTER_MARKER_SIZE,
     )
-    ax2.set_xlabel("Cumulated Precipitation (mm)", fontsize=FONT_SIZE_TEXT)
-    ax2.set_ylabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
-    ax2.set_title("2. Cumulated Prec vs \n Lightning Counts", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
-    style_axis(ax2)
-
-    # third scatter plot: lightning counts vs CTH
-    ax3 = row3_axes[2]
-    ax3.scatter(
-        class_means["euclid_msg_grid_mean"],
-        class_means["cth_mean"],
-        c=[colors_per_class_codes_grl[str(label)] for label in class_means.index],
-        s=SCATTER_MARKER_AREA,
-        edgecolor="black",
-        zorder=3,
-    )
-    plot_class_errorbars(
-        ax3,
-        class_means,
-        "euclid_msg_grid_mean",
-        "cth_mean",
-        "euclid_msg_grid_std",
-        "cth_std",
-        color="dimgray",
-    )
-    ax3.set_xlabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_ylabel("CTH (m)", fontsize=FONT_SIZE_TEXT)
-    ax3.set_title("3. Lightning Counts vs CTH", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
+    ax3.set_xlabel("P95 Precipitation (mm/h)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_ylabel("Mean Lightning Counts (#)", fontsize=FONT_SIZE_TEXT)
+    ax3.set_title("3. P95 Prec vs \n Lightning Counts", fontsize=FONT_SIZE_TEXT, fontweight="bold", loc="left")
     style_axis(ax3)
     return row3_axes
 
