@@ -53,7 +53,7 @@ Modified: 3 June 2026
 import argparse
 import os
 import sys
-from typing import Dict, List
+from typing import Dict, List, Optional, Union
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -244,8 +244,10 @@ def main(mode: str = "both"):
     plot_single_classes(df_grouped, mode)
 
 
-def load_hourly_occurrence(mode: str) -> pd.DataFrame:
-    csv_file = resolve_csv_file(mode)
+def load_hourly_occurrence(
+    mode: str, csv_file: Optional[Union[Path, str]] = None
+) -> pd.DataFrame:
+    csv_file = Path(csv_file) if csv_file is not None else resolve_csv_file(mode)
 
     print(f"Plotting diurnal cycle for {mode} dataset")
     print(f"Reading CSV: {csv_file}")

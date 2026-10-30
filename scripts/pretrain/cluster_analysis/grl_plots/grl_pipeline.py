@@ -20,8 +20,9 @@ FIGURE_SCRIPTS = {
     "figure2": SCRIPT_DIR / "figure2_classes_representativity.py",
     "figure3": SCRIPT_DIR / "figure3_physics_interpretability.py",
     "figure4": SCRIPT_DIR / "figure4_convection_characterization.py",
+    "figure_sup1": SCRIPT_DIR / "figure_sup1_PCA_convection.py",
 }
-DEFAULT_ORDER = ["figure1", "figure2", "figure3", "figure4"]
+DEFAULT_ORDER = ["figure1", "figure2", "figure3", "figure4", "figure_sup1"]
 
 
 def parse_args() -> argparse.Namespace:

@@ -59,6 +59,9 @@ N_CLOSEST_VIDEOS = 8
 OUTPUT_DPI = 220
 TRANSITION_GAMMA = 0.5
 FONT_SIZE_TEXT = 23 
+# Value range mapped to the greyscale PNG frames (assumed 220-320 K, as in figure 1).
+FRAME_BT_MIN = 220.0
+FRAME_BT_MAX = 320.0
 
 # load video summary csv file path from config
 config = load_config(str(CONFIG_PATH))
@@ -696,7 +699,18 @@ def build_figure(*, figure2bis: bool = False) -> plt.Figure:
 
     # tight layout and save figure
     #fig.tight_layout()
-    fig.subplots_adjust(left=0.08, right=0.94, top=0.94, bottom=0.08)
+    fig.subplots_adjust(left=0.08, right=0.91, top=0.94, bottom=0.08)
+
+    frames_bbox = outer[0].get_position(fig)
+    frames_cbar_ax = fig.add_axes(
+        [frames_bbox.x1 + 0.01, frames_bbox.y0 + 0.2 * frames_bbox.height, 0.012, 0.6 * frames_bbox.height]
+    )
+    frames_colorbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=mcolors.Normalize(vmin=FRAME_BT_MIN, vmax=FRAME_BT_MAX), cmap="gray"),
+        cax=frames_cbar_ax,
+    )
+    frames_colorbar.set_label("Brightness temperature 10.8 µm (K)", fontsize=FONT_SIZE_TEXT - 4)
+    frames_colorbar.ax.tick_params(labelsize=FONT_SIZE_TEXT - 6)
 
     distance_bbox = distance_ax.get_position()
     legend_height = 0.05

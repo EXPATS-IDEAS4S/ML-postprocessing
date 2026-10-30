@@ -740,7 +740,7 @@ def plot_embedding_crops_table_transposed(df, output_path, filename, n=5, select
     return output_file
 
 
-def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closest"):
+def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closest", colors_per_class=None):
     """
     Plots crops in a table format where each row corresponds to a label, 
     and 'n' images are selected based on the specified selection method.
@@ -777,11 +777,10 @@ def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closes
 
         for j, (_, row) in enumerate(subset.iterrows()):
             img_path = row['path']
+            ax = axes[i, j]
 
             if img_path is not None and os.path.exists(img_path):
                 img = Image.open(img_path).convert('L')  # Convert to grayscale
-            
-                ax = axes[i, j] if num_labels > 1 else axes[j]  # Select subplot
                 ax.imshow(img, cmap='gray')
                 ax.axis('off')
             else:
@@ -791,7 +790,10 @@ def plot_embedding_crops_table(df, output_path, filename, n=5, selection="closes
                 
             # Row label (on the left)
             if j == 0:
-                ax.set_ylabel(f"Label {label}", fontsize=12, fontweight='bold', rotation=0, labelpad=30, va='center')
+                label_box = None
+                if colors_per_class is not None:
+                    label_box = {"facecolor": colors_per_class[str(int(label))], "edgecolor": "none", "boxstyle": "round,pad=0.3"}
+                ax.set_ylabel(f"Label {label}", fontsize=12, fontweight='bold', rotation=0, labelpad=30, va='center', bbox=label_box)
 
     # Add column headers (1, 2, 3, ... n)
     for j in range(n):

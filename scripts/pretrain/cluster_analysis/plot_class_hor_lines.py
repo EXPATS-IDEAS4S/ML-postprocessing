@@ -20,6 +20,7 @@ import glob
 import matplotlib.patches as mpatches
 sys.path.append('/home/claudia/codes/ML_postprocessing')
 from scripts.pretrain.embedding_visualization.plot_embedding_utils import plot_embedding_crops_table
+from utils.plotting.class_colors import colors_per_class_codes_grl
 
 from PIL import Image
 # csv file with 2D+1 output
@@ -99,10 +100,10 @@ def main():
 
         # print first 20 rows
         print(df_imgs.head(20))
-        pdb.set_trace()
 
         # plot the crops in a table
-        plot_embedding_crops_table(df_imgs, output_dir, f'10_closest_crops_table_{frame}.png', 10)
+        plot_embedding_crops_table(df_imgs, output_dir, f'10_closest_crops_table_{frame}.png', 10,
+                                   colors_per_class=colors_per_class_codes_grl)
         print(f'Figure saved: {output_dir}/10_closest_crops_table_{frame}.png')
         
 

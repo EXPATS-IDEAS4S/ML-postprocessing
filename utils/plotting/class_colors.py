@@ -47,13 +47,13 @@ colors_per_class_codes_grl = {
 
     # nighttime: blue family only
     '0': "#332288", # navy blue
-    '8': "#0072B2", # medium blue
+    '8': "#808080", # medium grey
     '1': "#56B4E9", # sky blue
     '4': "#A7D5F2", # light sky blue derived from the blue family
 
     # anytime: green / teal family
-    '2': "#117733", # dark green
-    '3': "#009E73", # bluish green
+    '2': "#009E73", # bluish green
+    '3': "#117733", # dark green
     '9': "#66CCAA", # light teal
 }
 

@@ -341,8 +341,8 @@ LOADING_LABELS = {
     "cot_mean": "COT",
     "cot30plus_mean": "COT > 30",
     "prec_fraction_mean": "Prec. fraction",
-    "precipitation_mean": "Mean precip.",
-    "precipitation_p95_mean": "P95 precip.",
+    "precipitation_mean": "Mean precip.*",
+    "precipitation_p95_mean": "P95 precip.*",
     "euclid_msg_grid_mean": "Lightning*",
 }
 POSITIVE_COLOR, POSITIVE_DARK = "#A5473E", "#2A1410"
@@ -350,6 +350,7 @@ NEGATIVE_COLOR, NEGATIVE_DARK = "#3A5F95", "#141C2E"
 LOADING_FULL_SCALE = 1.05
 TILE_ASPECT = 0.5
 SUMMARY_FONT = 22
+TITLE_FONTSIZE = 23
 
 
 def loading_tile_color(value):
@@ -359,8 +360,8 @@ def loading_tile_color(value):
 
 
 def plot_loading_tiles(ax, loadings, title, max_rows):
-    ax.set_xlim(-2.4, 2.1)
-    ax.set_ylim(max_rows + 0.3, -1.3)
+    ax.set_xlim(-1.7, 3.7)
+    ax.set_ylim(max_rows + 0.1, -1.1)
     ax.set_aspect(TILE_ASPECT)
     ax.axis("off")
     for column, component in enumerate(loadings.columns):
@@ -375,11 +376,7 @@ def plot_loading_tiles(ax, loadings, title, max_rows):
             ))
             ax.text(column + 0.5, row + 0.5, f"{value:.2f}", color="white", fontweight="bold",
                     ha="center", va="center", fontsize=SUMMARY_FONT)
-    ax.add_patch(FancyBboxPatch(
-        (0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.04", transform=ax.transAxes,
-        facecolor="none", edgecolor="0.6", linewidth=1.5, clip_on=False,
-    ))
-    ax.set_title(title, fontsize=SUMMARY_FONT + 4, pad=18)
+    ax.set_title(title, fontsize=TITLE_FONTSIZE, fontweight="bold", loc="left", pad=8)
 
 
 def plot_centroid_scores(ax, centroids, name, explained, title):
@@ -440,6 +437,51 @@ def plot_pc1_centroids(centroids, explained_by_domain, output_path):
     fig.tight_layout()
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
+
+
+def plot_scores_figure(loadings_by_domain, centroids, explained_by_domain, output_path):
+    fig = plt.figure(figsize=(18, 20))
+    grid = fig.add_gridspec(2, 2, height_ratios=[1, 1.1], hspace=0.02, wspace=0.1,
+                            left=0.08, right=0.98, top=0.95, bottom=0.17)
+    max_rows = max(len(loadings) for loadings in loadings_by_domain.values())
+    plot_loading_tiles(fig.add_subplot(grid[0, 0]), loadings_by_domain["structure"], "a) Structure PCA", max_rows)
+    plot_loading_tiles(fig.add_subplot(grid[0, 1]), loadings_by_domain["activity"], "b) Activity PCA", max_rows)
+    ax = fig.add_subplot(grid[1, :])
+    for class_id, row in centroids.iterrows():
+        ax.scatter(row["structure_PC1"], row["activity_PC1"], s=1100, color=class_color(class_id),
+                   edgecolor="black", zorder=3)
+        ax.annotate(str(int(class_id)), (row["structure_PC1"], row["activity_PC1"]),
+                    xytext=(16, 16), textcoords="offset points", fontsize=SUMMARY_FONT)
+    ax.axhline(0, color="gray", lw=0.8)
+    ax.axvline(0, color="gray", lw=0.8)
+    ax.set_xlabel(f"Structure PC1 ({explained_by_domain['structure'][0]:.0%})", fontsize=SUMMARY_FONT)
+    ax.set_ylabel(f"Activity PC1 ({explained_by_domain['activity'][0]:.0%})", fontsize=SUMMARY_FONT)
+    ax.set_title("c) Class centroids: Structure PC1 vs Activity PC1", fontsize=TITLE_FONTSIZE,
+                 fontweight="bold", loc="left", pad=8)
+    ax.tick_params(labelsize=SUMMARY_FONT)
+    ax.grid(color="lightgray", linestyle="--", linewidth=0.5)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.legend(handles=[Patch(facecolor=POSITIVE_COLOR, label="Positive"),
+                        Patch(facecolor=NEGATIVE_COLOR, label="Negative")],
+               title="Sign of scaled loading (shade = magnitude)", title_fontsize=SUMMARY_FONT,
+               loc="lower center", ncol=2, frameon=False, fontsize=SUMMARY_FONT,
+               bbox_to_anchor=(0.5, 0.03))
+    fig.text(0.5, 0.01, "Scaled loading = eigenvector coefficient \u00d7 \u221aeigenvalue "
+             "(\u2248 variable\u2013PC correlation; can slightly exceed 1)\n"
+             "* log1p-transformed before PCA",
+             ha="center", va="bottom", fontsize=SUMMARY_FONT - 3)
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
+
+
+def run_scores_figure(data, out, logs):
+    centroids, explained_by_domain, loadings_by_domain = None, {}, {}
+    for name, variables in GROUPS.items():
+        _, centers, loadings, explained, _, _, _ = fit_project(data, name, variables, logs)
+        explained_by_domain[name] = explained
+        loadings_by_domain[name] = loadings
+        centroids = centers if centroids is None else centroids.join(centers, how="inner")
+    plot_scores_figure(loadings_by_domain, centroids, explained_by_domain, out / f"{OUTPUT_FILENAME}.png")
 
 
 def run_analysis(data, out, logs, mode, save_scores=False):
@@ -555,37 +597,8 @@ def main(argv=None):
     if data.empty or not data[CLASS_COLUMN].between(0, 9).all():
         raise ValueError("Expected nonempty data with labels 0..9")
     print(f"Loaded {len(data):,} labeled videos, {data[CLASS_COLUMN].nunique()} classes")
-    results = {}
-    for mode in ("centroid_fit", "video_fit"):
-        results[mode] = run_analysis(data, out, args.log1p, mode, args.save_observation_scores)
-    primary, primary_loadings = results["centroid_fit"]
-    check, video_loadings = results["video_fit"]
-    # Component signs are arbitrary; compare PC1 directions via coefficient vectors.
-    # Video PC1 is aligned to centroid PC1 for a fair quadrant comparison.
-    # The screening table itself retains each PCA's native convention; adjusted
-    # selection is reported below, with coordinates reflected when needed.
-    comparison = primary[["candidate_positive_centroid", "fraction_positive_quadrant"]].rename(
-        columns={"candidate_positive_centroid": "centroid_fit_candidate",
-                 "fraction_positive_quadrant": "centroid_fit_fraction"})
-    for group in GROUPS:
-        a = primary_loadings[group]["PC1"].to_numpy()
-        b = video_loadings[group]["PC1"].to_numpy()
-        cosine = float(np.dot(a,b) / (np.linalg.norm(a)*np.linalg.norm(b)))
-        comparison[f"{group}_PC1_loading_cosine"] = cosine
-        sign = 1 if cosine >= 0 else -1
-        comparison[f"video_fit_{group}_PC1_aligned"] = check[f"{group}_PC1"] * sign
-        if abs(cosine) < .7:
-            print(f"WARNING: {group} PC1 differs markedly across fits (cosine={cosine:.2f}); quadrant comparison may not be meaningful")
-    comparison["video_fit_candidate_aligned"] = (
-        (comparison["video_fit_structure_PC1_aligned"] > 0) &
-        (comparison["video_fit_activity_PC1_aligned"] > 0))
-    comparison["same_candidate_status"] = (
-        comparison["centroid_fit_candidate"] == comparison["video_fit_candidate_aligned"])
-    comparison.to_csv(out / f"{OUTPUT_FILENAME}_robustness_comparison.csv")
-    print("\nIMPORTANT: Positive PC1 is NOT automatically equivalent to stronger convection.")
-    print("Inspect PC1 loadings in both domains before interpreting candidate tables.")
-    print("\nRobustness comparison:\n", comparison.to_string())
-    print(f"\nSaved results to {out.resolve()}")
+    run_scores_figure(data, out, args.log1p)
+    print(f"Saved {OUTPUT_FILENAME}.png to {out.resolve()}")
 
 
 if __name__ == "__main__":

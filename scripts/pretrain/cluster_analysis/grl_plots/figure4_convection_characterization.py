@@ -1,15 +1,17 @@
 """
 This figure has the goal to demonstrate that we can identify diverse stages of convection 
-over the Alps. It works on a selection of videos that are closests to the centroids (distances from centroid smaller than 0.1).
+ over the Alps. It works on all videos of the training set.
  It will show the graduality of changes (growth, stationarity and decay) between convective 
 classes and the temporal variability over the duration of the video of the convective class properties. 
-The plot has 3 columns and various rows. Columns are associated with convection growing, convection decaying day and convection decaying night. 
-Rows instead contain:
-- row 1: scatter plot of CTH mean vs Cloud Cover 
-- row 2: scatter plot of Precipitation mean vs EUCLID MSG grid mean
-- row 3: temporal evolution of CTH
-- row 4: temporal evolution of lightning flash rate
-- row 5: temporal evolution of precipitation mean
+The plot has 5 columns (classes 6, 5, 9, 2, 3). The top rows show the temporal evolution of:
+- row a: temporal evolution of CTH
+- row b: temporal evolution of cloud cover
+- row c: temporal evolution of precipitation mean
+- row d: temporal evolution of CTH10+ area fraction
+Bottom row (e): scatter plots of class gradient percentiles (25th, 50th, 75th, 95th) for cloud cover
+vs CTH, lightning vs precipitation, cloud cover vs precipitation extent and COT30+ vs CTH10+.
+The remaining gradient scatter plots (CTH10+ vs COT30+, CTH vs COT and
+lightning vs precipitation p95) are in a separate figure.
 
 class_colors = {
     # Decaying daytime
@@ -37,6 +39,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter, MaxNLocator, NullFormatter
 
 
 import sys
@@ -75,18 +78,35 @@ SECTION_TITLE_OFFSET = 0.045
 B_TITLE_GAP_FRACTION = 0.38
 
 LEGEND_FONTSIZE = 18
+SCATTER_LABEL_FONTSIZE = 19
+SCATTER_TICK_FONTSIZE = 18
 WIND_DIRECTION_X_LIMITS = (100, 310)
 TIME_SERIES_LINEWIDTH = 4
 TIME_SERIES_PERCENTILE_LINEWIDTH = 2.2
 TIME_SERIES_MARKER_SIZE = 10
 TIME_SERIES_PERCENTILES_TO_PLOT = ["25", "50", "75"]
-GRADIENT_UNIT_STRINGS = [
-    "gradient units: m/frame",
-    "gradient units: %/frame",
-    "gradient units: mm/frame",
-]
-MAIN_ROW_HSPACE = 0.62
+MAIN_ROW_HSPACE = 0.35
 LOWER_TIME_SERIES_ROW_SHIFT = 0.04
+GRADIENT_PERCENTILE_MARKERS = {0.05: "^", 0.25: "o", 0.5: "s", 0.75: "X", 0.95: "D"}
+# (x column, y column, x label, y label, title); gradients are per hour in the summary CSV
+GRADIENT_SCATTER_PANELS = [
+    ("cma_gradient", "cth_gradient", "Cloud cover gradient \n (fraction/h)", "CTH gradient (m/h)", "Cloud cover vs \n CTH"),
+    ("cot30plus_gradient", "cth10plus_gradient", "COT30+ gradient", "CTH10+ gradient", "COT30+ vs \n CTH10+"),
+    ("cma_gradient", "prec_fraction_gradient", "Cloud cover gradient \n (fraction/h)", "Precip. extent gradient \n (fraction/h)", "Cloud cover vs \n precip. extent"),
+    ("euclid_msg_grid_gradient", "precipitation_gradient", "Lightning gradient \n (counts/h)", "Precipitation gradient \n (mm/h)", "Lightning vs \n precipitation"),
+]
+EXTRA_GRADIENT_SCATTER_PANELS = [    ("cth10plus_gradient", "cot30plus_gradient", "CTH10+ gradient", "COT30+ gradient", "CTH10+ vs COT30+"),
+    ("cth_gradient", "cot_gradient", "CTH gradient (m/h)", "COT gradient (COT/h)", "CTH vs COT"),
+    ("euclid_msg_grid_gradient", "precipitation_p95_gradient", "Lightning gradient \n (counts/h)", "Precipitation p95 gradient (mm/h)", "Lightning vs precipitation p95"),
+]
+SCATTER_ROW_HEIGHT_INCHES = 5.5
+TIME_SERIES_ROW_HEIGHT_INCHES = 5.0
+# (name, classes, color) for the fit through the group-mean P25/P50/P75/P95 points
+FIT_GROUPS = [
+    ("Growing (5, 6)", [5, 6], "#F16913"),
+    ("Decaying (9, 2, 3)", [9, 2, 3], "#54278F"),
+]
+FIT_DEGREE = 1  # 1 = linear, 2 = quadratic
 
 
 
@@ -114,11 +134,12 @@ config = load_config(config_path)
 OUTPUT_DIR = Path(config["output_files"]["figures_dir"])
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CSV_FILES = {
-    "training_video_summary": config["output_files"]["training_video_summary"],
+    "training_video_summary": config["output_files"]["training_video_summary_temporal"],
     "training_csv_cth": config["output_files"]["training_csv_cth"],
     "training_csv_cot": config["output_files"]["training_csv_cot"],
     "training_csv_euclid_msg_grid": config["output_files"]["training_csv_euclid_msg_grid"],
     "training_csv_cth10plus": config["output_files"]["training_csv_cth10plus"],
+    "training_csv_cot30plus": config["output_files"]["training_csv_cot30plus"],
     "training_csv_cma": config["output_files"]["training_csv_cma"],
     "training_csv_precipitation": config["output_files"]["training_csv_precipitation"],
     "training_distances": config["output_files"]["training_features_distances_centroid"],
@@ -132,10 +153,13 @@ N_SAMPLES_PER_CLASS = 2000
 PERCENTILE_COLUMNS = ["25", "50", "75", "95"]
 SLOPE_DECIMALS = 2
 CLASS_TO_PLOT = {
-    "convection growing": [5, 6, 7],
-    "convection decaying day": [3, 9],
-    "convection decaying night": [0, 8],
+    "Class 6": [6],
+    "Class 5": [5],
+    "Class 9": [9],
+    "Class 2": [2],
+    "Class 3": [3],
 }
+CLASSES_IN_LEGEND = [6, 5, 9, 2, 3]
 PLOT_SPECS = {
     "cth": {
         "csv_key": "training_csv_cth",
@@ -170,6 +194,15 @@ PLOT_SPECS = {
         "ylabel_delta": r"$\Delta$CTH10+ area fraction (%)",
         "slope_unit": "%/frame",
     },
+    "cot30plus": {
+        "csv_key": "training_csv_cot30plus",
+        "mode": "single_column",
+        "value_column": "fraction",
+        "scale": 100,
+        "ylabel_abs": "COT30+ area fraction (%)",
+        "ylabel_delta": r"$\Delta$COT30+ area fraction (%)",
+        "slope_unit": "%/frame",
+    },
     "cma": {
         "csv_key": "training_csv_cma",
         "mode": "single_column",
@@ -194,6 +227,7 @@ PLOTS_SPEC_SELECTED = {
     "cth": PLOT_SPECS["cth"],
     "cma": PLOT_SPECS["cma"],
     "precipitation": PLOT_SPECS["precipitation"],
+    "cth10plus": PLOT_SPECS["cth10plus"],
 }
 
 
@@ -220,88 +254,226 @@ def select_samples_closest_to_target_distance(df, target_distance=TARGET_DISTANC
     return df.loc[distance_to_target.nsmallest(n_samples).index]
 
 
-def build_selected_datasets(video_stats_df, video_distances_df, target_distance):
-    print(
-        f"Selecting the {N_SAMPLES_PER_CLASS} samples whose distance is closest to {target_distance} for each class..."
-    )
-    video_stats_plot_df = (
-        video_stats_df.groupby("label", group_keys=False)
-        .apply(lambda df: select_samples_closest_to_target_distance(df, target_distance=target_distance))
-        .reset_index(drop=True)
-    )
-    selected_crops_df = video_stats_plot_df[["crop", "label"]].drop_duplicates()
-
+def load_all_datasets(video_stats_df):
+    """Load the time-series CSVs for the plotted variables using all samples (no distance selection)."""
     variable_dfs = {}
     for variable_name, plot_spec in PLOT_SPECS.items():
         variable_df = load_variable_dataframe(CSV_FILES[plot_spec["csv_key"]])
-        variable_df = variable_df.merge(video_distances_df[["crop", "distance"]], on="crop", how="left")
         variable_df = clean_variable_df(variable_df)
-        variable_df = variable_df.merge(selected_crops_df, on=["crop", "label"], how="inner")
+        if variable_name == "euclid_msg_grid":
+            lightning_per_crop = pd.to_numeric(variable_df[plot_spec["value_column"]], errors="coerce").groupby(variable_df["crop"]).transform("sum")
+            variable_df = variable_df[lightning_per_crop > 0]
         variable_dfs[variable_name] = variable_df
 
-    return video_stats_plot_df, variable_dfs
+    return video_stats_df, variable_dfs
+
+
+def plot_gradient_percentile_scatter_row(fig, grid, video_stats_plot_df, panels=None, label_prefix="a"):
+    """Scatter of class gradient percentiles (25, 50, 75, 95) for each pair in panels."""
+    panels = GRADIENT_SCATTER_PANELS if panels is None else panels
+    class_labels = [label for labels in CLASS_TO_PLOT.values() for label in labels]
+    class_df = video_stats_plot_df[video_stats_plot_df["label"].isin(class_labels)]
+
+    for panel_index, (x_column, y_column, x_label, y_label, title) in enumerate(panels):
+        ax = fig.add_subplot(grid[0, panel_index])
+        panel_df = class_df
+        if x_column == "euclid_msg_grid_gradient":
+            panel_df = class_df[class_df["euclid_msg_grid_mean"] > 0]
+        percentile_frames = {}
+        for percentile, marker in GRADIENT_PERCENTILE_MARKERS.items():
+            percentile_values = panel_df.groupby("label")[[x_column, y_column]].quantile(percentile)
+            percentile_frames[percentile] = percentile_values
+            for class_label, row in percentile_values.iterrows():
+                ax.scatter(
+                    row[x_column],
+                    row[y_column],
+                    color=colors_per_class_codes_grl[str(int(class_label))],
+                    marker=marker,
+                    edgecolor="black",
+                    s=MARKER_SIZE,
+                    linewidth=1.2,
+                    zorder=3,
+                )
+        for group_name, group_labels, group_color in FIT_GROUPS:
+            mean_points = np.array([
+                [
+                    frame.reindex(group_labels)[x_column].mean(),
+                    frame.reindex(group_labels)[y_column].mean(),
+                ]
+                for frame in percentile_frames.values()
+            ])
+            if not np.isfinite(mean_points).all():
+                continue
+            coefficients = np.polyfit(mean_points[:, 0], mean_points[:, 1], FIT_DEGREE)
+            x_fit = np.linspace(mean_points[:, 0].min(), mean_points[:, 0].max(), 200)
+            ax.plot(
+                x_fit, np.polyval(coefficients, x_fit), color=group_color, linewidth=3,
+                zorder=2,
+            )
+            print(f"{title} | {group_name}: degree-{FIT_DEGREE} coefficients (highest first) = {coefficients}")
+        ax.axhline(0, color="gray", linewidth=0.8, linestyle="--")
+        ax.axvline(0, color="gray", linewidth=0.8, linestyle="--")
+        ax.set_box_aspect(1)
+        if x_column == "euclid_msg_grid_gradient":
+            # symlog because lightning gradients can be negative
+            ax.set_xscale("symlog", linthresh=1)
+            # keep only 0 and sparse powers of ten so the labels do not overlap
+            x_min, x_max = ax.get_xlim()
+            n_decades = int(np.ceil(np.log10(max(abs(x_min), abs(x_max), 10))))
+            step = 1 if n_decades <= 3 else 2
+            powers = [10.0 ** k for k in range(0, n_decades + 1, step)]
+            candidate_ticks = [0.0] + powers + [-p for p in powers]
+            ax.set_xticks([t for t in candidate_ticks if x_min <= t <= x_max])
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:g}"))
+            ax.xaxis.set_minor_formatter(NullFormatter())
+        else:
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+        ax.set_xlabel(x_label, fontsize=SCATTER_LABEL_FONTSIZE)
+        ax.set_ylabel(y_label, fontsize=SCATTER_LABEL_FONTSIZE)
+        ax.set_title(title, fontsize=TITLE_FONTSIZE, fontweight="bold")
+        ax.grid(alpha=0.2)
+        style_axis(ax)
+        ax.tick_params(axis="both", labelsize=SCATTER_TICK_FONTSIZE)
+        add_panel_label(ax, f"{label_prefix}{panel_index + 1}")
+
+
+def add_gradient_percentile_legend(fig, top=0.95):
+    handles = [
+        Line2D(
+            [0],
+            [0],
+            marker=marker,
+            linestyle="None",
+            markerfacecolor="0.5",
+            markeredgecolor="black",
+            markersize=14,
+            label=f"{int(percentile * 100)}th",
+        )
+        for percentile, marker in GRADIENT_PERCENTILE_MARKERS.items()
+    ]
+    fig.legend(
+        handles=handles,
+        loc="upper left",
+        bbox_to_anchor=(0.865, top),
+        ncol=1,
+        frameon=False,
+        fontsize=LEGEND_FONTSIZE,
+        handletextpad=0.6,
+    )
+    fit_handles = [
+        Line2D([0], [0], color=group_color, linewidth=3, label=group_name)
+        for group_name, _, group_color in FIT_GROUPS
+    ]
+    # each legend entry takes roughly 0.4 in
+    fit_top = top - (len(handles) * 0.4 + 0.3) / fig.get_figheight()
+    fig.legend(
+        handles=fit_handles,
+        loc="upper left",
+        bbox_to_anchor=(0.865, fit_top),
+        ncol=1,
+        frameon=False,
+        fontsize=LEGEND_FONTSIZE,
+        handletextpad=0.6,
+    )
+
+
+def create_extra_scatter_figure(video_stats_plot_df, output_filename):
+    print(f"Plotting {output_filename}...")
+    fig = plt.figure(figsize=(25, SCATTER_ROW_HEIGHT_INCHES + 2.0))
+    grid = fig.add_gridspec(
+        1, len(EXTRA_GRADIENT_SCATTER_PANELS), left=0.08, right=0.84,
+        top=0.88, bottom=0.18, wspace=0.55,
+    )
+    plot_gradient_percentile_scatter_row(
+        fig, grid, video_stats_plot_df, panels=EXTRA_GRADIENT_SCATTER_PANELS, label_prefix=""
+    )
+    add_gradient_percentile_legend(fig)
+    add_class_legend(fig)
+    plt.savefig(OUTPUT_DIR / output_filename, dpi=300)
+    plt.close(fig)
+
+
+def create_finite_difference_figure(variable_dfs, output_filename):
+    """Same time-series rows as figure 4 (delta from frame 0, slope annotations) for all variables."""
+    print(f"Plotting {output_filename}...")
+    n_rows = len(PLOT_SPECS)
+    n_columns = len(CLASS_TO_PLOT)
+    fig = plt.figure(figsize=(25, TIME_SERIES_ROW_HEIGHT_INCHES * n_rows + 1.5))
+    grid = fig.add_gridspec(
+        n_rows, n_columns, left=0.08, right=0.84, top=0.96, bottom=0.05,
+        hspace=MAIN_ROW_HSPACE, wspace=0.12,
+    )
+    axes = np.empty((n_rows, n_columns), dtype=object)
+    for row in range(n_rows):
+        for column in range(n_columns):
+            axes[row, column] = fig.add_subplot(
+                grid[row, column], sharey=axes[row, 0] if column else None
+            )
+
+    for i, (variable_name, plot_spec) in enumerate(PLOT_SPECS.items()):
+        plot_time_series_row(
+            axes[i, :],
+            variable_dfs[variable_name],
+            class_2_plot=CLASS_TO_PLOT,
+            variable_name=variable_name,
+            plot_spec=plot_spec,
+            show_xlabel=i == n_rows - 1,
+            row_index=i,
+        )
+        for ax in axes[i, 1:]:
+            ax.tick_params(axis="y", labelleft=False)
+
+    add_class_legend(fig)
+    add_percentile_legend(fig, frameon=False)
+    plt.savefig(OUTPUT_DIR / output_filename, dpi=300)
+    plt.close(fig)
 
 
 def create_figure(video_stats_plot_df, variable_dfs, output_filename):
     print(f"Plotting {output_filename}...")
-    n_rows = 1 + len(PLOTS_SPEC_SELECTED)
+    n_rows = len(PLOTS_SPEC_SELECTED)
+    n_columns = len(CLASS_TO_PLOT)
+    time_series_height = TIME_SERIES_ROW_HEIGHT_INCHES * n_rows
+    top_margin, row_gap, bottom_margin = 1.0, 1.6, 1.2
+    fig_height = top_margin + time_series_height + row_gap + SCATTER_ROW_HEIGHT_INCHES + bottom_margin
+    fig = plt.figure(figsize=(25, fig_height))
 
-    fig, axes = plt.subplots(
-        n_rows,
-        3,
-        figsize=(25, 5.4 * n_rows),
-        sharey="row",
-        gridspec_kw={"height_ratios": [2.6] + [1.0] * (n_rows - 1)},
+    time_series_top = 1 - top_margin / fig_height
+    time_series_bottom = time_series_top - time_series_height / fig_height
+    time_series_grid = fig.add_gridspec(
+        n_rows, n_columns, left=0.08, right=0.84,
+        top=time_series_top, bottom=time_series_bottom,
+        hspace=MAIN_ROW_HSPACE, wspace=0.12,
     )
-    fig.subplots_adjust(left=0.08, right=0.84, top=0.92, bottom=0.08, hspace=MAIN_ROW_HSPACE, wspace=0.12)
 
-    plot_scatter_row(
-        fig,
-        axes[0, :],
-        video_stats_plot_df,
-        class_2_plot=CLASS_TO_PLOT,
+    scatter_top = time_series_bottom - row_gap / fig_height
+    scatter_bottom = scatter_top - SCATTER_ROW_HEIGHT_INCHES / fig_height
+    scatter_grid = fig.add_gridspec(
+        1, len(GRADIENT_SCATTER_PANELS), left=0.08, right=0.84,
+        top=scatter_top, bottom=scatter_bottom, wspace=0.6,
     )
+    plot_gradient_percentile_scatter_row(
+        fig, scatter_grid, video_stats_plot_df, label_prefix=chr(ord("a") + n_rows)
+    )
+    axes = np.empty((n_rows, n_columns), dtype=object)
+    for row in range(n_rows):
+        for column in range(n_columns):
+            axes[row, column] = fig.add_subplot(
+                time_series_grid[row, column], sharey=axes[row, 0] if column else None
+            )
 
     for i, (variable_name, plot_spec) in enumerate(PLOTS_SPEC_SELECTED.items()):
-        if variable_name == "cth10plus":
-            plot_time_series_row(axes[i+1, :],
-                                variable_dfs["cth"],
-                                class_2_plot=CLASS_TO_PLOT,
-                                variable_name="cth",
-                                plot_spec=PLOTS_SPEC_SELECTED["cth"],
-                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
-                                row_index=i)
-            plot_time_series_row(axes[i+1, :],
-                                variable_dfs[variable_name],
-                                class_2_plot=CLASS_TO_PLOT,
-                                variable_name=variable_name,
-                                plot_spec=plot_spec,
-                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
-                                row_index=i)
-        else:
-            plot_time_series_row(axes[i+1, :],
-                                variable_dfs[variable_name],
-                                class_2_plot=CLASS_TO_PLOT,
-                                variable_name=variable_name,
-                                plot_spec=plot_spec,
-                                show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
-                                row_index=i)
+        plot_time_series_row(axes[i, :],
+                            variable_dfs[variable_name],
+                            class_2_plot=CLASS_TO_PLOT,
+                            variable_name=variable_name,
+                            plot_spec=plot_spec,
+                            show_xlabel=i == len(PLOTS_SPEC_SELECTED) - 1,
+                            row_index=i)
+        for ax in axes[i, 1:]:
+            ax.tick_params(axis="y", labelleft=False)
 
-    tighten_lower_time_series_spacing(axes)
-
-    if n_rows > 1:
-        upper_bbox = axes[0, 0].get_position()
-        lower_bbox = axes[1, 0].get_position()
-        fig.text(
-            lower_bbox.x0,
-            lower_bbox.y1 + B_TITLE_GAP_FRACTION * (upper_bbox.y0 - lower_bbox.y1),
-            "b) Temporal changes in video sequences",
-            fontsize=TITLE_FONTSIZE,
-            fontweight="bold",
-            ha="left",
-            va="center",
-        )
-
+    add_gradient_percentile_legend(fig, top=scatter_top)
     add_class_legend(fig)
     add_percentile_legend(fig, frameon=False)
     plt.savefig(OUTPUT_DIR / output_filename, dpi=300)
@@ -399,7 +571,9 @@ def plot_variable_time_series_on_axes(
     frames = np.arange(N_FRAMES)
 
     for column_index, (ax, (group_name, class_labels)) in enumerate(zip(axes, CLASS_TO_PLOT.items())):
-        add_panel_label(ax, f"b{row_index * len(CLASS_TO_PLOT) + column_index + 1}")
+        add_panel_label(ax, f"{chr(ord('a') + row_index)}{column_index + 1}")
+        if row_index == 0:
+            ax.set_title(group_name, fontsize=TITLE_FONTSIZE, fontweight="bold")
         plotted_classes = [
             class_label for class_label in class_labels if class_label in class_time_series_by_label
         ]
@@ -493,11 +667,11 @@ def plot_variable_time_series_on_axes(
             ax.set_xlabel("Frame index", fontsize=AXIS_LABEL_FONTSIZE)
         else:
             ax.set_xlabel("")
-        if column_index == len(CLASS_TO_PLOT) - 1 and row_index < len(GRADIENT_UNIT_STRINGS):
+        if column_index == len(CLASS_TO_PLOT) - 1:
             ax.text(
                 0.98,
                 0.98,
-                GRADIENT_UNIT_STRINGS[row_index],
+                f"gradient units: \n {plot_spec['slope_unit']}",
                 transform=ax.transAxes,
                 ha="right",
                 va="top",
@@ -506,8 +680,8 @@ def plot_variable_time_series_on_axes(
             )
         ax.grid(axis="y", alpha=0.2)
         style_axis(ax)
+        ax.set_xticks(frames)
         ax.tick_params(axis="both", labelsize=TICK_LABEL_FONTSIZE)
-
 
 def add_class_legend(fig):
     handles = [
@@ -521,7 +695,7 @@ def add_class_legend(fig):
             markersize=16,
             label=f"Class {label}",
         )
-        for label in range(N_CLASSES)
+        for label in CLASSES_IN_LEGEND
     ]
     fig.legend(
         handles=handles,
@@ -567,7 +741,7 @@ def add_percentile_legend(fig, frameon=False):
     fig.legend(
         handles=handles,
         loc="upper left",
-        bbox_to_anchor=(0.865, 0.92),
+        bbox_to_anchor=(0.865, 0.33),
         ncol=1,
         frameon=frameon,
         fontsize=LEGEND_FONTSIZE,
@@ -590,35 +764,13 @@ def tighten_lower_time_series_spacing(axes, shift=LOWER_TIME_SERIES_ROW_SHIFT):
     
 def main():
 
-    # ------------- selecting the 2000 samples whose distance is closest to 1 for each class -------------
-    # load the crop statistics CSV file
-    print("Loading video summary and distances CSV files...")
-    video_stats_df = pd.read_csv(CSV_FILES["training_video_summary"])
-    video_distances_df = pd.read_csv(CSV_FILES["training_distances"])
+    print("Loading video summary CSV file...")
+    video_stats_df = clean_variable_df(pd.read_csv(CSV_FILES["training_video_summary"]))
 
-    # read column path from video_distances_df and extract the crop name from the path
-    video_distances_df["crop"] = video_distances_df["path"].apply(extract_crop_name)
-
-    print("Merging video summary and distances dataframes...")
-    # add distance variable from video_distances_df to all the videos in the dataframe
-    video_stats_df = video_stats_df.merge(video_distances_df[["crop", "distance"]], on="crop", how="left")
-
-    print("Cleaning video summary dataframe...")
-    # drop class with label -100
-    video_stats_df = clean_variable_df(video_stats_df)
-
-    figures_to_generate = [
-        (TARGET_DISTANCE, "figure4_convection_characterization.png"),
-        (CHECK_TARGET_DISTANCE, "figure4_convection_characterization_distance_close_to_0.png"),
-    ]
-
-    for target_distance, output_filename in figures_to_generate:
-        video_stats_plot_df, variable_dfs = build_selected_datasets(
-            video_stats_df,
-            video_distances_df,
-            target_distance=target_distance,
-        )
-        create_figure(video_stats_plot_df, variable_dfs, output_filename)
+    video_stats_plot_df, variable_dfs = load_all_datasets(video_stats_df)
+    create_figure(video_stats_plot_df, variable_dfs, "figure4_convection_characterization.png")
+    create_extra_scatter_figure(video_stats_plot_df, "figure4_additional_scatter_plots.png")
+    create_finite_difference_figure(variable_dfs, "figure4_additional_finite_differences.png")
 
 
 def plot_scatter_row(fig, axes, video_stats_plot_df, class_2_plot):
